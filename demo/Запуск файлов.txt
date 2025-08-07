@@ -1,0 +1,104 @@
+Сборка
+colcon build --packages-select verter
+colcon build --symlink-install # Рекомендуемый способ сборки для разработки
+source install/setup.bash
+
+Запуск отдельных нод (для отладки)
+ros2 run verter vosk_node
+
+Публикация сообщения в топик (для отладки)
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "go_forward"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "stop"}' --once
+
+Запуск системы
+# Запуск основной системы (движение, датчики)
+ros2 launch verter verter_system.launch.py
+
+# Запуск системы распознавания речи
+ros2 launch verter speech_system.launch.py
+
+ros2 launch verter main.launch.py
+
+Полезные команды
+# Просмотр активных портов
+ls -l /dev/ttyA* /dev/ttyU*
+
+# Проверка доступных аудиоустройств
+python3 -c "import sounddevice as sd; print(sd.query_devices())"
+
+
+_______________________________
+
+
+# Подключение к роботу по SSH
+ssh verter@192.168.2.1
+
+# Чтение логов сервиса verter_demo.service
+journalctl -u verter_demo.service -f
+
+# Остановка сервиса робота
+sudo systemctl stop verter_demo.service
+
+# Перезапуск сервиса робота
+sudo systemctl restart verter_demo.service
+
+source install/setup.bash
+
+Запуск системы
+# Запуск основной системы (движение, датчики)
+ros2 launch verter verter_system.launch.py
+
+# Запуск системы распознавания речи
+ros2 launch verter speech_system.launch.py
+
+# Запуск системы распознавания речи
+ros2 launch verter main.launch.launch.py
+
+
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_RIGHT:WAVE"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_BOTH:DANCE"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:MOVE_FORWARD:255"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:STOP"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:MOVE_BACKWARD:255"}' --once
+
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:STOP"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:MOVE_FORWARD:255"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:ROTATE_LEFT:255"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:ROTATE_RIGHT:255"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:MOVE_BACKWARD:255"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_RIGHT:WAVE"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_RIGHT:RAISE"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_LEFT:RAISE"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_BOTH:RAISE"}' --once
+ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_BOTH:CALIBRATE"}' --once
+
+# Команды для топика /verter_say
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "hello"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "say_about_myself"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "about"}' --once
+
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "help_2"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "help_3"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "help"}' --once
+
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "cito"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "civilva"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "zashitniki"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "minpromorg_2"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "minpromorg"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "mintruda"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "minzdorovya"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "motorika_head"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "motorika_performance"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "habrovo"}' --once
+
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "obstacle"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "thanks"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "understand"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "cool"}' --once
+
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "metallist"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "metiz"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "fadviz"}' --once
+ros2 topic pub /verter_say std_msgs/msg/String '{data: "chast_chaloveka"}' --once
+
