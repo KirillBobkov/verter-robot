@@ -54,7 +54,6 @@ ros2 launch verter speech_system.launch.py
 # Запуск системы распознавания речи
 ros2 launch verter main.launch.launch.py
 
-
 ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_RIGHT:WAVE"}' --once
 ros2 topic pub /verter_commands std_msgs/msg/String '{data: "ARM_BOTH:DANCE"}' --once
 ros2 topic pub /verter_commands std_msgs/msg/String '{data: "CHASSIS:MOVE_FORWARD:255"}' --once
