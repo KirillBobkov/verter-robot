@@ -46,3 +46,14 @@ ros2 run verter_admin speech_recognition_node
 - Распознавание русской речи
 - Вывод результатов в консоль и ROS2 логи
 - Корректное завершение работы по Ctrl+C
+
+
+
+WINDOWS:
+
+
+# Копируем исправленный проект и пересобираем
+rm -rf ~/verter_admin && cp -r /mnt/c/Users/Пользователь/Documents/verter-robot/verter_admin ~/verter_admin && cd ~/verter_admin && rm -rf build install log && source /opt/ros/humble/setup.bash && colcon build --symlink-install
+
+# Проверяем что теперь файл создался в правильном месте
+ls -la install/verter_admin/lib/verter_admin/

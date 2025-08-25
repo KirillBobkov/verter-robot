@@ -147,7 +147,6 @@ class SpeechRecognitionNode(Node):
                 
                 if text:
                     # Выводим распознанный текст в консоль
-                    print(f"Распознано: {text}")
                     self.get_logger().info(f"Распознано: {text}")
                     
         except Exception as e:
