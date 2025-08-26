@@ -18,7 +18,7 @@ class SpeechRecognitionNode(Node):
         super().__init__('speech_recognition_node')
         
         # Инициализация базовых атрибутов
-        self.audio_queue_ = queue.Queue()
+        self.audio_queue_ = queue.Queue(maxsize=50)
         self.shutdown_event_ = threading.Event()
         
         # Настройка компонентов
@@ -27,7 +27,7 @@ class SpeechRecognitionNode(Node):
         self._start_audio_capture()
         
         # Запуск обработки
-        self.process_timer = self.create_timer(0.1, self.process_audio)
+        self.process_timer = self.create_timer(0.05, self.process_audio)
         self.get_logger().info("SpeechRecognitionNode инициализирован успешно")
 
     def _find_audio_device(self):
@@ -40,7 +40,7 @@ class SpeechRecognitionNode(Node):
                 if device['max_input_channels'] > 0:
                     self.get_logger().info(f"Найдено аудиоустройство: device {i} - {device['name']}")
                     try:
-                        sd.check_input_settings(device=i, samplerate=44100, channels=1)
+                        sd.check_input_settings(device=i, samplerate=16000, channels=1)
                         self.get_logger().info(f"✓ Устройство {i} поддерживает требуемые параметры")
                         return i
                     except Exception as e:
@@ -55,12 +55,26 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка поиска устройства: {e}")
             return None
 
+    def _find_respeaker_device(self):
+        """Поиск ReSpeaker устройства"""
+        devices = sd.query_devices()
+        for i, device in enumerate(devices):
+            if 'ReSpeaker' in device['name'] or 'ArrayUAC10' in device['name']:
+                self.get_logger().info(f"✓ Найден ReSpeaker: device {i} - {device['name']}")
+                return i
+        
+        # Fallback на hw:3,0
+        self.get_logger().info("Используется hw:3,0 для ReSpeaker")
+        return 3
+
+
     def _setup_parameters(self):
         """Настройка локальных параметров"""
         self.model_name_ = 'vosk-model-small-ru-0.22'
-        self.samplerate_ = 44100
+        self.samplerate_ = 16000
+        self.blocksize_ = 3200
         self.channels_ = 1
-        self.device_ = self._find_audio_device()
+        self.device_ = self._find_respeaker_device()
         vosk.SetLogLevel(-1)  # Отключить логи Vosk
 
     def _setup_vosk(self):
@@ -110,7 +124,7 @@ class SpeechRecognitionNode(Node):
             
             with sd.RawInputStream(
                 samplerate=self.samplerate_,
-                blocksize=4410,
+                blocksize=self.blocksize_,  
                 device=self.device_,
                 dtype='int16',
                 channels=self.channels_,
@@ -122,8 +136,9 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка захвата аудио: {e}")
 
+
     def _audio_callback(self, indata, frames, time, status):
-        """Callback для аудиоданных"""
+        """Callback без отладки"""
         if status:
             self.get_logger().warn(f"Статус аудио: {status}")
         
@@ -131,26 +146,26 @@ class SpeechRecognitionNode(Node):
             self.audio_queue_.put(bytes(indata))
 
     def process_audio(self):
-        """Обработка аудиоданных из очереди"""
+        """Батчевая обработка без блокировки"""
         if self.shutdown_event_.is_set():
             return
-            
-        try:
-            data = self.audio_queue_.get(block=True, timeout=0.1)
-        except queue.Empty:
-            return
-
-        try:
-            if self.recognizer_.AcceptWaveform(data):
-                result = json.loads(self.recognizer_.Result())
-                text = result.get('text', '').strip()
-                
-                if text:
-                    # Выводим распознанный текст в консоль
-                    self.get_logger().info(f"Распознано: {text}")
-                    
-        except Exception as e:
-            self.get_logger().error(f"Ошибка распознавания: {e}")
+        
+        # Обработать все данные за раз
+        processed = 0
+        while not self.audio_queue_.empty() and processed < 10:  # Лимит на batch
+            try:
+                data = self.audio_queue_.get_nowait()
+                if self.recognizer_.AcceptWaveform(data):
+                    result = json.loads(self.recognizer_.Result())
+                    text = result.get('text', '').strip()
+                    if text:
+                        self.get_logger().info(f"Распознано: {text}")
+                processed += 1
+            except queue.Empty:
+                break
+            except Exception as e:
+                self.get_logger().error(f"Ошибка: {e}")
+                break
 
     def shutdown(self):
         """Завершение работы узла"""

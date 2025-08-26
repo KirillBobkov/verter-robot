@@ -57,3 +57,6 @@ rm -rf ~/verter_admin && cp -r /mnt/c/Users/Пользователь/Documents/v
 
 # Проверяем что теперь файл создался в правильном месте
 ls -la install/verter_admin/lib/verter_admin/
+
+
+ arecord -l  
