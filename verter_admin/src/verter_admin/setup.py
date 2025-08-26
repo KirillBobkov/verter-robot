@@ -26,7 +26,7 @@ setup(
         *[(os.path.join('share', package_name, os.path.dirname(f)), [f])
           for f in get_all_files('vosk-model-small-ru-0.22')],
     ],
-    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy'],
+    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb'], 
     zip_safe=True,
     maintainer='Имя Пользователя',
     maintainer_email='user@example.com',
