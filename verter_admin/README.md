@@ -58,5 +58,22 @@ rm -rf ~/verter_admin && cp -r /mnt/c/Users/Пользователь/Documents/v
 # Проверяем что теперь файл создался в правильном месте
 ls -la install/verter_admin/lib/verter_admin/
 
+# Но нужно заново настроить окружение
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 
-arecord -l  
+# И запустить проект
+ros2 launch verter_admin main.launch.py
+
+# Собрать пакет
+colcon build --packages-select verter_admin
+
+# Запуск всей системы
+ros2 launch verter_admin main.launch.py
+
+# Или запуск нод по отдельности:
+ros2 run verter_admin speech_recognition_node
+ros2 run verter_admin ai_assistant_node
+
+export RCUTILS_CONSOLE_OUTPUT_FORMAT="{message}"
+ros2 launch verter_admin main.launch.py
