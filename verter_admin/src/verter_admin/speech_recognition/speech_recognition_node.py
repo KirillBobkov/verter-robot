@@ -13,7 +13,7 @@ import usb.core
 import usb.util
 import vosk
 from ament_index_python.packages import get_package_share_directory
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 
 from .tuning import Tuning
 
@@ -34,7 +34,6 @@ RESPEAKER_PRODUCT_ID = 0x0018
 # Константы для детекции завершения фраз
 SILENCE_TIMEOUT = 2.0  # Секунды тишины для завершения фразы
 
-
 class SpeechRecognitionNode(Node):
     """ROS2 узел для распознавания речи с использованием модели Vosk."""
     
@@ -51,14 +50,16 @@ class SpeechRecognitionNode(Node):
         self.last_speech_time = time.time()
         self.is_paused = False
         self.phrase_lock = threading.Lock()
+        
                 # Создание publisher для отправки вопросов AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
         
-        # Создание subscriber для получения ответов AI
-        self.ai_response_subscriber = self.create_subscription(
-            String,
-            'ai_response',
-            self._handle_ai_response_topic,
+
+        # Создание subscriber для получения сигнала активации распознавания (новый способ)
+        self.create_subscription(
+            Bool,
+            'set_recognition_active',
+            self._handle_continue_recognition_bool,
             10
         )
         
@@ -205,22 +206,7 @@ class SpeechRecognitionNode(Node):
                 
                 # Обрабатываем только если не в паузе
                 if not self.is_paused:
-                    if self.recognizer.AcceptWaveform(data):
-                        result = json.loads(self.recognizer.Result())
-                        text = result.get('text', '').strip()
-                        if text:
-                            self._handle_recognized_text(text)
-                    else:
-                        # Частичный результат - обновляем время последней речи
-                        partial_result = json.loads(self.recognizer.PartialResult())
-                        partial_text = partial_result.get('partial', '').strip()
-                        if partial_text:
-                            self.last_speech_time = current_time
-                            with self.phrase_lock:
-                                self.current_phrase = partial_text
-                        
-                        # Проверяем тишину для завершения фразы
-                        self._check_phrase_completion(current_time)
+                    self._process_audio_data(data, current_time)
                             
             except queue.Empty:
                 # Проверяем тишину даже при пустой очереди
@@ -228,6 +214,25 @@ class SpeechRecognitionNode(Node):
                 continue
             except Exception as e:
                 self.get_logger().error(f"Ошибка обработки речи: {e}")
+
+    def _process_audio_data(self, data: bytes, current_time: float) -> None:
+        """Обработка аудио данных через Vosk."""
+        if self.recognizer.AcceptWaveform(data):
+            result = json.loads(self.recognizer.Result())
+            text = result.get('text', '').strip()
+            if text:
+                self._handle_recognized_text(text)
+        else:
+            # Частичный результат - обновляем время последней речи
+            partial_result = json.loads(self.recognizer.PartialResult())
+            partial_text = partial_result.get('partial', '').strip()
+            if partial_text:
+                self.last_speech_time = current_time
+                with self.phrase_lock:
+                    self.current_phrase = partial_text
+            
+            # Проверяем тишину для завершения фразы
+            self._check_phrase_completion(current_time)
 
     def _handle_recognized_text(self, text: str) -> None:
         """Обработать распознанный текст."""
@@ -265,22 +270,22 @@ class SpeechRecognitionNode(Node):
                     msg.data = completed_phrase
                     self.ai_question_publisher.publish(msg)
     
-    def _handle_ai_response_topic(self, msg: String) -> None:
-        """Обработчик ответов AI из топика ai_response."""
-        response = msg.data
-        self._on_ai_response(response)
+    def _handle_continue_recognition_bool(self, msg: Bool) -> None:
+        """Обработчик сигнала активации распознавания из топика set_recognition_active."""
+        if msg.data:
+            self.get_logger().info("Получен сигнал активации распознавания от TTS")
+            self._resume_recognition()
+        else:
+            self.get_logger().debug("Получен сигнал деактивации распознавания")
     
-    def _on_ai_response(self, response: str) -> None:
-        """Callback функция для получения ответа от AI."""
-        # self.get_logger().info(f"Ответ AI: {response}")
-        
-        # Сбрасываем состояние речи и возобновляем распознавание
+    def _resume_recognition(self) -> None:
+        """Возобновить распознавание речи после сигнала от TTS."""
         with self.phrase_lock:
             self.current_phrase = ""
             self.last_speech_time = time.time()
             self.is_paused = False
         
-        self.get_logger().info("Возобновление распознавания речи")
+        self.get_logger().info("Распознавание речи возобновлено по сигналу от TTS")
 
     def _publish_results(self) -> None:
         """Опубликовать результаты распознавания из очереди (вызывается таймером ROS2)."""

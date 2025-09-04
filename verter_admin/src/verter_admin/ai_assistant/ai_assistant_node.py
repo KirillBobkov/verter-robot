@@ -24,9 +24,11 @@ class AIAssistantNode(Node):
             package_share = get_package_share_directory('verter_admin')
             self.mypath = os.path.join(package_share, 'dataset')
         except Exception as e:
-            self.get_logger().error(f"Не удалось найти пакет verter_admin: {e}")
+            self.get_logger().warning(f"Не удалось найти пакет verter_admin: {e}")
             # Fallback путь для разработки
-        self.mypath = "/mnt/c/Users/Пользователь/Documents/verter-robot/verter_admin/src/verter_admin/ai_assistant/dataset/"
+            current_dir = os.path.dirname(__file__)
+            self.mypath = os.path.join(current_dir, 'dataset')
+        
         self.folder = ""
         self.token = ""
         self.instruction = "Выполняй поиск по базе знаний и не выдумывай ответ"
