@@ -33,6 +33,22 @@ def get_dataset_files():
     
     return dataset_files
 
+def get_tts_model_files():
+    """Специальная функция для копирования TTS моделей в правильное место"""
+    tts_files = []
+    tts_dir = 'src/verter_admin/text_to_speech_node'
+    
+    for root, dirs, filenames in os.walk(tts_dir):
+        for filename in filenames:
+            if filename.startswith('ru_') and (filename.endswith('.onnx') or filename.endswith('.json') or filename.endswith('.txt')):
+                src_path = os.path.join(root, filename)
+                # Убираем префикс 'src/verter_admin/' из пути
+                rel_path = os.path.relpath(src_path, 'src/verter_admin/')
+                dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
+                tts_files.append((dest_dir, [src_path]))
+    
+    return tts_files
+
 package_name = 'verter_admin'
 
 setup(
@@ -47,8 +63,10 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('src/verter_admin/launch', '*.launch.py'))),
         # Включаем dataset в пакет
         *get_dataset_files(),
-        # Включаем модели в пакет
+        # Включаем модели Vosk в пакет
         *get_model_files(),
+        # Включаем TTS модели в пакет
+        *get_tts_model_files(),
     ],
     install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb', 'yandex-cloud-ml-sdk'], 
     zip_safe=True,
@@ -61,6 +79,7 @@ setup(
         'console_scripts': [
             'speech_recognition_node = verter_admin.speech_recognition.speech_recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
+            'text_to_speech_node = verter_admin.text_to_speech_node.text_to_speech_node:main',
         ],
     },
 )

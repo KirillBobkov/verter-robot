@@ -27,8 +27,8 @@ class AIAssistantNode(Node):
             self.get_logger().error(f"Не удалось найти пакет verter_admin: {e}")
             # Fallback путь для разработки
         self.mypath = "/mnt/c/Users/Пользователь/Documents/verter-robot/verter_admin/src/verter_admin/ai_assistant/dataset/"
-        self.folder = "вставить"
-        self.token = "вставить"
+        self.folder = ""
+        self.token = ""
         self.instruction = "Выполняй поиск по базе знаний и не выдумывай ответ"
         
         # Инициализация SDK и индекса
@@ -95,7 +95,7 @@ class AIAssistantNode(Node):
             # Создаем ассистента
             self.assistant = self.sdk.assistants.create(
                 "yandexgpt",
-                instruction="Ты — робот-администратор который стоит в поликлиннике. Отвечай вежливо. Если информация не содержится в документах ниже, не придумывай ответ. В ответе озвучивай все цифры буквами (например: 8:00 - восемь ноль ноль)",
+                instruction="Ты — робот-администратор в поликлиннике. Отвечай вежливо. Если информация не содержится в документах ниже, не придумывай ответ.",
                 tools=[tool],
             )
             
