@@ -68,7 +68,7 @@ setup(
         # Включаем TTS модели в пакет
         *get_tts_model_files(),
     ],
-    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb', 'yandex-cloud-ml-sdk'], 
+    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb', 'yandex-cloud-ml-sdk', 'silero-tts'], 
     zip_safe=True,
     maintainer='Имя Пользователя',
     maintainer_email='user@example.com',
@@ -80,6 +80,7 @@ setup(
             'speech_recognition_node = verter_admin.speech_recognition.speech_recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech_node.text_to_speech_node:main',
+            'silero_tts_node = verter_admin.text_to_speech_node.silero_tts_node:main',
         ],
     },
 )

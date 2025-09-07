@@ -19,22 +19,8 @@ class AIAssistantNode(Node):
     def __init__(self):
         super().__init__('ai_assistant_node')
         
-        # Параметры для YandexGPT
-        try:
-            package_share = get_package_share_directory('verter_admin')
-            self.mypath = os.path.join(package_share, 'dataset')
-        except Exception as e:
-            self.get_logger().warning(f"Не удалось найти пакет verter_admin: {e}")
-            # Fallback путь для разработки
-            current_dir = os.path.dirname(__file__)
-            self.mypath = os.path.join(current_dir, 'dataset')
-        
-        self.folder = ""
-        self.token = ""
-        self.instruction = "Выполняй поиск по базе знаний и не выдумывай ответ"
-        
-        # Инициализация SDK и индекса
-        self._initialize_yandex_sdk()
+        # Параметр тестового режима
+        self.isTesting = True
         
         # Создание subscriber для получения вопросов
         self.subscription = self.create_subscription(
@@ -47,7 +33,26 @@ class AIAssistantNode(Node):
         # Создание publisher для отправки ответов
         self.response_publisher = self.create_publisher(String, 'ai_response', 10)
         
-        self.get_logger().info("AI Assistant Node инициализирован успешно")
+        if self.isTesting:
+            self.get_logger().info("AI Assistant Node запущен в ТЕСТОВОМ режиме")
+        else:
+            # Параметры для YandexGPT
+            try:
+                package_share = get_package_share_directory('verter_admin')
+                self.mypath = os.path.join(package_share, 'dataset')
+            except Exception as e:
+                self.get_logger().warning(f"Не удалось найти пакет verter_admin: {e}")
+                # Fallback путь для разработки
+                current_dir = os.path.dirname(__file__)
+                self.mypath = os.path.join(current_dir, 'dataset')
+            
+            self.folder = ""
+            self.token = ""
+            self.instruction = "Выполняй поиск по базе знаний и не выдумывай ответ"
+            
+            # Инициализация SDK и индекса
+            self._initialize_yandex_sdk()
+            self.get_logger().info("AI Assistant Node инициализирован успешно")
     
     def _initialize_yandex_sdk(self):
         """Инициализация YandexGPT SDK и создание поискового индекса."""
@@ -114,44 +119,56 @@ class AIAssistantNode(Node):
         question = msg.data
         self.get_logger().info(f"Получен вопрос: {question}")
         
-        try:
-            # Создаем новый thread для каждого вопроса (без истории)
-            thread = self.sdk.threads.create()
-            
-            # Отправляем только новый вопрос
-            thread.write(question)
-            run = self.assistant.run(thread)
-            result = run.wait()
-            
-            # Выводим ответ в консоль
-            answer = result.text
-            self.get_logger().info(f"\nОтвет AI: \n{answer}")
-            
-            # Публикуем ответ в топик ai_response
+        if self.isTesting:
+            # Тестовый режим: просто перенаправляем вопрос как ответ
+            self.get_logger().info("Тестовый режим: перенаправляем вопрос как ответ")
             response_msg = String()
-            response_msg.data = answer
+            response_msg.data = question
             self.response_publisher.publish(response_msg)
-            self.get_logger().info("Ответ опубликован в топик ai_response")
-            
-            # Удаляем thread после использования для освобождения ресурсов
-            thread.delete()
-            
-        except Exception as e:
-            self.get_logger().error(f"Ошибка обработки вопроса: {e}")
+            self.get_logger().info("Вопрос перенаправлен в топик ai_response")
+        else:
+            # Обычный режим: обращаемся к YandexGPT
+            try:
+                # Создаем новый thread для каждого вопроса (без истории)
+                thread = self.sdk.threads.create()
+                
+                # Отправляем только новый вопрос
+                thread.write(question)
+                run = self.assistant.run(thread)
+                result = run.wait()
+                
+                # Выводим ответ в консоль
+                answer = result.text
+                self.get_logger().info(f"\nОтвет AI: \n{answer}")
+                
+                # Публикуем ответ в топик ai_response
+                response_msg = String()
+                response_msg.data = answer
+                self.response_publisher.publish(response_msg)
+                self.get_logger().info("Ответ опубликован в топик ai_response")
+                
+                # Удаляем thread после использования для освобождения ресурсов
+                thread.delete()
+                
+            except Exception as e:
+                self.get_logger().error(f"Ошибка обработки вопроса: {e}")
     
     def shutdown(self):
         """Корректное завершение работы узла."""
-        try:
-            if hasattr(self, 'search_index'):
-                self.search_index.delete()
-            if hasattr(self, 'assistant'):
-                self.assistant.delete()
-            if hasattr(self, 'files'):
-                for file in self.files:
-                    file.delete()
-            self.get_logger().info("AI Assistant Node завершен успешно")
-        except Exception as e:
-            self.get_logger().error(f"Ошибка при завершении: {e}")
+        if not self.isTesting:
+            try:
+                if hasattr(self, 'search_index'):
+                    self.search_index.delete()
+                if hasattr(self, 'assistant'):
+                    self.assistant.delete()
+                if hasattr(self, 'files'):
+                    for file in self.files:
+                        file.delete()
+                self.get_logger().info("AI Assistant Node завершен успешно")
+            except Exception as e:
+                self.get_logger().error(f"Ошибка при завершении: {e}")
+        else:
+            self.get_logger().info("Тестовый режим завершен")
 
 
 def main(args=None):
