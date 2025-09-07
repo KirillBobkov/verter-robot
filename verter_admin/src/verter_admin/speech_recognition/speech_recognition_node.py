@@ -17,154 +17,128 @@ from std_msgs.msg import String, Bool
 
 from .tuning import Tuning
 
-# Константы
+# Константы для максимальной скорости
 DEFAULT_MODEL_NAME = 'vosk-model-small-ru-0.22'
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 3200
+BLOCK_SIZE = 3200   # 50мс - минимальная латентность
 CHANNELS = 1
-AUDIO_QUEUE_SIZE = 50
-RESULTS_QUEUE_SIZE = 10
-PROCESS_TIMER_PERIOD = 0.01  # 100Hz
-DOA_TIMER_PERIOD = 3.0  # 0.33Hz
-AUDIO_TIMEOUT = 0.1
+RESULT_QUEUE_SIZE = 3  # Мини-очередь только для результатов
+DOA_TIMER_PERIOD = 5.0  # Реже DOA для экономии CPU
 
 RESPEAKER_VENDOR_ID = 0x2886
 RESPEAKER_PRODUCT_ID = 0x0018
 
-# Константы для детекции завершения фраз
-SILENCE_TIMEOUT = 2.0  # Секунды тишины для завершения фразы
-
 class SpeechRecognitionNode(Node):
-    """ROS2 узел для распознавания речи с использованием модели Vosk."""
+    """Простой ROS2 узел для распознавания речи - Vosk сам решает когда отдавать результат."""
     
     def __init__(self) -> None:
         super().__init__('speech_recognition_node')
         
-        # Очереди для межпоточного взаимодействия
-        self.audio_queue = queue.Queue(maxsize=AUDIO_QUEUE_SIZE)
-        self.results_queue = queue.Queue(maxsize=RESULTS_QUEUE_SIZE)
+        # Переменные для максимальной скорости
         self.shutdown_event = threading.Event()
-        
-        # Переменные для детекции завершения фраз
-        self.current_phrase = ""
-        self.last_speech_time = time.time()
         self.is_paused = False
-        self.phrase_lock = threading.Lock()
+        self.recognition_lock = threading.Lock()  # Для thread-safety в callback
         
-                # Создание publisher для отправки вопросов AI
+        # Быстрая очередь только для результатов - не блокирует audio callback
+        self.result_queue = queue.Queue(maxsize=RESULT_QUEUE_SIZE)
+        
+        # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
         
-
-        # Создание subscriber для получения сигнала активации распознавания (новый способ)
+        # Subscriber для управления паузами
         self.create_subscription(
             Bool,
             'set_recognition_active',
-            self._handle_continue_recognition_bool,
+            self._handle_recognition_control,
             10
         )
         
-        # Настройка компонентов
+        # Настройка
         self._setup_parameters()
         self._setup_vosk()
         self._setup_doa()
         self._start_audio_capture()
         
-        # Запуск обработки
-        self._start_speech_processing()
-        self.publish_timer = self.create_timer(PROCESS_TIMER_PERIOD, self._publish_results)
+        # Запуск быстрой отправки результатов + DOA
+        self._start_result_publisher()
         self.doa_timer = self.create_timer(DOA_TIMER_PERIOD, self._process_doa)
         
-        self.get_logger().info("SpeechRecognitionNode инициализирован успешно")
+        self.get_logger().info("SpeechRecognitionNode запущен (простая версия)")
+
+    def _setup_parameters(self) -> None:
+        """Настройка параметров."""
+        self.model_name = DEFAULT_MODEL_NAME
+        self.sample_rate = SAMPLE_RATE
+        self.block_size = BLOCK_SIZE
+        self.channels = CHANNELS
+        self.device = self._find_respeaker_device()
+        vosk.SetLogLevel(-1)
 
     def _find_respeaker_device(self) -> int:
         """Найти устройство ReSpeaker."""
         devices = sd.query_devices()
         for i, device in enumerate(devices):
             if 'ReSpeaker' in device['name'] or 'ArrayUAC10' in device['name']:
-                self.get_logger().info(f"✓ Найден ReSpeaker: устройство {i} - {device['name']}")
+                self.get_logger().info(f"✓ Найден ReSpeaker: {i} - {device['name']}")
                 return i
-        
-        # Резервный вариант - устройство по умолчанию
         self.get_logger().info("ReSpeaker не найден, используется устройство по умолчанию")
         return 1
 
-    def _setup_parameters(self) -> None:
-        """Настройка локальных параметров."""
-        self.model_name = DEFAULT_MODEL_NAME
-        self.sample_rate = SAMPLE_RATE
-        self.block_size = BLOCK_SIZE
-        self.channels = CHANNELS
-        self.device = self._find_respeaker_device()
-        vosk.SetLogLevel(-1)  # Отключить логи Vosk
-
     def _setup_vosk(self) -> None:
-        """Инициализация модели и распознавателя Vosk."""
+        """Инициализация Vosk с оптимизацией для скорости."""
         model_path = self._resolve_model_path()
         if not model_path:
-            raise RuntimeError("Не удалось определить путь к модели")
+            raise RuntimeError("Не удалось найти модель")
             
         try:
             self.model = vosk.Model(model_path)
             self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate)
-            self.recognizer.SetWords(True)
-            self.get_logger().info(f"Модель Vosk загружена из: {model_path}")
+            
+            # Оптимизации для максимальной скорости
+            self.recognizer.SetWords(False)  # Отключаем детализацию слов
+            # self.recognizer.SetMaxAlternatives(1)  # Одна альтернатива
+            
+            self.get_logger().info(f"Vosk оптимизирован для скорости: {model_path}")
         except Exception as e:
-            raise RuntimeError(f"Ошибка загрузки модели Vosk: {e}")
+            raise RuntimeError(f"Ошибка загрузки Vosk: {e}")
 
     def _resolve_model_path(self) -> Optional[str]:
-        """Определить полный путь к модели Vosk."""
+        """Определить путь к модели."""
         if os.path.isabs(self.model_name):
             model_path = self.model_name
         else:
             try:
                 package_share = get_package_share_directory('verter_admin')
                 model_path = os.path.join(package_share, self.model_name)
-            except Exception as e:
-                self.get_logger().error(f"Пакет 'verter_admin' не найден: {e}")
+            except Exception:
                 return None
         
-        if not os.path.isdir(model_path):
-            self.get_logger().error(f"Директория модели не найдена: {model_path}")
-            return None
-            
-        return model_path
+        return model_path if os.path.isdir(model_path) else None
 
     def _setup_doa(self) -> None:
-        """Инициализация определения направления прихода звука (DOA)."""
+        """Инициализация DOA."""
         try:
-            # Настройка USB для ReSpeaker
             self.doa_dev = usb.core.find(idVendor=RESPEAKER_VENDOR_ID, idProduct=RESPEAKER_PRODUCT_ID)
             if self.doa_dev is None:
-                self.get_logger().error("ReSpeaker не найден для DOA")
                 self.doa_enabled = False
             else:
                 self.mic_tuning = Tuning(self.doa_dev)
                 self.doa_enabled = True
-                self.get_logger().info("ReSpeaker для DOA инициализирован успешно")
-            
+                self.get_logger().info("DOA инициализирован")
         except Exception as e:
-            self.get_logger().error(f"Ошибка инициализации DOA: {e}")
+            self.get_logger().error(f"Ошибка DOA: {e}")
             self.doa_enabled = False
 
     def _start_audio_capture(self) -> None:
-        """Запустить поток захвата аудио."""
+        """Запустить захват аудио."""
         self.audio_thread = threading.Thread(target=self._audio_capture_loop)
         self.audio_thread.daemon = True
         self.audio_thread.start()
 
-    def _start_speech_processing(self) -> None:
-        """Запустить поток обработки речи."""
-        self.speech_thread = threading.Thread(target=self._speech_processing_loop)
-        self.speech_thread.daemon = True
-        self.speech_thread.start()
 
     def _audio_capture_loop(self) -> None:
-        """Основной цикл захвата аудио."""
+        """Цикл захвата аудио."""
         try:
-            device_info = sd.query_devices(self.device, 'input') if self.device is not None else None
-            device_name = device_info['name'] if device_info else 'default'
-            self.get_logger().info(f"Используется аудио устройство: {device_name}")
-            
             with sd.RawInputStream(
                 samplerate=self.sample_rate,
                 blocksize=self.block_size,  
@@ -173,183 +147,121 @@ class SpeechRecognitionNode(Node):
                 channels=self.channels,
                 callback=self._audio_callback
             ):
-                self.get_logger().info("✓ Захват аудио запущен успешно")
+                self.get_logger().info("✓ Захват аудио запущен")
                 self.shutdown_event.wait()
-                
         except Exception as e:
-            self.get_logger().error(f"Ошибка захвата аудио: {e}")
+            self.get_logger().error(f"Ошибка аудио: {e}")
 
     def _audio_callback(self, indata, frames, time, status) -> None:
-        """Коллбэк ввода аудио."""
+        """Прямой стрим в Vosk - максимально быстро!"""
+        if self.shutdown_event.is_set() or self.is_paused:
+            return
+            
         if status:
-            self.get_logger().warn(f"Статус аудио: {status}")
+            self.get_logger().warn(f"Аудио статус: {status}")
         
-        # Не добавляем аудио в очередь если система на паузе или завершается
-        if not self.shutdown_event.is_set() and not self.is_paused:
+        # Прямая обработка в callback - никаких очередей!
+        with self.recognition_lock:
             try:
-                self.audio_queue.put_nowait(bytes(indata))
-            except queue.Full:
-                pass  # Пропускаем если очередь переполнена
+                data = bytes(indata)
+                
+                # Стримим напрямую в Vosk
+                if self.recognizer.AcceptWaveform(data):
+                    # Vosk решил что фраза готова!
+                    result = json.loads(self.recognizer.Result())
+                    text = result.get('text', '').strip()
+                    
+                    if text:
+                        self.get_logger().info(f"Быстрый стрим - фраза: '{text}'")
+                        self._queue_result_fast(text)
+                        
+            except Exception as e:
+                self.get_logger().error(f"Ошибка в прямом стриме: {e}")
 
-    def _speech_processing_loop(self) -> None:
-        """Основной цикл обработки речи, выполняющийся в отдельном потоке."""
+
+    def _queue_result_fast(self, text: str) -> None:
+        """Молниеносное добавление результата - не блокирует audio callback."""
+        try:
+            # Паузим сразу
+            self.is_paused = True
+            
+            # Молниеносно кладём в очередь
+            self.result_queue.put_nowait(text)
+        except queue.Full:
+            # Если переполнено - выталкиваем старый результат
+            try:
+                self.result_queue.get_nowait()
+                self.result_queue.put_nowait(text)
+            except queue.Empty:
+                pass
+    
+    def _start_result_publisher(self) -> None:
+        """Запустить быстрый publisher для результатов."""
+        self.publisher_thread = threading.Thread(target=self._result_publisher_loop)
+        self.publisher_thread.daemon = True
+        self.publisher_thread.start()
+    
+    def _result_publisher_loop(self) -> None:
+        """Молниеносная отправка результатов к AI."""
         while not self.shutdown_event.is_set():
             try:
-                # Проверяем, не находимся ли мы в паузе
-                current_time = time.time()
-                if self.is_paused:
-                    time.sleep(0.1)
-                    continue
+                # Молниеносно получаем результат
+                text = self.result_queue.get(timeout=0.1)
                 
-                # Блокирующее получение с таймаутом
-                data = self.audio_queue.get(timeout=AUDIO_TIMEOUT)
+                self.get_logger().info(f"Молниеносная отправка к AI: {text}")
                 
-                # Обрабатываем только если не в паузе
-                if not self.is_paused:
-                    self._process_audio_data(data, current_time)
-                            
+                # Отправляем к AI
+                msg = String()
+                msg.data = text
+                self.ai_question_publisher.publish(msg)
+                
             except queue.Empty:
-                # Проверяем тишину даже при пустой очереди
-                self._check_phrase_completion(time.time())
                 continue
             except Exception as e:
-                self.get_logger().error(f"Ошибка обработки речи: {e}")
+                self.get_logger().error(f"Ошибка отправки к AI: {e}")
 
-    def _process_audio_data(self, data: bytes, current_time: float) -> None:
-        """Обработка аудио данных через Vosk."""
-        if self.recognizer.AcceptWaveform(data):
-            result = json.loads(self.recognizer.Result())
-            text = result.get('text', '').strip()
-            if text:
-                self._handle_recognized_text(text)
-        else:
-            # Частичный результат - обновляем время последней речи
-            partial_result = json.loads(self.recognizer.PartialResult())
-            partial_text = partial_result.get('partial', '').strip()
-            if partial_text:
-                self.last_speech_time = current_time
-                with self.phrase_lock:
-                    self.current_phrase = partial_text
-            
-            # Проверяем тишину для завершения фразы
-            self._check_phrase_completion(current_time)
-
-    def _handle_recognized_text(self, text: str) -> None:
-        """Обработать распознанный текст."""
-        with self.phrase_lock:
-            self.current_phrase = text
-        
-        # Отправляем результат в очередь публикации
-        try:
-            self.results_queue.put_nowait(text)
-        except queue.Full:
-            pass  # Пропускаем, если очередь переполнена
-            
-        self.last_speech_time = time.time()
-
-    def _check_phrase_completion(self, current_time: float) -> None:
-        """Проверить завершение фразы по тишине."""
-        if (current_time - self.last_speech_time) > SILENCE_TIMEOUT:
-            with self.phrase_lock:
-                if self.current_phrase and not self.is_paused:
-                    # Фраза завершена - отправляем к AI
-                    completed_phrase = self.current_phrase
-                    self.get_logger().info(f"Фраза завершена: '{completed_phrase}'")
-                    
-                    # Начинаем паузу и очищаем состояние
-                    self.is_paused = True
-                    self.current_phrase = ""
-                    
-                    # Очищаем аудио очередь чтобы не накапливались старые данные
-                    self._clear_queue(self.audio_queue)
-                    
-                    self.get_logger().info("Распознавание приостановлено - запрос к AI")
-                    
-                    # Публикуем вопрос в топик ai_question
-                    msg = String()
-                    msg.data = completed_phrase
-                    self.ai_question_publisher.publish(msg)
-    
-    def _handle_continue_recognition_bool(self, msg: Bool) -> None:
-        """Обработчик сигнала активации распознавания из топика set_recognition_active."""
+    def _handle_recognition_control(self, msg: Bool) -> None:
+        """Управление паузами."""
         if msg.data:
-            self.get_logger().info("Получен сигнал активации распознавания от TTS")
-            self._resume_recognition()
-        else:
-            self.get_logger().debug("Получен сигнал деактивации распознавания")
-    
-    def _resume_recognition(self) -> None:
-        """Возобновить распознавание речи после сигнала от TTS."""
-        with self.phrase_lock:
-            self.current_phrase = ""
-            self.last_speech_time = time.time()
             self.is_paused = False
-        
-        self.get_logger().info("Распознавание речи возобновлено по сигналу от TTS")
-
-    def _publish_results(self) -> None:
-        """Опубликовать результаты распознавания из очереди (вызывается таймером ROS2)."""
-        try:
-            while not self.results_queue.empty():
-                text = self.results_queue.get_nowait()
-                self.get_logger().info(f"Распознано: {text}")
-        except queue.Empty:
-            pass
+            self.get_logger().info("Распознавание возобновлено")
+        else:
+            self.is_paused = True
+            self.get_logger().info("Распознавание приостановлено")
 
     def _process_doa(self) -> None:
-        """Обработать и залогировать угол DOA."""
-        if not hasattr(self, 'doa_enabled') or not self.doa_enabled:
+        """DOA обработка."""
+        if not self.doa_enabled:
             return
-        
         try:
             doa_angle = self.mic_tuning.direction
-            self.get_logger().info(f"Угол DOA: {doa_angle} градусов")
+            self.get_logger().info(f"DOA: {doa_angle}°")
         except Exception as e:
-            self.get_logger().error(f"Ошибка получения DOA: {e}")
+            self.get_logger().error(f"Ошибка DOA: {e}")
 
     def shutdown(self) -> None:
-        """Корректно завершить работу узла."""
+        """Завершение работы."""
         self.shutdown_event.set()
         
-        # Остановить аудио
         try:
             sd.stop()
         except:
             pass
         
-        # Очистить USB для DOA
         if hasattr(self, 'doa_dev') and self.doa_dev:
             usb.util.dispose_resources(self.doa_dev)
-        
-        # Ожидать завершения потоков
-        if hasattr(self, 'audio_thread'):
-            self.audio_thread.join(timeout=1.0)
-        if hasattr(self, 'speech_thread'):
-            self.speech_thread.join(timeout=1.0)
-        
-        # Очистить очереди
-        self._clear_queue(self.audio_queue)
-        self._clear_queue(self.results_queue)
-        
-    def _clear_queue(self, q: queue.Queue) -> None:
-        """Очистить все элементы из очереди."""
-        while not q.empty():
-            try:
-                q.get_nowait()
-            except queue.Empty:
-                break
 
 def main(args=None) -> None:
-    """Основная функция для запуска узла распознавания речи."""
+    """Главная функция."""
     rclpy.init(args=args)
     node = None
     
     try:
         node = SpeechRecognitionNode()
-        print("Узел распознавания речи и DOA запущен. Говорите...")
+        print("МОЛНИЕНОСНЫЙ СТРИМ: 50мс блоки, мини очередь результатов!")
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("\nЗавершение работы...")
+        print("\nЗавершение...")
     finally:
         if node:
             node.shutdown()
