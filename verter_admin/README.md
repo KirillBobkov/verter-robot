@@ -77,4 +77,4 @@ ros2 run verter_admin ai_assistant_node
 
 export RCUTILS_CONSOLE_OUTPUT_FORMAT="{message}"
 
-ros2 launch verter_admin silero_tts_system.launch.py
+ros2 launch verter_admin silero.launch.py

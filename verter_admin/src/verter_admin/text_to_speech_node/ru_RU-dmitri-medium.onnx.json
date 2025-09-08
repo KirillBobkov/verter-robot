@@ -7,9 +7,9 @@
     "voice": "ru"
   },
   "inference": {
-    "noise_scale": 0.667,
+    "noise_scale": 0.3,
     "length_scale": 1,
-    "noise_w": 0.8
+    "noise_w": 0.5
   },
   "phoneme_type": "espeak",
   "phoneme_map": {},

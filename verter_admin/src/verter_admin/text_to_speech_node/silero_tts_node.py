@@ -112,8 +112,6 @@ class SileroTTSNode(Node):
         msg = Bool()
         msg.data = True
         self.recognition_publisher.publish(msg)
-    
-
 
 def main(args=None):
     rclpy.init(args=args)

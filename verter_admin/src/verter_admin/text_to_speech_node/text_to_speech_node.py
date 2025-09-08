@@ -104,24 +104,40 @@ class TextToSpeechNode(Node):
     
     def _synthesize_and_play(self, text):
         try:
-            # Используем streaming API для прямого воспроизведения
+            # Используем streaming API с оптимизированными параметрами
             process = subprocess.Popen(
-                ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1"],
+                ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1", "--buffer-size=8192"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 env=self.env
             )
             
-            # Стриминг синтеза речи напрямую в aplay
+            # Буферизация для более эффективной передачи данных
+            buffer = bytearray()
+            buffer_threshold = 4096  # 4KB буфер
+            
+            # Синтез речи с оптимизированной буферизацией
             for chunk in self.voice.synthesize(text.strip()):
                 if process.poll() is not None:
                     break
+                    
+                buffer.extend(chunk.audio_int16_bytes)
+                
+                # Отправляем данные пакетами, а не по одному chunk
+                if len(buffer) >= buffer_threshold:
+                    try:
+                        process.stdin.write(buffer)
+                        buffer.clear()
+                    except BrokenPipeError:
+                        break
+            
+            # Отправляем остатки буфера
+            if buffer:
                 try:
-                    process.stdin.write(chunk.audio_int16_bytes)
-                    process.stdin.flush()
+                    process.stdin.write(buffer)
                 except BrokenPipeError:
-                    break
+                    pass
             
             process.stdin.close()
             process.wait()

@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
-import queue
 import threading
-import time
 from typing import Optional
 
 import rclpy
@@ -20,10 +18,8 @@ from .tuning import Tuning
 # Константы для максимальной скорости
 DEFAULT_MODEL_NAME = 'vosk-model-small-ru-0.22'
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 3200   # 50мс - минимальная латентность
+BLOCK_SIZE = 6000
 CHANNELS = 1
-RESULT_QUEUE_SIZE = 3  # Мини-очередь только для результатов
-DOA_TIMER_PERIOD = 5.0  # Реже DOA для экономии CPU
 
 RESPEAKER_VENDOR_ID = 0x2886
 RESPEAKER_PRODUCT_ID = 0x0018
@@ -34,13 +30,14 @@ class SpeechRecognitionNode(Node):
     def __init__(self) -> None:
         super().__init__('speech_recognition_node')
         
-        # Переменные для максимальной скорости
+        # Переменные для прямого стриминга
         self.shutdown_event = threading.Event()
         self.is_paused = False
-        self.recognition_lock = threading.Lock()  # Для thread-safety в callback
+        self.recognition_lock = threading.Lock()  # Thread-safety для Vosk
         
-        # Быстрая очередь только для результатов - не блокирует audio callback
-        self.result_queue = queue.Queue(maxsize=RESULT_QUEUE_SIZE)
+        # Триггерные слова и состояние
+        self.trigger_words = ['робот', 'робат', 'бертом', 'верстах', 'вертэр', 'вертер', 'ветер', 'ертер', 'верте', 'вектор', 'ветера', 'мерсер', 'вертера', 'вердер', 'лестер']
+        self._triggered = False
         
         # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
@@ -59,11 +56,9 @@ class SpeechRecognitionNode(Node):
         self._setup_doa()
         self._start_audio_capture()
         
-        # Запуск быстрой отправки результатов + DOA
-        self._start_result_publisher()
-        self.doa_timer = self.create_timer(DOA_TIMER_PERIOD, self._process_doa)
+        # Запуск захвата с прямым стримингом
         
-        self.get_logger().info("SpeechRecognitionNode запущен (простая версия)")
+        self.get_logger().info("SpeechRecognitionNode запущен (ПРЯМОЙ СТРИМ)")
 
     def _setup_parameters(self) -> None:
         """Настройка параметров."""
@@ -95,7 +90,7 @@ class SpeechRecognitionNode(Node):
             self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate)
             
             # Оптимизации для максимальной скорости
-            self.recognizer.SetWords(False)  # Отключаем детализацию слов
+            self.recognizer.SetWords(True)  # Отключаем детализацию слов
             # self.recognizer.SetMaxAlternatives(1)  # Одна альтернатива
             
             self.get_logger().info(f"Vosk оптимизирован для скорости: {model_path}")
@@ -153,14 +148,14 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка аудио: {e}")
 
     def _audio_callback(self, indata, frames, time, status) -> None:
-        """Прямой стрим в Vosk - максимально быстро!"""
+        """ПРЯМОЙ СТРИМ В VOSK - максимально быстро!"""
         if self.shutdown_event.is_set() or self.is_paused:
             return
             
         if status:
             self.get_logger().warn(f"Аудио статус: {status}")
         
-        # Прямая обработка в callback - никаких очередей!
+        # Прямо в Vosk без очередей!
         with self.recognition_lock:
             try:
                 data = bytes(indata)
@@ -172,72 +167,79 @@ class SpeechRecognitionNode(Node):
                     text = result.get('text', '').strip()
                     
                     if text:
-                        self.get_logger().info(f"Быстрый стрим - фраза: '{text}'")
-                        self._queue_result_fast(text)
+                        self.get_logger().info(f"Распознано: '{text}'")
+                        
+                        # Обработка триггерных слов
+                        self._process_speech_with_trigger(text)
                         
             except Exception as e:
-                self.get_logger().error(f"Ошибка в прямом стриме: {e}")
+                self.get_logger().error(f"Ошибка прямого стрима: {e}")
 
 
-    def _queue_result_fast(self, text: str) -> None:
-        """Молниеносное добавление результата - не блокирует audio callback."""
-        try:
-            # Паузим сразу
-            self.is_paused = True
+    def _process_speech_with_trigger(self, text: str) -> None:
+        """Обработка речи с проверкой триггерных слов."""
+        text_lower = text.lower()
+        
+        # Проверка триггерных слов
+        if self._has_trigger_word(text_lower):
+            self._triggered = True
+            self.get_logger().info("Активирован триггером")
+        
+        # Отправляем к AI только если активирован триггер
+        if self._triggered:
+            # Получаем DOA угол
+            doa_angle = self._get_doa_angle()
+            if doa_angle is not None:
+                self.get_logger().info(f"DOA направление: {doa_angle}°")
             
-            # Молниеносно кладём в очередь
-            self.result_queue.put_nowait(text)
-        except queue.Full:
-            # Если переполнено - выталкиваем старый результат
-            try:
-                self.result_queue.get_nowait()
-                self.result_queue.put_nowait(text)
-            except queue.Empty:
-                pass
-    
-    def _start_result_publisher(self) -> None:
-        """Запустить быстрый publisher для результатов."""
-        self.publisher_thread = threading.Thread(target=self._result_publisher_loop)
-        self.publisher_thread.daemon = True
-        self.publisher_thread.start()
-    
-    def _result_publisher_loop(self) -> None:
-        """Молниеносная отправка результатов к AI."""
-        while not self.shutdown_event.is_set():
-            try:
-                # Молниеносно получаем результат
-                text = self.result_queue.get(timeout=0.1)
-                
-                self.get_logger().info(f"Молниеносная отправка к AI: {text}")
-                
-                # Отправляем к AI
-                msg = String()
-                msg.data = text
-                self.ai_question_publisher.publish(msg)
-                
-            except queue.Empty:
-                continue
-            except Exception as e:
-                self.get_logger().error(f"Ошибка отправки к AI: {e}")
+            # Паузим и отправляем
+            self.is_paused = True
+            self._send_to_ai(text)
+            self._triggered = False  # Сбрасываем триггер после отправки
+        else:
+            self.get_logger().debug(f"Фраза проигнорирована (нет триггера): '{text}'")
+
+    def _has_trigger_word(self, text: str) -> bool:
+        """Проверка наличия триггерных слов в тексте."""
+        return any(trigger in text for trigger in self.trigger_words)
+
+    def _send_to_ai(self, text: str) -> None:
+        """Прямая отправка к AI без очередей."""
+        try:
+            self.get_logger().info(f"Отправка к AI: {text}")
+            
+            # Отправляем к AI
+            msg = String()
+            msg.data = text
+            self.ai_question_publisher.publish(msg)
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка отправки к AI: {e}")
+
 
     def _handle_recognition_control(self, msg: Bool) -> None:
         """Управление паузами."""
         if msg.data:
+            # Сбрасываем состояние Vosk для чистого старта
+            with self.recognition_lock:
+                self.recognizer.Reset()
             self.is_paused = False
-            self.get_logger().info("Распознавание возобновлено")
+            self._triggered = False  # Сбрасываем триггер при возобновлении
+            self.get_logger().info("Распознавание возобновлено, триггер сброшен")
         else:
             self.is_paused = True
-            self.get_logger().info("Распознавание приостановлено")
+            self._triggered = False  # Сбрасываем триггер при паузе
+            self.get_logger().info("Распознавание приостановлено, триггер сброшен")
 
-    def _process_doa(self) -> None:
-        """DOA обработка."""
+    def _get_doa_angle(self) -> Optional[int]:
+        """Получить текущий DOA угол."""
         if not self.doa_enabled:
-            return
+            return None
         try:
-            doa_angle = self.mic_tuning.direction
-            self.get_logger().info(f"DOA: {doa_angle}°")
+            return self.mic_tuning.direction
         except Exception as e:
             self.get_logger().error(f"Ошибка DOA: {e}")
+            return None
 
     def shutdown(self) -> None:
         """Завершение работы."""
@@ -258,7 +260,7 @@ def main(args=None) -> None:
     
     try:
         node = SpeechRecognitionNode()
-        print("МОЛНИЕНОСНЫЙ СТРИМ: 50мс блоки, мини очередь результатов!")
+        print("ПРЯМОЙ СТРИМ: аудио → Vosk → AI без очередей!")
         rclpy.spin(node)
     except KeyboardInterrupt:
         print("\nЗавершение...")

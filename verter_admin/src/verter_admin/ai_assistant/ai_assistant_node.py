@@ -20,7 +20,7 @@ class AIAssistantNode(Node):
         super().__init__('ai_assistant_node')
         
         # Параметр тестового режима
-        self.isTesting = True
+        self.isTesting = False
         
         # Создание subscriber для получения вопросов
         self.subscription = self.create_subscription(
@@ -102,7 +102,7 @@ class AIAssistantNode(Node):
             # Создаем ассистента
             self.assistant = self.sdk.assistants.create(
                 "yandexgpt",
-                instruction="Ты — робот-администратор в поликлиннике. Отвечай вежливо. Если информация не содержится в документах ниже, не придумывай ответ.",
+                instruction="Ты — Вертер, робот-администратор. Отвечай вежливо. Если информация не содержится в документах ниже, не придумывай ответ. Отвечай по-человечески без сокращений. Например: пятница с 09:00 до 15:00 => пятница с девяти до пятнадцати часов",
                 tools=[tool],
             )
             
@@ -139,13 +139,17 @@ class AIAssistantNode(Node):
                 
                 # Выводим ответ в консоль
                 answer = result.text
-                self.get_logger().info(f"\nОтвет AI: \n{answer}")
+                
+                # Проверяем что ответ не None
+                if answer is None or (isinstance(answer, str) and answer.strip() == ""):
+                    answer = "Извините, я не смог найти ответ на ваш вопрос."
+                    self.get_logger().warning("AI вернул пустой ответ, используется fallback")
                 
                 # Публикуем ответ в топик ai_response
                 response_msg = String()
-                response_msg.data = answer
+                response_msg.data = str(answer)  # Приводим к строке на всякий случай
                 self.response_publisher.publish(response_msg)
-                self.get_logger().info("Ответ опубликован в топик ai_response")
+                self.get_logger().info(f"\nОтвет AI опубликован в топик ai_response: \n{answer}")
                 
                 # Удаляем thread после использования для освобождения ресурсов
                 thread.delete()
