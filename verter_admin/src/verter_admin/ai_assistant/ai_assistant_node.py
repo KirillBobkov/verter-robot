@@ -120,8 +120,10 @@ class AIAssistantNode(Node):
         self.get_logger().info(f"Получен вопрос: {question}")
         
         if self.isTesting:
+            import time
             # Тестовый режим: просто перенаправляем вопрос как ответ
-            self.get_logger().info("Тестовый режим: перенаправляем вопрос как ответ")
+            self.get_logger().info("Тестовый режим: перенаправляем вопрос как ответ с задержкой 1с")
+            time.sleep(1)
             response_msg = String()
             response_msg.data = question
             self.response_publisher.publish(response_msg)

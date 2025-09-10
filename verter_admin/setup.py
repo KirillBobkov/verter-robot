@@ -49,6 +49,22 @@ def get_tts_model_files():
     
     return tts_files
 
+def get_sound_files():
+    """Специальная функция для копирования звуковых файлов в правильное место"""
+    sound_files = []
+    sound_dir = 'src/verter_admin/sound_player/sounds'
+    
+    for root, dirs, filenames in os.walk(sound_dir):
+        for filename in filenames:
+            if filename.endswith('.mp3') or filename.endswith('.wav') or filename.endswith('.ogg'):
+                src_path = os.path.join(root, filename)
+                # Убираем префикс 'src/verter_admin/sound_player/' из пути
+                rel_path = os.path.relpath(src_path, 'src/verter_admin/sound_player/')
+                dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
+                sound_files.append((dest_dir, [src_path]))
+    
+    return sound_files
+
 package_name = 'verter_admin'
 
 setup(
@@ -67,6 +83,8 @@ setup(
         *get_model_files(),
         # Включаем TTS модели в пакет
         *get_tts_model_files(),
+        # Включаем звуковые файлы в пакет
+        *get_sound_files(),
     ],
     install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb', 'yandex-cloud-ml-sdk', 'silero-tts'], 
     zip_safe=True,
@@ -81,6 +99,7 @@ setup(
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech_node.text_to_speech_node:main',
             'silero_tts_node = verter_admin.text_to_speech_node.silero_tts_node:main',
+            'sound_player_node = verter_admin.sound_player.sound_player_node:main',
         ],
     },
 )

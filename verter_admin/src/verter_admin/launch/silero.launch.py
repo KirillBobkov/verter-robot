@@ -37,4 +37,12 @@ def generate_launch_description():
             name='ai_assistant_node',
             output='screen'
         ),
+        
+        # Узел воспроизведения звуков
+        Node(
+            package='verter_admin',
+            executable='sound_player_node',
+            name='sound_player_node',
+            output='screen'
+        ),
     ])

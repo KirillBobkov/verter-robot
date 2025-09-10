@@ -2,8 +2,10 @@
 import json
 import os
 import threading
+import time
 from typing import Optional
 
+import numpy as np
 import rclpy
 from rclpy.node import Node
 import sounddevice as sd
@@ -18,7 +20,7 @@ from .tuning import Tuning
 # Константы для максимальной скорости
 DEFAULT_MODEL_NAME = 'vosk-model-small-ru-0.22'
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 6000
+BLOCK_SIZE = 4000  # Уменьшенный размер блока для быстрого отклика
 CHANNELS = 1
 
 RESPEAKER_VENDOR_ID = 0x2886
@@ -32,15 +34,22 @@ class SpeechRecognitionNode(Node):
         
         # Переменные для прямого стриминга
         self.shutdown_event = threading.Event()
-        self.is_paused = False
         self.recognition_lock = threading.Lock()  # Thread-safety для Vosk
         
         # Триггерные слова и состояние
         self.trigger_words = ['робот', 'робат', 'бертом', 'верстах', 'вертэр', 'вертер', 'ветер', 'ертер', 'верте', 'вектор', 'ветера', 'мерсер', 'вертера', 'вердер', 'лестер']
-        self._triggered = False
+        
+        # Простое состояние системы
+        self.listening_for_trigger = True  # Ищем триггер
+        self.capturing_command = False     # Записываем команду
+        self.no_speech_timeout = 10.0  # Тайм-аут если 5 секунд тишины после триггера
+        
         
         # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
+        
+        # Publisher для воспроизведения звуков
+        self.sound_player_publisher = self.create_publisher(String, '/play', 10)
         
         # Subscriber для управления паузами
         self.create_subscription(
@@ -56,9 +65,12 @@ class SpeechRecognitionNode(Node):
         self._setup_doa()
         self._start_audio_capture()
         
-        # Запуск захвата с прямым стримингом
-        
-        self.get_logger().info("SpeechRecognitionNode запущен (ПРЯМОЙ СТРИМ)")
+        # Запуск простого алгоритма
+        self.get_logger().info("🎤 SpeechRecognitionNode запущен (ДОВЕРЯЕМ VOSK)")
+        self.get_logger().info(f"   Размер блока: {BLOCK_SIZE} байт")
+        self.get_logger().info(f"   Логика: Триггер → Vosk решает фразу → СРАЗУ в AI")
+        self.get_logger().info(f"   Тайм-аут молчания: {self.no_speech_timeout}с после триггера")
+        self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words)} шт.")
 
     def _setup_parameters(self) -> None:
         """Настройка параметров."""
@@ -89,9 +101,8 @@ class SpeechRecognitionNode(Node):
             self.model = vosk.Model(model_path)
             self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate)
             
-            # Оптимизации для максимальной скорости
-            self.recognizer.SetWords(True)  # Отключаем детализацию слов
-            # self.recognizer.SetMaxAlternatives(1)  # Одна альтернатива
+        
+            self.recognizer.SetWords(True)  
             
             self.get_logger().info(f"Vosk оптимизирован для скорости: {model_path}")
         except Exception as e:
@@ -148,88 +159,187 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка аудио: {e}")
 
     def _audio_callback(self, indata, frames, time, status) -> None:
-        """ПРЯМОЙ СТРИМ В VOSK - максимально быстро!"""
-        if self.shutdown_event.is_set() or self.is_paused:
+        """Простой callback - Vosk решает всё сам"""
+        if self.shutdown_event.is_set():
             return
             
         if status:
             self.get_logger().warn(f"Аудио статус: {status}")
         
-        # Прямо в Vosk без очередей!
-        with self.recognition_lock:
-            try:
-                data = bytes(indata)
-                
-                # Стримим напрямую в Vosk
-                if self.recognizer.AcceptWaveform(data):
-                    # Vosk решил что фраза готова!
-                    result = json.loads(self.recognizer.Result())
-                    text = result.get('text', '').strip()
-                    
-                    if text:
-                        self.get_logger().info(f"Распознано: '{text}'")
-                        
-                        # Обработка триггерных слов
-                        self._process_speech_with_trigger(text)
-                        
-            except Exception as e:
-                self.get_logger().error(f"Ошибка прямого стрима: {e}")
-
-
-    def _process_speech_with_trigger(self, text: str) -> None:
-        """Обработка речи с проверкой триггерных слов."""
-        text_lower = text.lower()
-        
-        # Проверка триггерных слов
-        if self._has_trigger_word(text_lower):
-            self._triggered = True
-            self.get_logger().info("Активирован триггером")
-        
-        # Отправляем к AI только если активирован триггер
-        if self._triggered:
-            # Получаем DOA угол
-            doa_angle = self._get_doa_angle()
-            if doa_angle is not None:
-                self.get_logger().info(f"DOA направление: {doa_angle}°")
+        try:
+            data = bytes(indata)
             
-            # Паузим и отправляем
-            self.is_paused = True
-            self._send_to_ai(text)
-            self._triggered = False  # Сбрасываем триггер после отправки
-        else:
-            self.get_logger().debug(f"Фраза проигнорирована (нет триггера): '{text}'")
+            with self.recognition_lock:
+                # Проверяем, что recognizer еще валиден
+                if not hasattr(self, 'recognizer') or self.recognizer is None:
+                    return
+                    
+                # Подаем аудио в Vosk
+                if self.recognizer.AcceptWaveform(data):
+                    # Vosk говорит что фраза готова
+                    try:
+                        result = json.loads(self.recognizer.Result())
+                        text = result.get('text', '').strip()
+                        
+                        if text:
+                            self._handle_recognized_text(text)
+                    except json.JSONDecodeError as e:
+                        self.get_logger().error(f"Ошибка парсинга JSON от Vosk: {e}")
+                    except Exception as e:
+                        self.get_logger().error(f"Ошибка обработки результата Vosk: {e}")
+                        
+        except Exception as e:
+            self.get_logger().error(f"Ошибка аудио callback: {e}")
 
-    def _has_trigger_word(self, text: str) -> bool:
-        """Проверка наличия триггерных слов в тексте."""
-        return any(trigger in text for trigger in self.trigger_words)
+    def _handle_recognized_text(self, text: str) -> None:
+        """Обработка распознанного текста - доверяем Vosk полностью"""
+        try:
+            self.get_logger().debug(f"Распознано: '{text}'")
+            
+            if self.listening_for_trigger:
+                # Ищем триггерное слово
+                if self._is_valid_trigger(text):
+                    self.get_logger().info(f"✓ Триггер найден: '{text}'")
+                    self._play_sound('trigger.wav')
+                    self._start_command_capture()
+                    
+            elif self.capturing_command:
+                # Vosk решил что фраза готова - сразу отправляем в AI!
+                self.get_logger().info(f"📤 Команда от Vosk: '{text}' - отправка в AI")
+                
+                # Останавливаем тайм-аут "нет речи"
+                if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
+                    self.destroy_timer(self.no_speech_timer)
+                    self.no_speech_timer = None
+                
+                # Получаем DOA направление
+                doa_angle = self._get_doa_angle()
+                if doa_angle is not None:
+                    self.get_logger().info(f"DOA направление: {doa_angle}°")
+                
+                # Воспроизводим звук успеха
+                self._play_sound('success.wav')
+                # Сразу отправляем в AI
+                self._send_to_ai(text)
+            
+                
+        except Exception as e:
+            self.get_logger().error(f"Ошибка обработки текста: {e}")
+
+    def _start_command_capture(self) -> None:
+        """Начать захват команды - ждем первую фразу от Vosk"""
+        try:
+            self.listening_for_trigger = False
+            self.capturing_command = True
+            
+            # Запускаем тайм-аут "нет речи" - если 5 секунд тишины, отменяем команду
+            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
+                self.destroy_timer(self.no_speech_timer)
+            self.no_speech_timer = self.create_timer(self.no_speech_timeout, self._no_speech_timeout)
+            
+            self.get_logger().info("🎤 Ожидание команды от Vosk (5с на произнесение)")
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка запуска захвата: {e}")
+            self._reset_to_listening()
+
+
+    def _no_speech_timeout(self) -> None:
+        """Тайм-аут отсутствия речи - отменяем команду"""
+        try:
+            self.get_logger().warn(f"⏰ Тайм-аут: {self.no_speech_timeout}с тишины после триггера - отмена команды")
+            self._play_sound('fail_timeout.wav')
+            self._reset_to_listening()
+        except Exception as e:
+            self.get_logger().error(f"Ошибка тайм-аута отсутствия речи: {e}")
+            self._reset_to_listening()
+
+
+    def _is_valid_trigger(self, text: str) -> bool:
+        """Улучшенная проверка wake word с защитой от ложных срабатываний"""
+        text_lower = text.lower()
+        words = text_lower.split()
+        
+        # Игнорируем слишком длинные фразы (вероятно случайный разговор)
+        if len(words) > 8:
+            return False
+        
+        # Ищем триггерные слова
+        for trigger in self.trigger_words:
+            if trigger in text_lower:
+                # Дополнительная проверка: триггер в начале фразы или фраза короткая
+                trigger_position = text_lower.find(trigger)
+                if trigger_position <= 10 or len(words) <= 3:  # В начале или короткая фраза
+                    return True
+        
+        return False
+
+    def _reset_to_listening(self) -> None:
+        """Сброс в состояние прослушивания"""
+        try:
+            self.listening_for_trigger = True
+            self.capturing_command = False
+            
+            # Останавливаем таймер "нет речи"
+            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
+                self.destroy_timer(self.no_speech_timer)
+                self.no_speech_timer = None
+            
+            # Сбрасываем recognizer для чистого старта - только в главном потоке
+            with self.recognition_lock:
+                try:
+                    self.recognizer.Reset()
+                except Exception as e:
+                    self.get_logger().error(f"Ошибка сброса recognizer: {e}")
+            
+            self.get_logger().debug("🔄 Возврат в режим прослушивания")
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка сброса состояния: {e}")
 
     def _send_to_ai(self, text: str) -> None:
-        """Прямая отправка к AI без очередей."""
+        """Отправка команды к AI с переходом в паузу"""
         try:
-            self.get_logger().info(f"Отправка к AI: {text}")
+            # Останавливаем все таймеры
+            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
+                self.destroy_timer(self.no_speech_timer)
+                self.no_speech_timer = None
             
             # Отправляем к AI
             msg = String()
             msg.data = text
             self.ai_question_publisher.publish(msg)
             
+            # Переходим в паузу и ждем команды на возобновление от AI
+            self.listening_for_trigger = False
+            self.capturing_command = False
+            self.get_logger().info(f"📤 Отправлено в AI: '{text}' | ⏸️ Ожидание ответа...")
+            
         except Exception as e:
             self.get_logger().error(f"Ошибка отправки к AI: {e}")
-
+            self._reset_to_listening()
 
     def _handle_recognition_control(self, msg: Bool) -> None:
-        """Управление паузами."""
-        if msg.data:
-            # Сбрасываем состояние Vosk для чистого старта
-            with self.recognition_lock:
-                self.recognizer.Reset()
-            self.is_paused = False
-            self._triggered = False  # Сбрасываем триггер при возобновлении
-            self.get_logger().info("Распознавание возобновлено, триггер сброшен")
-        else:
-            self.is_paused = True
-            self._triggered = False  # Сбрасываем триггер при паузе
-            self.get_logger().info("Распознавание приостановлено, триггер сброшен")
+        """Управление состоянием распознавания"""
+        try:
+            if msg.data:
+                # Возобновление работы - возврат к прослушиванию
+                self._reset_to_listening()
+                self.get_logger().info("✓ Распознавание возобновлено")
+            else:
+                # Пауза - останавливаем все операции
+                self.listening_for_trigger = False
+                self.capturing_command = False
+                
+                # Останавливаем все таймеры
+                if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
+                    self.destroy_timer(self.no_speech_timer)
+                    self.no_speech_timer = None
+                
+                self.get_logger().info("⏸️ Распознавание приостановлено")
+                
+        except Exception as e:
+            self.get_logger().error(f"Ошибка управления распознаванием: {e}")
 
     def _get_doa_angle(self) -> Optional[int]:
         """Получить текущий DOA угол."""
@@ -241,35 +351,78 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка DOA: {e}")
             return None
 
-    def shutdown(self) -> None:
-        """Завершение работы."""
-        self.shutdown_event.set()
-        
+    def _play_sound(self, sound_name: str) -> None:
+        """Воспроизвести звук через sound_player_node"""
         try:
-            sd.stop()
-        except:
-            pass
-        
-        if hasattr(self, 'doa_dev') and self.doa_dev:
-            usb.util.dispose_resources(self.doa_dev)
+            msg = String()
+            msg.data = sound_name
+            self.sound_player_publisher.publish(msg)
+            self.get_logger().info(f"🔊 Воспроизводится звук: {sound_name}")
+        except Exception as e:
+            self.get_logger().error(f"Ошибка воспроизведения звука {sound_name}: {e}")
+
+    def shutdown(self) -> None:
+        """Завершение работы с очисткой ресурсов"""
+        try:
+            self.get_logger().info("🔄 Завершение работы ноды...")
+            
+            # Устанавливаем событие завершения
+            self.shutdown_event.set()
+            
+            # Останавливаем все таймеры
+            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
+                self.destroy_timer(self.no_speech_timer)
+                self.no_speech_timer = None
+            
+            # Безопасно очищаем recognizer
+            with self.recognition_lock:
+                try:
+                    if hasattr(self, 'recognizer') and self.recognizer:
+                        # Не вызываем Reset() при завершении - это может вызвать crash
+                        self.recognizer = None
+                except Exception as e:
+                    self.get_logger().warn(f"Ошибка очистки recognizer: {e}")
+            
+            # Останавливаем аудио
+            try:
+                sd.stop()
+            except Exception as e:
+                self.get_logger().warn(f"Ошибка остановки аудио: {e}")
+            
+            # Освобождаем USB ресурсы
+            if hasattr(self, 'doa_dev') and self.doa_dev:
+                try:
+                    usb.util.dispose_resources(self.doa_dev)
+                except Exception as e:
+                    self.get_logger().warn(f"Ошибка освобождения USB: {e}")
+            
+            self.get_logger().info("✓ Завершение работы завершено")
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка при завершении: {e}")
 
 def main(args=None) -> None:
-    """Главная функция."""
+    """Главная функция с улучшенной обработкой ошибок"""
     rclpy.init(args=args)
     node = None
     
     try:
         node = SpeechRecognitionNode()
-        print("ПРЯМОЙ СТРИМ: аудио → Vosk → AI без очередей!")
+        print("🎤 VOSK-BASED РАСПОЗНАВАТЕЛЬ: Wake Word → Vosk Command → DIRECT AI")
+        print("   Состояния: listening_for_trigger ↔ capturing_command")
+        print("   Vosk полностью контролирует сегментацию фраз")
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("\nЗавершение...")
+        print("\n🔄 Завершение по Ctrl+C...")
+    except Exception as e:
+        print(f"\n❌ Критическая ошибка: {e}")
     finally:
         if node:
             node.shutdown()
             node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+        print("✓ Завершено")
 
 if __name__ == '__main__':
     main()
