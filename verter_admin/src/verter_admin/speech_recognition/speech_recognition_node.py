@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import threading
 import time
 from typing import Optional
@@ -37,8 +38,17 @@ class SpeechRecognitionNode(Node):
         self.recognition_lock = threading.Lock()  # Thread-safety для Vosk
         
         # Триггерные слова и состояние
-        self.trigger_words = ['робот', 'робат', 'бертом', 'верстах', 'вертэр', 'вертер', 'ветер', 'ертер', 'верте', 'вектор', 'ветера', 'мерсер', 'вертера', 'вердер', 'лестер']
+        # Используем set для O(1) поиска
+        self.trigger_words_set = {
+            'робот', 'робат', 'бертом', 'верстах', 'вертэр', 'вертер',
+            'ветер', 'ертер', 'верте', 'вектор', 'ветера', 'мерсер',
+            'вертера', 'вердер', 'лестер'
+        }
         
+            # Создаем регулярное выражение для поиска триггерных слов
+        pattern = '|'.join(re.escape(word) for word in self.trigger_words_set)
+        self.trigger_pattern = re.compile(pattern, re.IGNORECASE)
+
         # Простое состояние системы
         self.listening_for_trigger = True  # Ищем триггер
         self.capturing_command = False     # Записываем команду
@@ -70,7 +80,7 @@ class SpeechRecognitionNode(Node):
         self.get_logger().info(f"   Размер блока: {BLOCK_SIZE} байт")
         self.get_logger().info(f"   Логика: Триггер → Vosk решает фразу → СРАЗУ в AI")
         self.get_logger().info(f"   Тайм-аут молчания: {self.no_speech_timeout}с после триггера")
-        self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words)} шт.")
+        self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
 
     def _setup_parameters(self) -> None:
         """Настройка параметров."""
@@ -256,23 +266,23 @@ class SpeechRecognitionNode(Node):
 
 
     def _is_valid_trigger(self, text: str) -> bool:
-        """Улучшенная проверка wake word с защитой от ложных срабатываний"""
-        text_lower = text.lower()
-        words = text_lower.split()
-        
-        # Игнорируем слишком длинные фразы (вероятно случайный разговор)
-        if len(words) > 8:
+        """Максимально быстрая проверка триггерных слов"""
+        if not text:
             return False
         
-        # Ищем триггерные слова
-        for trigger in self.trigger_words:
-            if trigger in text_lower:
-                # Дополнительная проверка: триггер в начале фразы или фраза короткая
-                trigger_position = text_lower.find(trigger)
-                if trigger_position <= 10 or len(words) <= 3:  # В начале или короткая фраза
-                    return True
+        # Игнорируем слишком длинные фразы (примерно 8 слов по 10 символов)
+        if len(text) > 80:
+            return False
+            
+        text_lower = text.lower()
         
-        return False
+        # Быстрая проверка точного совпадения слов
+        text_words = set(text_lower.split())
+        if text_words & self.trigger_words_set:
+            return True
+        
+        # Быстрый поиск по регулярному выражению
+        return bool(self.trigger_pattern.search(text_lower))
 
     def _reset_to_listening(self) -> None:
         """Сброс в состояние прослушивания"""
