@@ -4,7 +4,7 @@ import pathlib
 import os
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from ament_index_python.packages import get_package_share_directory
 
 from yandex_cloud_ml_sdk import YCloudML
@@ -32,6 +32,14 @@ class AIAssistantNode(Node):
         
         # Создание publisher для отправки ответов
         self.response_publisher = self.create_publisher(String, 'ai_response', 10)
+        
+        # Subscriber для управления диалогом
+        self.create_subscription(
+            String,
+            'dialog_control',
+            self.dialog_control_callback,
+            10
+        )
         
         if self.isTesting:
             self.get_logger().info("AI Assistant Node запущен в ТЕСТОВОМ режиме")
@@ -102,11 +110,16 @@ class AIAssistantNode(Node):
             # Создаем ассистента
             self.assistant = self.sdk.assistants.create(
                 "yandexgpt",
-                instruction="Ты — Вертер, робот-администратор. Отвечай вежливо. Если информация не содержится в документах ниже, не придумывай ответ. Отвечай по-человечески без сокращений. Например: пятница с 09:00 до 15:00 => пятница с девяти до пятнадцати часов",
+                instruction="Ты — Вертер, робот-администратор. Ищи информацию в документах, если не нашел - отвечай из своих собственных данных на которой ты обучен. Адаптируй ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах).",
                 tools=[tool],
             )
             
-            self.thread = self.sdk.threads.create()
+            # Создаем основной thread для всех диалогов
+            self.main_thread = self.sdk.threads.create()
+            
+            # Состояние диалога
+            self.dialog_active = False
+            self.current_thread = None
             
             self.get_logger().info("YandexGPT SDK инициализирован успешно")
             
@@ -120,49 +133,127 @@ class AIAssistantNode(Node):
         self.get_logger().info(f"Получен вопрос: {question}")
         
         if self.isTesting:
-            import time
-            # Тестовый режим: просто перенаправляем вопрос как ответ
-            self.get_logger().info("Тестовый режим: перенаправляем вопрос как ответ с задержкой 1с")
-            time.sleep(1)
-            response_msg = String()
-            response_msg.data = question
-            self.response_publisher.publish(response_msg)
-            self.get_logger().info("Вопрос перенаправлен в топик ai_response")
+            self._handle_test_mode(question)
         else:
-            # Обычный режим: обращаемся к YandexGPT
+            self._handle_production_mode(question)
+    
+    def _handle_test_mode(self, question: str):
+        """Обработка тестового режима"""
+        import time
+        self.get_logger().info("Тестовый режим: перенаправляем вопрос как ответ с задержкой 1с")
+        time.sleep(1)
+        self._publish_response(question)
+        self.get_logger().info("Вопрос перенаправлен в топик ai_response")
+    
+    def _handle_production_mode(self, question: str):
+        """Обработка продакшн режима с YandexGPT"""
+        try:
+            thread_to_use = self.current_thread if self.dialog_active else self.main_thread
+            
+            # ЛОГИРОВАНИЕ: Что отправляем
+            self.get_logger().info(f"📤 Отправка в YandexGPT:")
+            self.get_logger().info(f"   Вопрос: '{question}' (длина: {len(question)} символов)")
+            self.get_logger().info(f"   Thread ID: {getattr(thread_to_use, 'id', 'unknown')}")
+            self.get_logger().info(f"   Dialog active: {self.dialog_active}")
+            
+            # Записываем вопрос в thread
+            thread_to_use.write(question)
+            
+            # ЛОГИРОВАНИЕ: История thread
             try:
-                # Создаем новый thread для каждого вопроса (без истории)
-                thread = self.sdk.threads.create()
-                
-                # Отправляем только новый вопрос
-                thread.write(question)
-                run = self.assistant.run(thread)
-                result = run.wait()
-                
-                # Выводим ответ в консоль
-                answer = result.text
-                
-                # Проверяем что ответ не None
-                if answer is None or (isinstance(answer, str) and answer.strip() == ""):
-                    answer = "Извините, я не смог найти ответ на ваш вопрос."
-                    self.get_logger().warning("AI вернул пустой ответ, используется fallback")
-                
-                # Публикуем ответ в топик ai_response
-                response_msg = String()
-                response_msg.data = str(answer)  # Приводим к строке на всякий случай
-                self.response_publisher.publish(response_msg)
-                self.get_logger().info(f"\nОтвет AI опубликован в топик ai_response: \n{answer}")
-                
-                # Удаляем thread после использования для освобождения ресурсов
-                thread.delete()
-                
+                # Пытаемся получить сообщения из thread
+                if hasattr(thread_to_use, 'messages'):
+                    messages = list(thread_to_use.messages)
+                    self.get_logger().info(f"📋 История thread: {len(messages)} сообщений")
+                    
+                    # Показываем последние 3 сообщения для контроля
+                    for i, msg in enumerate(messages[-3:]):
+                        if hasattr(msg, 'role') and hasattr(msg, 'content'):
+                            content_preview = str(msg.content)[:80] + "..." if len(str(msg.content)) > 80 else str(msg.content)
+                            self.get_logger().info(f"   [{len(messages)-3+i}] {msg.role}: {content_preview}")
             except Exception as e:
-                self.get_logger().error(f"Ошибка обработки вопроса: {e}")
+                self.get_logger().debug(f"Не удалось получить историю thread: {e}")
+            
+            # Запускаем assistant
+            self.get_logger().info("🚀 Запуск assistant.run()...")
+            run = self.assistant.run(thread_to_use)
+            result = run.wait()
+            
+            answer = self._validate_answer(result.text)
+            self._publish_response(answer)
+            
+            dialog_info = "(диалог)" if self.dialog_active else "(одиночный)"
+            self.get_logger().info(f"\n📥 Ответ AI {dialog_info} получен ({len(answer)} символов): \n{answer}")
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка обработки вопроса: {e}")
+    
+    def _validate_answer(self, answer: str) -> str:
+        """Валидация ответа от AI"""
+        if answer is None or (isinstance(answer, str) and answer.strip() == ""):
+            self.get_logger().warning("AI вернул пустой ответ, используется fallback")
+            return "Извините, я не смог найти ответ на ваш вопрос."
+        return str(answer)
+    
+    def _publish_response(self, response: str):
+        """Публикация ответа"""
+        response_msg = String()
+        response_msg.data = response
+        self.response_publisher.publish(response_msg)
+    
+    def dialog_control_callback(self, msg):
+        """Callback для управления диалогом."""
+        command = msg.data
+        
+        try:
+            if command == "start_dialog":
+                self._start_dialog()
+            elif command == "end_dialog":
+                self._end_dialog()
+            else:
+                self.get_logger().warning(f"Неизвестная команда диалога: {command}")
+        except Exception as e:
+            self.get_logger().error(f"Ошибка управления диалогом: {e}")
+    
+    def _start_dialog(self):
+        """Начать новый диалог."""
+        try:
+            if not self.isTesting:
+                # Создаем новый thread для диалога
+                self.current_thread = self.sdk.threads.create()
+                self.dialog_active = True
+                self.get_logger().info("🗣️ Новый диалог начат с YandexGPT")
+            else:
+                self.dialog_active = True
+                self.get_logger().info("🗣️ Диалог начат (тестовый режим)")
+        except Exception as e:
+            self.get_logger().error(f"Ошибка запуска диалога: {e}")
+    
+    def _end_dialog(self):
+        """Завершить текущий диалог."""
+        try:
+            if not self.isTesting and self.current_thread:
+                # Удаляем thread диалога
+                self.current_thread.delete()
+                self.current_thread = None
+                
+            self.dialog_active = False
+            self.get_logger().info("🔚 Диалог завершен")
+        except Exception as e:
+            self.get_logger().error(f"Ошибка завершения диалога: {e}")
     
     def shutdown(self):
         """Корректное завершение работы узла."""
         if not self.isTesting:
             try:
+                # Завершаем активный диалог
+                if self.dialog_active:
+                    self._end_dialog()
+                
+                # Удаляем основной thread
+                if hasattr(self, 'main_thread') and self.main_thread:
+                    self.main_thread.delete()
+                
                 if hasattr(self, 'search_index'):
                     self.search_index.delete()
                 if hasattr(self, 'assistant'):

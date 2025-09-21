@@ -49,17 +49,24 @@ class SpeechRecognitionNode(Node):
         pattern = '|'.join(re.escape(word) for word in self.trigger_words_set)
         self.trigger_pattern = re.compile(pattern, re.IGNORECASE)
 
-        # Простое состояние системы
+        # Состояние системы
         self.listening_for_trigger = True  # Ищем триггер
         self.capturing_command = False     # Записываем команду
-        self.no_speech_timeout = 10.0  # Тайм-аут если 5 секунд тишины после триггера
+        self.dialog_mode = False           # Режим диалога
+        self.no_speech_timeout = 10.0      # Тайм-аут тишины после триггера
+        self.dialog_timeout = 30.0         # Тайм-аут диалога (30 секунд)
         
+        # Глобальная блокировка микрофона во время TTS
+        self.microphone_enabled = True
         
         # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
         
         # Publisher для воспроизведения звуков
         self.sound_player_publisher = self.create_publisher(String, '/play', 10)
+        
+        # Publisher для управления диалогом
+        self.dialog_control_publisher = self.create_publisher(String, 'dialog_control', 10)
         
         # Subscriber для управления паузами
         self.create_subscription(
@@ -76,10 +83,11 @@ class SpeechRecognitionNode(Node):
         self._start_audio_capture()
         
         # Запуск простого алгоритма
-        self.get_logger().info("🎤 SpeechRecognitionNode запущен (ДОВЕРЯЕМ VOSK)")
+        self.get_logger().info("🎤 SpeechRecognitionNode запущен (ДИАЛОГОВЫЙ РЕЖИМ)")
         self.get_logger().info(f"   Размер блока: {BLOCK_SIZE} байт")
-        self.get_logger().info(f"   Логика: Триггер → Vosk решает фразу → СРАЗУ в AI")
+        self.get_logger().info(f"   Логика: Триггер → Диалог → 20с тайм-аут")
         self.get_logger().info(f"   Тайм-аут молчания: {self.no_speech_timeout}с после триггера")
+        self.get_logger().info(f"   Тайм-аут диалога: {self.dialog_timeout}с")
         self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
 
     def _setup_parameters(self) -> None:
@@ -172,6 +180,10 @@ class SpeechRecognitionNode(Node):
         """Простой callback - Vosk решает всё сам"""
         if self.shutdown_event.is_set():
             return
+        
+        # КРИТИЧЕСКАЯ ПРОВЕРКА: блокируем микрофон во время TTS
+        if not self.microphone_enabled:
+            return  # Полностью игнорируем аудио
             
         if status:
             self.get_logger().warn(f"Аудио статус: {status}")
@@ -202,39 +214,161 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка аудио callback: {e}")
 
     def _handle_recognized_text(self, text: str) -> None:
-        """Обработка распознанного текста - доверяем Vosk полностью"""
+        """Обработка распознанного текста - режим диалога"""
         try:
             self.get_logger().debug(f"Распознано: '{text}'")
             
-            if self.listening_for_trigger:
-                # Ищем триггерное слово
-                if self._is_valid_trigger(text):
-                    self.get_logger().info(f"✓ Триггер найден: '{text}'")
-                    self._play_sound('trigger.wav')
-                    self._start_command_capture()
-                    
-            elif self.capturing_command:
-                # Vosk решил что фраза готова - сразу отправляем в AI!
-                self.get_logger().info(f"📤 Команда от Vosk: '{text}' - отправка в AI")
-                
-                # Останавливаем тайм-аут "нет речи"
-                if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
-                    self.destroy_timer(self.no_speech_timer)
-                    self.no_speech_timer = None
-                
-                # Получаем DOA направление
-                doa_angle = self._get_doa_angle()
-                if doa_angle is not None:
-                    self.get_logger().info(f"DOA направление: {doa_angle}°")
-                
-                # Воспроизводим звук успеха
-                self._play_sound('success.wav')
-                # Сразу отправляем в AI
-                self._send_to_ai(text)
+            # Проверяем, что распознавание активно
+            if not self._is_recognition_active():
+                self.get_logger().debug(f"Распознавание неактивно, игнорируем: '{text}'")
+                return
             
+            # Поиск триггера (только если не в диалоге)
+            if self.listening_for_trigger and not self.dialog_mode:
+                self._handle_trigger_search(text)
+                return
+            
+            # Обработка команды в любом режиме
+            if self.capturing_command:
+                self._handle_command_input(text)
                 
         except Exception as e:
             self.get_logger().error(f"Ошибка обработки текста: {e}")
+    
+    def _is_recognition_active(self) -> bool:
+        """Проверка активности распознавания"""
+        return self.listening_for_trigger or self.capturing_command
+    
+    def _handle_trigger_search(self, text: str) -> None:
+        """Обработка поиска триггера"""
+        trigger_found, command_after_trigger = self._check_trigger_and_command(text)
+        
+        if not trigger_found:
+            return
+            
+        self.get_logger().info(f"✓ Триггер найден: '{text}' - запуск диалога")
+        self._play_sound('trigger.wav')
+        self._start_dialog()
+        
+        if command_after_trigger:
+            # Есть команда после триггера - сразу отправляем в AI
+            self._process_command(command_after_trigger, "Команда с триггером")
+        else:
+            # Только триггер - переходим к захвату команды
+            self._start_command_capture()
+    
+    def _handle_command_input(self, text: str) -> None:
+        """Обработка ввода команды"""
+        self._stop_command_timer()
+        
+        if self.dialog_mode:
+            self._process_command(text, "Команда в диалоге")
+        else:
+            self._process_command(text, "Первая команда")
+
+    def _process_command(self, command: str, source: str) -> None:
+        """Обработка команды - общая логика для всех источников"""
+        try:
+            self.get_logger().info(f"📤 {source}: '{command}' - отправка в AI")
+            
+            self._log_doa_direction()
+            self._play_sound('success.wav')
+            
+            # Таймер диалога теперь управляется через микрофон в _handle_recognition_control
+            
+            self._send_to_ai(command)
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка обработки команды: {e}")
+            self._handle_command_error()
+    
+    def _log_doa_direction(self) -> None:
+        """Логирование DOA направления"""
+        doa_angle = self._get_doa_angle()
+        if doa_angle is not None:
+            self.get_logger().info(f"DOA направление: {doa_angle}°")
+    
+    def _handle_command_error(self) -> None:
+        """Обработка ошибки команды"""
+        if self.dialog_mode:
+            self._end_dialog()
+        else:
+            self._reset_to_listening()
+
+    def _stop_timer(self, timer_name: str) -> None:
+        """Универсальная остановка таймера"""
+        timer = getattr(self, timer_name, None)
+        if timer:
+            self.destroy_timer(timer)
+            setattr(self, timer_name, None)
+    
+    def _stop_command_timer(self) -> None:
+        """Остановить тайм-аут команды"""
+        self._stop_timer('no_speech_timer')
+    
+    def _start_dialog(self) -> None:
+        """Запустить режим диалога"""
+        try:
+            self.dialog_mode = True
+            self.listening_for_trigger = False
+            
+            # Сообщаем AI о начале диалога
+            msg = String()
+            msg.data = "start_dialog"
+            self.dialog_control_publisher.publish(msg)
+            
+            self.get_logger().info("🗣️ Режим диалога запущен")
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка запуска диалога: {e}")
+    
+    def _end_dialog(self) -> None:
+        """Завершить режим диалога"""
+        try:
+            # Останавливаем все таймеры
+            self._stop_command_timer()
+            self._stop_dialog_timer()
+            
+            # Сообщаем AI о завершении диалога
+            msg = String()
+            msg.data = "end_dialog"
+            self.dialog_control_publisher.publish(msg)
+            
+            # Сбрасываем состояние
+            self.dialog_mode = False
+            self._reset_to_listening()
+            
+            self.get_logger().info("🔚 Диалог завершен")
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка завершения диалога: {e}")
+            self._reset_to_listening()
+    
+    def _reset_dialog_timer(self) -> None:
+        """Сбросить таймер диалога (только если микрофон активен)"""
+        try:
+            self._stop_dialog_timer()
+            if self.dialog_mode and self.microphone_enabled:
+                self.dialog_timer = self.create_timer(self.dialog_timeout, self._dialog_timeout)
+                self.get_logger().debug(f"⏱️ Таймер диалога сброшен ({self.dialog_timeout}с)")
+            else:
+                self.get_logger().debug("⏸️ Таймер диалога не запускается (микрофон отключен)")
+        except Exception as e:
+            self.get_logger().error(f"Ошибка сброса таймера диалога: {e}")
+    
+    def _stop_dialog_timer(self) -> None:
+        """Остановить таймер диалога"""
+        self._stop_timer('dialog_timer')
+    
+    def _dialog_timeout(self) -> None:
+        """Тайм-аут диалога - завершаем диалог"""
+        try:
+            self.get_logger().warn(f"⏰ Тайм-аут диалога: {self.dialog_timeout}с тишины - завершение диалога")
+            self._play_sound('dialog_end.wav')
+            self._end_dialog()
+        except Exception as e:
+            self.get_logger().error(f"Ошибка тайм-аута диалога: {e}")
+            self._end_dialog()
 
     def _start_command_capture(self) -> None:
         """Начать захват команды - ждем первую фразу от Vosk"""
@@ -242,67 +376,78 @@ class SpeechRecognitionNode(Node):
             self.listening_for_trigger = False
             self.capturing_command = True
             
-            # Запускаем тайм-аут "нет речи" - если 5 секунд тишины, отменяем команду
-            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
-                self.destroy_timer(self.no_speech_timer)
-            self.no_speech_timer = self.create_timer(self.no_speech_timeout, self._no_speech_timeout)
-            
-            self.get_logger().info("🎤 Ожидание команды от Vosk (5с на произнесение)")
+            if not self.dialog_mode:
+                # Запускаем тайм-аут "нет речи" только ВНЕ диалога
+                self._stop_command_timer()
+                self.no_speech_timer = self.create_timer(self.no_speech_timeout, self._no_speech_timeout)
+                context = f"произнесение ({self.no_speech_timeout}с)"
+            else:
+                # В диалоге полагаемся только на 30-секундный таймер диалога
+                # 10-секундный таймер команды НЕ нужен!
+                context = f"диалоге (таймер диалога {self.dialog_timeout}с)"
+                
+            self.get_logger().info(f"🎤 Ожидание команды от Vosk на {context}")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка запуска захвата: {e}")
-            self._reset_to_listening()
+            self._handle_command_error()
 
 
     def _no_speech_timeout(self) -> None:
         """Тайм-аут отсутствия речи - отменяем команду"""
         try:
-            self.get_logger().warn(f"⏰ Тайм-аут: {self.no_speech_timeout}с тишины после триггера - отмена команды")
+            self.get_logger().warn(f"⏰ Тайм-аут: {self.no_speech_timeout}с тишины - отмена команды")
             self._play_sound('fail_timeout.wav')
-            self._reset_to_listening()
+            self._handle_command_error()
         except Exception as e:
             self.get_logger().error(f"Ошибка тайм-аута отсутствия речи: {e}")
-            self._reset_to_listening()
+            self._handle_command_error()
 
+    def _check_trigger_and_command(self, text: str) -> tuple[bool, Optional[str]]:
+        """Проверка триггера и извлечение команды после него"""
+        if not text or len(text) > 100:
+            return False, None
+            
+        words = text.lower().split()
+        if not words:
+            return False, None
+            
+        # Проверяем первое слово на триггер
+        first_word = words[0]
+        trigger_found = (first_word in self.trigger_words_set or 
+                        self.trigger_pattern.search(first_word))
+        
+        if not trigger_found:
+            return False, None
+        
+        # Извлекаем команду после триггера (если есть)
+        command = ' '.join(words[1:]).strip() if len(words) > 1 else None
+        return True, command if command else None
 
     def _is_valid_trigger(self, text: str) -> bool:
-        """Максимально быстрая проверка триггерных слов"""
-        if not text:
-            return False
-        
-        # Игнорируем слишком длинные фразы (примерно 8 слов по 10 символов)
-        if len(text) > 80:
-            return False
-            
-        text_lower = text.lower()
-        
-        # Быстрая проверка точного совпадения слов
-        text_words = set(text_lower.split())
-        if text_words & self.trigger_words_set:
-            return True
-        
-        # Быстрый поиск по регулярному выражению
-        return bool(self.trigger_pattern.search(text_lower))
+        """Максимально быстрая проверка триггерных слов (legacy метод)"""
+        trigger_found, _ = self._check_trigger_and_command(text)
+        return trigger_found
 
     def _reset_to_listening(self) -> None:
-        """Сброс в состояние прослушивания"""
+        """Сброс в состояние прослушивания (только если не в диалоге)"""
         try:
-            self.listening_for_trigger = True
+            if not self.dialog_mode:
+                self.listening_for_trigger = True
             self.capturing_command = False
             
-            # Останавливаем таймер "нет речи"
-            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
-                self.destroy_timer(self.no_speech_timer)
-                self.no_speech_timer = None
+            # Останавливаем таймер команды
+            self._stop_command_timer()
             
-            # Сбрасываем recognizer для чистого старта - только в главном потоке
+            # Сбрасываем recognizer для чистого старта
             with self.recognition_lock:
                 try:
                     self.recognizer.Reset()
                 except Exception as e:
                     self.get_logger().error(f"Ошибка сброса recognizer: {e}")
             
-            self.get_logger().debug("🔄 Возврат в режим прослушивания")
+            mode = "диалог" if self.dialog_mode else "прослушивание"
+            self.get_logger().debug(f"🔄 Возврат в режим {mode}")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка сброса состояния: {e}")
@@ -310,10 +455,8 @@ class SpeechRecognitionNode(Node):
     def _send_to_ai(self, text: str) -> None:
         """Отправка команды к AI с переходом в паузу"""
         try:
-            # Останавливаем все таймеры
-            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
-                self.destroy_timer(self.no_speech_timer)
-                self.no_speech_timer = None
+            # Останавливаем таймеры
+            self._stop_command_timer()
             
             # Отправляем к AI
             msg = String()
@@ -323,30 +466,41 @@ class SpeechRecognitionNode(Node):
             # Переходим в паузу и ждем команды на возобновление от AI
             self.listening_for_trigger = False
             self.capturing_command = False
-            self.get_logger().info(f"📤 Отправлено в AI: '{text}' | ⏸️ Ожидание ответа...")
+            
+            mode_info = "(диалог)" if self.dialog_mode else ""
+            self.get_logger().info(f"📤 Отправлено в AI: '{text}' {mode_info} | ⏸️ Ожидание ответа...")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка отправки к AI: {e}")
-            self._reset_to_listening()
+            if self.dialog_mode:
+                self._end_dialog()
+            else:
+                self._reset_to_listening()
 
     def _handle_recognition_control(self, msg: Bool) -> None:
         """Управление состоянием распознавания"""
         try:
             if msg.data:
-                # Возобновление работы - возврат к прослушиванию
-                self._reset_to_listening()
-                self.get_logger().info("✓ Распознавание возобновлено")
+                # Возобновление работы - включаем микрофон
+                self.microphone_enabled = True
+                
+                if self.dialog_mode:
+                    # В диалоге - продолжаем диалог и ЗАПУСКАЕМ таймер диалога
+                    self._start_command_capture()
+                    self._reset_dialog_timer()  # Запускаем таймер диалога
+                    self.get_logger().info("✓ Микрофон включен, распознавание возобновлено (диалог)")
+                else:
+                    # Не в диалоге - возврат к прослушиванию
+                    self._reset_to_listening()
+                    self.get_logger().info("✓ Микрофон включен, распознавание возобновлено")
             else:
-                # Пауза - останавливаем все операции
+                # Пауза - ОТКЛЮЧАЕМ МИКРОФОН и ОСТАНАВЛИВАЕМ таймер диалога
+                self.microphone_enabled = False
                 self.listening_for_trigger = False
                 self.capturing_command = False
-                
-                # Останавливаем все таймеры
-                if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
-                    self.destroy_timer(self.no_speech_timer)
-                    self.no_speech_timer = None
-                
-                self.get_logger().info("⏸️ Распознавание приостановлено")
+                self._stop_command_timer()
+                self._stop_dialog_timer()  # Останавливаем таймер диалога
+                self.get_logger().info("🔇 Микрофон отключен, распознавание приостановлено")
                 
         except Exception as e:
             self.get_logger().error(f"Ошибка управления распознаванием: {e}")
@@ -379,10 +533,9 @@ class SpeechRecognitionNode(Node):
             # Устанавливаем событие завершения
             self.shutdown_event.set()
             
-            # Останавливаем все таймеры
-            if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
-                self.destroy_timer(self.no_speech_timer)
-                self.no_speech_timer = None
+            # Останавливаем таймеры
+            self._stop_command_timer()
+            self._stop_dialog_timer()
             
             # Безопасно очищаем recognizer
             with self.recognition_lock:
@@ -418,8 +571,9 @@ def main(args=None) -> None:
     
     try:
         node = SpeechRecognitionNode()
-        print("🎤 VOSK-BASED РАСПОЗНАВАТЕЛЬ: Wake Word → Vosk Command → DIRECT AI")
-        print("   Состояния: listening_for_trigger ↔ capturing_command")
+        print("🎤 VOSK-BASED РАСПОЗНАВАТЕЛЬ: Wake Word → Dialog Mode → Continuous AI")
+        print("   Состояния: listening_for_trigger ↔ dialog_mode ↔ capturing_command")
+        print("   Режимы: Одиночные команды / Диалог с историей (20с тайм-аут)")
         print("   Vosk полностью контролирует сегментацию фраз")
         rclpy.spin(node)
     except KeyboardInterrupt:

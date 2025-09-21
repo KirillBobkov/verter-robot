@@ -50,6 +50,9 @@ class TextToSpeechNode(Node):
         self._busy_lock = threading.Lock()
         self._busy = False
         self._pending_text = None
+        
+        # Отслеживание текущего aplay процесса
+        self.current_aplay_pid = None
 
         self.get_logger().info(f"Piper TTS готов. Модель: {self.model_path}")
     
@@ -104,6 +107,9 @@ class TextToSpeechNode(Node):
     
     def _synthesize_and_play(self, text):
         try:
+            # СНАЧАЛА ОТКЛЮЧАЕМ МИКРОФОН
+            self._deactivate_speech_recognition()
+            
             # Используем streaming API с оптимизированными параметрами
             process = subprocess.Popen(
                 ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1", "--buffer-size=8192"],
@@ -145,12 +151,23 @@ class TextToSpeechNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения: {e}")
         finally:
+            # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО
             self._activate_speech_recognition()
     
+    
+    def _deactivate_speech_recognition(self):
+        """Отключить распознавание перед TTS"""
+        msg = Bool()
+        msg.data = False
+        self.recognition_publisher.publish(msg)
+        self.get_logger().info("🔇 Отключаю микрофон перед TTS")
+    
     def _activate_speech_recognition(self):
+        """Включить распознавание после TTS"""
         msg = Bool()
         msg.data = True
         self.recognition_publisher.publish(msg)
+        self.get_logger().info("🎤 Включаю микрофон после TTS")
 
 def main(args=None):
     rclpy.init(args=args)
