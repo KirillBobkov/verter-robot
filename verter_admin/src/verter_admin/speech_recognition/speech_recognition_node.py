@@ -45,22 +45,34 @@ class SpeechRecognitionNode(Node):
             'вертера', 'вердер', 'лестер'
         }
         
-            # Создаем регулярное выражение для поиска триггерных слов
-        pattern = '|'.join(re.escape(word) for word in self.trigger_words_set)
-        self.trigger_pattern = re.compile(pattern, re.IGNORECASE)
+        # Стоп-слова для завершения диалога
+        self.stop_words_set = {
+            'стоп', 'хватит', 'спасибо', 'пока', 'досвидания', 'до свидания', 
+            'завершить', 'закончить', 'конец', 'всё', 'все', 'достаточно'
+        }
+        
+            # Создаем регулярные выражения для поиска триггерных и стоп-слов
+        trigger_pattern = '|'.join(re.escape(word) for word in self.trigger_words_set)
+        self.trigger_pattern = re.compile(trigger_pattern, re.IGNORECASE)
+        
+        stop_pattern = '|'.join(re.escape(word) for word in self.stop_words_set)
+        self.stop_pattern = re.compile(stop_pattern, re.IGNORECASE)
 
         # Состояние системы
         self.listening_for_trigger = True  # Ищем триггер
         self.capturing_command = False     # Записываем команду
         self.dialog_mode = False           # Режим диалога
         self.no_speech_timeout = 10.0      # Тайм-аут тишины после триггера
-        self.dialog_timeout = 30.0         # Тайм-аут диалога (30 секунд)
+        self.dialog_timeout = 20.0         # Тайм-аут диалога (20 секунд)
         
         # Глобальная блокировка микрофона во время TTS
         self.microphone_enabled = True
         
         # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
+        
+        # Publisher для отправки ответов в TTS
+        self.response_publisher = self.create_publisher(String, 'ai_response', 10)
         
         # Publisher для воспроизведения звуков
         self.sound_player_publisher = self.create_publisher(String, '/play', 10)
@@ -89,6 +101,7 @@ class SpeechRecognitionNode(Node):
         self.get_logger().info(f"   Тайм-аут молчания: {self.no_speech_timeout}с после триггера")
         self.get_logger().info(f"   Тайм-аут диалога: {self.dialog_timeout}с")
         self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
+        self.get_logger().info(f"   Стоп-слова: {len(self.stop_words_set)} шт. {list(self.stop_words_set)}")
 
     def _setup_parameters(self) -> None:
         """Настройка параметров."""
@@ -100,14 +113,30 @@ class SpeechRecognitionNode(Node):
         vosk.SetLogLevel(-1)
 
     def _find_respeaker_device(self) -> int:
-        """Найти устройство ReSpeaker."""
+        """Найти устройство ReSpeaker или fallback на рабочий микрофон."""
         devices = sd.query_devices()
+        
+        # Сначала ищем ReSpeaker
         for i, device in enumerate(devices):
             if 'ReSpeaker' in device['name'] or 'ArrayUAC10' in device['name']:
-                self.get_logger().info(f"✓ Найден ReSpeaker: {i} - {device['name']}")
+                if device['max_input_channels'] > 0:
+                    self.get_logger().info(f"✓ Найден ReSpeaker: {i} - {device['name']}")
+                    return i
+        
+        # Проверяем устройство 1 (как было раньше)
+        if len(devices) > 1 and devices[1]['max_input_channels'] > 0:
+            self.get_logger().info(f"✓ Используется устройство 1: {devices[1]['name']}")
+            return 1
+        
+        # Fallback: ищем любое рабочее входное устройство
+        for i, device in enumerate(devices):
+            if device['max_input_channels'] > 0:
+                self.get_logger().info(f"✓ Fallback на устройство {i}: {device['name']}")
                 return i
-        self.get_logger().info("ReSpeaker не найден, используется устройство по умолчанию")
-        return 1
+        
+        # Последний вариант - None (дефолт sounddevice)
+        self.get_logger().warn("Входные устройства не найдены, используется дефолт")
+        return None
 
     def _setup_vosk(self) -> None:
         """Инициализация Vosk с оптимизацией для скорости."""
@@ -223,6 +252,12 @@ class SpeechRecognitionNode(Node):
                 self.get_logger().debug(f"Распознавание неактивно, игнорируем: '{text}'")
                 return
             
+            # Проверка стоп-слов (только в режиме диалога или захвата команды)
+            if (self.dialog_mode or self.capturing_command) and self._check_stop_words(text):
+                self.get_logger().info(f"✋ Стоп-слово найдено: '{text}' - завершение диалога")
+                self._handle_stop_word()
+                return
+            
             # Поиск триггера (только если не в диалоге)
             if self.listening_for_trigger and not self.dialog_mode:
                 self._handle_trigger_search(text)
@@ -265,14 +300,30 @@ class SpeechRecognitionNode(Node):
             self._process_command(text, "Команда в диалоге")
         else:
             self._process_command(text, "Первая команда")
+    
+    def _handle_stop_word(self) -> None:
+        """Обработка стоп-слова - завершение диалога с прощальным сообщением"""
+        try:
+            self.get_logger().info("✋ Обработка стоп-слова - отправка прощального сообщения")
+            
+            # Завершаем диалог стандартным способом с прощанием
+            if self.dialog_mode:
+                self._end_dialog(with_farewell=True)
+            else:
+                # Если не в диалоге, просто сбрасываем состояние
+                self._reset_to_listening()
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка обработки стоп-слова: {e}")
+            # В случае ошибки принудительно завершаем диалог
+            if self.dialog_mode:
+                self._end_dialog()
+            else:
+                self._reset_to_listening()
 
     def _process_command(self, command: str, source: str) -> None:
         """Обработка команды - общая логика для всех источников"""
         try:
-            # Проверяем триггерные слова для завершения диалога
-            if self.dialog_mode and self._check_dialog_end_triggers(command):
-                return
-            
             self.get_logger().info(f"📤 {source}: '{command}' - отправка в AI")
             
             self._log_doa_direction()
@@ -326,29 +377,14 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка запуска диалога: {e}")
     
-    def _check_dialog_end_triggers(self, command: str) -> bool:
-        """Проверка триггерных слов для завершения диалога"""
-        # Триггерные слова для завершения диалога
-        end_triggers = [
-            'пока', 'спасибо', 'до свидания', 'хватит', 
-            'остановись', 'замолчи', 'молчи'
-        ]
-        
-        command_lower = command.lower().strip()
-        
-        # Проверяем наличие триггерных слов
-        for trigger in end_triggers:
-            if trigger in command_lower:
-                self.get_logger().info(f"🔚 Обнаружено триггерное слово '{trigger}' - завершение диалога")
-                
-                # Завершаем диалог
-                self._end_dialog()
-                return True
-        
-        return False
 
-    def _end_dialog(self) -> None:
-        """Завершить режим диалога"""
+    def _end_dialog(self, with_farewell: bool = False) -> None:
+        """Завершить режим диалога
+        
+        Args:
+            with_farewell: Если True, отправляет прощальное сообщение в ai_response 
+                         вместо обычного сброса к прослушиванию
+        """
         self.get_logger().info("🔄 ВХОД в _end_dialog()")
         try:
             self.get_logger().info("🔄 Начинаем завершение диалога...")
@@ -357,13 +393,24 @@ class SpeechRecognitionNode(Node):
             self._stop_command_timer()
             self._stop_dialog_timer()
             
+            # Сообщаем AI о завершении диалога
+            msg = String()
+            msg.data = "end_dialog"
+            self.dialog_control_publisher.publish(msg)
+            
             # Сбрасываем состояние
             self.dialog_mode = False
-            # КРИТИЧНО: Включаем микрофон обратно для прослушивания триггеров
-            self.microphone_enabled = True
-            self._reset_to_listening()
-            
-            self.get_logger().info("🔚 Диалог завершен - возврат к прослушиванию триггеров")
+
+            if with_farewell:
+                # Отправляем прощальное сообщение в ai_response для TTS
+                farewell_msg = String()
+                farewell_msg.data = "рад был помочь"
+                self.response_publisher.publish(farewell_msg)
+                self.get_logger().info("🔚 Диалог завершен с прощанием - TTS включит микрофон автоматически")
+            else:
+                # Обычное завершение
+                self._reset_to_listening()
+                self.get_logger().info("🔚 Диалог завершен - ожидание окончания TTS для возврата к триггерам")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка завершения диалога: {e}")
@@ -391,11 +438,12 @@ class SpeechRecognitionNode(Node):
         """Тайм-аут диалога - завершаем диалог"""
         try:
             self.get_logger().warn(f"⏰ Тайм-аут диалога: {self.dialog_timeout}с тишины - завершение диалога")
-            self._play_sound('dialog_end.wav')
             self._end_dialog()
+            self._play_sound('fail_timeout.wav')
         except Exception as e:
             self.get_logger().error(f"Ошибка тайм-аута диалога: {e}")
             self._end_dialog()
+            self._play_sound('fail_timeout.wav')
 
     def _start_command_capture(self) -> None:
         """Начать захват команды - ждем первую фразу от Vosk"""
@@ -455,6 +503,22 @@ class SpeechRecognitionNode(Node):
         """Максимально быстрая проверка триггерных слов (legacy метод)"""
         trigger_found, _ = self._check_trigger_and_command(text)
         return trigger_found
+    
+    def _check_stop_words(self, text: str) -> bool:
+        """Проверка стоп-слов для завершения диалога"""
+        if not text or len(text) > 50:  # Ограничиваем длину для проверки стоп-слов
+            return False
+            
+        words = text.lower().split()
+        if not words:
+            return False
+        
+        # Проверяем первое слово или полную фразу на стоп-слова
+        first_word = words[0]
+        if first_word in self.stop_words_set or self.stop_pattern.search(text.lower()):
+            return True
+            
+        return False
 
     def _reset_to_listening(self) -> None:
         """Сброс в состояние прослушивания (только если не в диалоге)"""
@@ -543,6 +607,7 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка DOA: {e}")
             return None
+
 
     def _play_sound(self, sound_name: str) -> None:
         """Воспроизвести звук через sound_player_node"""

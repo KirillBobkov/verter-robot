@@ -12,8 +12,11 @@ class SoundPlayerNode(Node):
     def __init__(self):
         super().__init__('sound_player_node')
         
-        # Аудиоустройство для воспроизведения (Raspberry Pi 3.5mm jack)
-        self.audio_device = "hw:0,0"  # bcm2835 Headphones
+        # Аудиоустройство для воспроизведения
+        if "WSL_DISTRO_NAME" in os.environ:
+            self.audio_device = "pulse"  # WSL - используем PulseAudio
+        else:
+            self.audio_device = "hw:0,0"  # Raspberry Pi 3.5mm jack
         
         # Процессы воспроизведения для остановки
         self.current_ffmpeg = None

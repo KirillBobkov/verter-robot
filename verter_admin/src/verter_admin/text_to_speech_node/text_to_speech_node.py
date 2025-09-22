@@ -151,7 +151,9 @@ class TextToSpeechNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения: {e}")
         finally:
-            # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО
+            # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО С ЗАДЕРЖКОЙ (предотвращение эхо)
+            import time
+            time.sleep(0.7)  # Задержка 2 секунды для затухания звука в колонках
             self._activate_speech_recognition()
     
     
