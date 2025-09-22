@@ -269,6 +269,10 @@ class SpeechRecognitionNode(Node):
     def _process_command(self, command: str, source: str) -> None:
         """Обработка команды - общая логика для всех источников"""
         try:
+            # Проверяем триггерные слова для завершения диалога
+            if self.dialog_mode and self._check_dialog_end_triggers(command):
+                return
+            
             self.get_logger().info(f"📤 {source}: '{command}' - отправка в AI")
             
             self._log_doa_direction()
@@ -322,26 +326,49 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка запуска диалога: {e}")
     
+    def _check_dialog_end_triggers(self, command: str) -> bool:
+        """Проверка триггерных слов для завершения диалога"""
+        # Триггерные слова для завершения диалога
+        end_triggers = [
+            'пока', 'спасибо', 'до свидания', 'хватит', 
+            'остановись', 'замолчи', 'молчи'
+        ]
+        
+        command_lower = command.lower().strip()
+        
+        # Проверяем наличие триггерных слов
+        for trigger in end_triggers:
+            if trigger in command_lower:
+                self.get_logger().info(f"🔚 Обнаружено триггерное слово '{trigger}' - завершение диалога")
+                
+                # Завершаем диалог
+                self._end_dialog()
+                return True
+        
+        return False
+
     def _end_dialog(self) -> None:
         """Завершить режим диалога"""
+        self.get_logger().info("🔄 ВХОД в _end_dialog()")
         try:
+            self.get_logger().info("🔄 Начинаем завершение диалога...")
             # Останавливаем все таймеры
+            self.get_logger().info("🔄 Останавливаем таймеры...")
             self._stop_command_timer()
             self._stop_dialog_timer()
             
-            # Сообщаем AI о завершении диалога
-            msg = String()
-            msg.data = "end_dialog"
-            self.dialog_control_publisher.publish(msg)
-            
             # Сбрасываем состояние
             self.dialog_mode = False
+            # КРИТИЧНО: Включаем микрофон обратно для прослушивания триггеров
+            self.microphone_enabled = True
             self._reset_to_listening()
             
-            self.get_logger().info("🔚 Диалог завершен")
+            self.get_logger().info("🔚 Диалог завершен - возврат к прослушиванию триггеров")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка завершения диалога: {e}")
+            # В случае ошибки тоже включаем микрофон
+            self.microphone_enabled = True
             self._reset_to_listening()
     
     def _reset_dialog_timer(self) -> None:
@@ -432,8 +459,10 @@ class SpeechRecognitionNode(Node):
     def _reset_to_listening(self) -> None:
         """Сброс в состояние прослушивания (только если не в диалоге)"""
         try:
+            self.get_logger().info(f"🔄 _reset_to_listening: dialog_mode={self.dialog_mode}, microphone_enabled={self.microphone_enabled}")
             if not self.dialog_mode:
                 self.listening_for_trigger = True
+                self.get_logger().info("✓ listening_for_trigger установлен в True")
             self.capturing_command = False
             
             # Останавливаем таймер команды

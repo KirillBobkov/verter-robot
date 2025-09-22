@@ -187,6 +187,7 @@ class AIAssistantNode(Node):
             
         except Exception as e:
             self.get_logger().error(f"Ошибка обработки вопроса: {e}")
+            self._publish_response("Повторите пожалуйста запрос")
     
     def _validate_answer(self, answer: str) -> str:
         """Валидация ответа от AI"""
