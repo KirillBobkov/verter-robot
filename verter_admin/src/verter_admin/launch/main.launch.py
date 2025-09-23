@@ -39,4 +39,12 @@ def generate_launch_description():
             name='sound_player_node',
             output='screen'
         ),
+        
+        # Узел Arduino
+        Node(
+            package='verter_admin',
+            executable='arduino_node',
+            name='arduino_node',
+            output='screen'
+        ),
     ])

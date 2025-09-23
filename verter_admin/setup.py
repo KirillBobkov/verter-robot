@@ -86,7 +86,7 @@ setup(
         # Включаем звуковые файлы в пакет
         *get_sound_files(),
     ],
-    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb', 'yandex-cloud-ml-sdk', 'silero-tts'], 
+    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb', 'yandex-cloud-ml-sdk', 'silero-tts', 'pyserial'], 
     zip_safe=True,
     maintainer='Имя Пользователя',
     maintainer_email='user@example.com',
@@ -100,6 +100,7 @@ setup(
             'text_to_speech_node = verter_admin.text_to_speech_node.text_to_speech_node:main',
             'silero_tts_node = verter_admin.text_to_speech_node.silero_tts_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
+            'arduino_node = verter_admin.arduino.arduino_node:main',
         ],
     },
 )

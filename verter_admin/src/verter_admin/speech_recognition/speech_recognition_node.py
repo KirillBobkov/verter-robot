@@ -68,6 +68,9 @@ class SpeechRecognitionNode(Node):
         # Глобальная блокировка микрофона во время TTS
         self.microphone_enabled = True
         
+        # DOA мониторинг в отдельном потоке
+        self.doa_monitoring_enabled = True
+        
         # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
         
@@ -79,6 +82,9 @@ class SpeechRecognitionNode(Node):
         
         # Publisher для управления диалогом
         self.dialog_control_publisher = self.create_publisher(String, 'dialog_control', 10)
+        
+        # Publisher для команд verter_commands
+        self.command_publisher = self.create_publisher(String, '/verter_commands', 10)
         
         # Subscriber для управления паузами
         self.create_subscription(
@@ -93,6 +99,7 @@ class SpeechRecognitionNode(Node):
         self._setup_vosk()
         self._setup_doa()
         self._start_audio_capture()
+        self._start_doa_monitoring()
         
         # Запуск простого алгоритма
         self.get_logger().info("🎤 SpeechRecognitionNode запущен (ДИАЛОГОВЫЙ РЕЖИМ)")
@@ -182,12 +189,12 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка DOA: {e}")
             self.doa_enabled = False
 
+
     def _start_audio_capture(self) -> None:
         """Запустить захват аудио."""
         self.audio_thread = threading.Thread(target=self._audio_capture_loop)
         self.audio_thread.daemon = True
         self.audio_thread.start()
-
 
     def _audio_capture_loop(self) -> None:
         """Цикл захвата аудио."""
@@ -204,6 +211,35 @@ class SpeechRecognitionNode(Node):
                 self.shutdown_event.wait()
         except Exception as e:
             self.get_logger().error(f"Ошибка аудио: {e}")
+
+    def _start_doa_monitoring(self) -> None:
+        """Запустить мониторинг DOA в отдельном потоке"""
+        if self.doa_enabled:
+            self.doa_thread = threading.Thread(target=self._doa_monitoring_loop)
+            self.doa_thread.daemon = True
+            self.doa_thread.start()
+            self.get_logger().info("✓ DOA мониторинг запущен (1 раз в секунду)")
+        else:
+            self.get_logger().info("DOA мониторинг отключен (устройство недоступно)")
+
+    def _doa_monitoring_loop(self) -> None:
+        """Цикл мониторинга DOA - раз в секунду"""
+        import time
+        while not self.shutdown_event.is_set():
+            try:
+                if (self.doa_monitoring_enabled and self.doa_enabled and 
+                    self.capturing_command):
+                    doa_angle = self._get_doa_angle()
+                    if doa_angle is not None:
+                        self.get_logger().info(f"🎯 DOA мониторинг: {doa_angle}°")
+                        self._send_eye_command_by_doa(doa_angle)
+                
+                # Ждем 1 секунду перед следующим измерением
+                time.sleep(0.7)
+                
+            except Exception as e:
+                self.get_logger().error(f"Ошибка DOA мониторинга: {e}")
+                time.sleep(0.7)  # Ждем даже при ошибке
 
     def _audio_callback(self, indata, frames, time, status) -> None:
         """Простой callback - Vosk решает всё сам"""
@@ -326,7 +362,6 @@ class SpeechRecognitionNode(Node):
         try:
             self.get_logger().info(f"📤 {source}: '{command}' - отправка в AI")
             
-            self._log_doa_direction()
             self._play_sound('success.wav')
             
             # Таймер диалога теперь управляется через микрофон в _handle_recognition_control
@@ -337,11 +372,6 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка обработки команды: {e}")
             self._handle_command_error()
     
-    def _log_doa_direction(self) -> None:
-        """Логирование DOA направления"""
-        doa_angle = self._get_doa_angle()
-        if doa_angle is not None:
-            self.get_logger().info(f"DOA направление: {doa_angle}°")
     
     def _handle_command_error(self) -> None:
         """Обработка ошибки команды"""
@@ -608,6 +638,27 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка DOA: {e}")
             return None
 
+    def _send_eye_command_by_doa(self, doa_angle: int) -> None:
+        """Отправить команду голове на основе DOA угла"""
+        try:
+            if 10 <= doa_angle <= 150:
+                command = "HEAD:CENTER"
+            elif (270 <= doa_angle <= 360) or (0 <= doa_angle < 10):
+                command = "HEAD:RIGHT"
+            elif 150 < doa_angle < 270:
+                command = "HEAD:LEFT"
+            else:
+                self.get_logger().warn(f"Некорректный DOA угол: {doa_angle}°")
+                return
+            
+            msg = String()
+            msg.data = command
+            self.command_publisher.publish(msg)
+            self.get_logger().info(f"Отправлена команда голове: {command} (DOA: {doa_angle}°)")
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка отправки команды голове: {e}")
+
 
     def _play_sound(self, sound_name: str) -> None:
         """Воспроизвести звук через sound_player_node"""
@@ -626,6 +677,9 @@ class SpeechRecognitionNode(Node):
             
             # Устанавливаем событие завершения
             self.shutdown_event.set()
+            
+            # Останавливаем DOA мониторинг
+            self.doa_monitoring_enabled = False
             
             # Останавливаем таймеры
             self._stop_command_timer()
