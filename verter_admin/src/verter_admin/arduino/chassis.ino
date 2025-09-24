@@ -53,28 +53,81 @@ void setup() {
   motor2.setSpeed(0);
 }
 
+// Переменные для управления состоянием
+String currentCommand = "";
+bool isMoving = false;
+unsigned long moveStartTime = 0;
+unsigned long moveDuration = 0;
+
+void executeCommand(String command) {
+  if (command == "CHASSIS:FRONT") {
+    Serial.println("Executing: Forward (7 seconds)");
+    motor1.setSpeed(TARGET_SPEED);
+    motor2.setSpeed(-TARGET_SPEED);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 7000; // 7 секунд
+  }
+  else if (command == "CHASSIS:BACK") {
+    Serial.println("Executing: Backward (7 seconds)");
+    motor1.setSpeed(-TARGET_SPEED);
+    motor2.setSpeed(TARGET_SPEED);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 7000; // 7 секунд
+  }
+  else if (command == "CHASSIS:LEFT") {
+    Serial.println("Executing: Turn Left (3 seconds)");
+    motor1.setSpeed(0);
+    motor2.setSpeed(-TARGET_SPEED);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 3000; // 3 секунды
+  }
+  else if (command == "CHASSIS:RIGHT") {
+    Serial.println("Executing: Turn Right (3 seconds)");
+    motor1.setSpeed(TARGET_SPEED);
+    motor2.setSpeed(0);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 3000; // 3 секунды
+  }
+  else if (command == "CHASSIS:STOP") {
+    Serial.println("Executing: Stop");
+    motor1.setSpeed(0);
+    motor2.setSpeed(0);
+    isMoving = false;
+    moveDuration = 0;
+  }
+}
+
+void stopMovement() {
+  Serial.println("Movement timeout - stopping");
+  motor1.setSpeed(0);
+  motor2.setSpeed(0);
+  isMoving = false;
+  moveDuration = 0;
+}
+
 void loop() {
-  // Вперёд
-  Serial.println("Forward");
-  rampSpeed(TARGET_SPEED, -TARGET_SPEED);  // motor1 вперёд, motor2 инвертирован вперёд
-  Serial.println("Stop");
-  delay(1000);  // Пауза 1 секунда
-
-  // Назад
-  Serial.println("Backward");
-  rampSpeed(-TARGET_SPEED, TARGET_SPEED);  // motor1 назад, motor2 инвертирован назад
-  Serial.println("Stop");
-  delay(1000);  // Пауза 1 секунда
-
-  // Поворот влево (левый мотор назад, правый вперёд)
-  Serial.println("Turn Left");
-  rampSpeed(-TARGET_SPEED, -TARGET_SPEED);  // motor1 назад, motor2 инвертирован вперёд
-  Serial.println("Stop");
-  delay(1000);  // Пауза 1 секунда
-
-  // Поворот вправо (левый мотор вперёд, правый назад)
-  Serial.println("Turn Right");
-  rampSpeed(TARGET_SPEED, TARGET_SPEED);  // motor1 вперёд, motor2 инвертирован назад
-  Serial.println("Stop");
-  delay(1000);  // Пауза 1 секунда
+  // Проверяем наличие команд в Serial
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Убираем лишние пробелы и символы
+    
+    if (command.startsWith("CHASSIS:")) {
+      currentCommand = command;
+      executeCommand(command);
+    }
+  }
+  
+  // Проверяем таймаут движения
+  if (isMoving && moveDuration > 0) {
+    if (millis() - moveStartTime >= moveDuration) {
+      stopMovement();
+    }
+  }
+  
+  // Небольшая задержка для стабильности
+  delay(10);
 }

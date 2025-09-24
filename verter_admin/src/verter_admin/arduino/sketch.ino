@@ -1,5 +1,6 @@
 #include <LedControl.h>
 #include <Servo.h>
+#include <CytronMotorDriver.h>
 
 // Подключение: DIN = 12, CLK = 13, CS = 14, 2 матрицы
 LedControl lc = LedControl(12, 13, 14, 2);
@@ -9,6 +10,10 @@ Servo headServo;        // Поворот влево-вправо (yaw)
 Servo tiltServo;        // Наклон вверх-вниз (pitch)
 const int HEAD_SERVO_PIN = 10;
 const int TILT_SERVO_PIN = 11;
+
+// Подключение Cytron MDD10A: два канала, режим Sign-Magnitude
+CytronMD motor1(PWM_DIR, 4, 5);  // Канал 1: PWM = 4, DIR = 5 (левый мотор)
+CytronMD motor2(PWM_DIR, 6, 7);  // Канал 2: PWM = 6, DIR = 7 (правый мотор, инвертирован)
 
 // Позиции серво для поворота (yaw)
 const int HEAD_CENTER = 90;
@@ -20,10 +25,19 @@ const int TILT_CENTER = 90;
 const int TILT_UP = 75;
 const int TILT_DOWN = 120;
 
+// Параметры шасси
+const int TARGET_SPEED = 77;    // 30% от 255 (255 * 0.3 ≈ 77)
+
 // === Состояния ===
 String currentMode = "ACTION";  // Текущий режим
 unsigned long lastBlink = 0;     // Время последнего моргания
 byte* currentEyePattern; // Текущий паттерн глаз
+
+// Переменные для управления движением шасси
+String currentChassisCommand = "";
+bool isMoving = false;
+unsigned long moveStartTime = 0;
+unsigned long moveDuration = 0;
 
 // === Плавное движение серво ===
 int currentHeadPos = HEAD_CENTER;    // Текущая позиция поворота
@@ -147,6 +161,57 @@ void setServoTargets(int headTarget, int tiltTarget) {
   targetTiltPos = tiltTarget;
 }
 
+// === Функции управления шасси ===
+void executeChassisCommand(String command) {
+  if (command == "CHASSIS:FRONT") {
+    Serial.println("Executing: Forward (7 seconds)");
+    motor1.setSpeed(TARGET_SPEED);
+    motor2.setSpeed(-TARGET_SPEED);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 7000; // 7 секунд
+  }
+  else if (command == "CHASSIS:BACK") {
+    Serial.println("Executing: Backward (7 seconds)");
+    motor1.setSpeed(-TARGET_SPEED);
+    motor2.setSpeed(TARGET_SPEED);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 7000; // 7 секунд
+  }
+  else if (command == "CHASSIS:LEFT") {
+    Serial.println("Executing: Turn Left (3 seconds)");
+    motor1.setSpeed(0);
+    motor2.setSpeed(-TARGET_SPEED);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 3000; // 3 секунды
+  }
+  else if (command == "CHASSIS:RIGHT") {
+    Serial.println("Executing: Turn Right (3 seconds)");
+    motor1.setSpeed(TARGET_SPEED);
+    motor2.setSpeed(0);
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = 3000; // 3 секунды
+  }
+  else if (command == "CHASSIS:STOP") {
+    Serial.println("Executing: Stop");
+    motor1.setSpeed(0);
+    motor2.setSpeed(0);
+    isMoving = false;
+    moveDuration = 0;
+  }
+}
+
+void stopChassisMovement() {
+  Serial.println("Chassis movement timeout - stopping");
+  motor1.setSpeed(0);
+  motor2.setSpeed(0);
+  isMoving = false;
+  moveDuration = 0;
+}
+
 // === Инициализация ===
 void setup() {
   Serial.begin(9600);
@@ -162,6 +227,10 @@ void setup() {
   targetTiltPos = TILT_CENTER;
   headServo.write(HEAD_CENTER);
   tiltServo.write(TILT_CENTER);
+
+  // Инициализация моторов шасси
+  motor1.setSpeed(0);
+  motor2.setSpeed(0);
 
   for (int i = 0; i < 2; i++) {
     lc.shutdown(i, false);     // Включить матрицу
@@ -207,6 +276,7 @@ void loop() {
     String command = Serial.readString();
     command.trim();
 
+    // Обработка команд головы
     if (command == "ACTION") {
       if (currentMode != "ACTION") {
         currentMode = "ACTION";
@@ -245,6 +315,18 @@ void loop() {
       currentEyePattern = bigEyeUp;    // Паттерн bigEyeUp показывает глаза вниз
       showBoth(currentEyePattern);
       Serial.println("Head tilted DOWN");
+    }
+    // Обработка команд шасси
+    else if (command.startsWith("CHASSIS:")) {
+      currentChassisCommand = command;
+      executeChassisCommand(command);
+    }
+  }
+
+  // Проверяем таймаут движения шасси
+  if (isMoving && moveDuration > 0) {
+    if (millis() - moveStartTime >= moveDuration) {
+      stopChassisMovement();
     }
   }
 

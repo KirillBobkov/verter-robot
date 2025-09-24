@@ -50,12 +50,29 @@ class SpeechRecognitionNode(Node):
             'завершить', 'закончить', 'конец', 'всё', 'все', 'достаточно'
         }
         
+        # Команды для шасси робота
+        self.chassis_commands = {
+            'назад': 'CHASSIS:BACK', 
+            'назад': 'CHASSIS:STOP', 
+            'стоп': 'CHASSIS:STOP', 
+            'влево': 'CHASSIS:LEFT',
+            'налево': 'CHASSIS:LEFT',
+            'вправо': 'CHASSIS:RIGHT',
+            'направо': 'CHASSIS:RIGHT',
+            'вперед': 'CHASSIS:FRONT',
+            'прямо': 'CHASSIS:FRONT',
+        }
+        
             # Создаем регулярные выражения для поиска триггерных и стоп-слов
         trigger_pattern = '|'.join(re.escape(word) for word in self.trigger_words_set)
         self.trigger_pattern = re.compile(trigger_pattern, re.IGNORECASE)
         
         stop_pattern = '|'.join(re.escape(word) for word in self.stop_words_set)
         self.stop_pattern = re.compile(stop_pattern, re.IGNORECASE)
+        
+        # Создаем регулярное выражение для команд шасси
+        chassis_pattern = '|'.join(re.escape(word) for word in self.chassis_commands.keys())
+        self.chassis_pattern = re.compile(chassis_pattern, re.IGNORECASE)
 
         # Состояние системы
         self.listening_for_trigger = True  # Ищем триггер
@@ -105,6 +122,7 @@ class SpeechRecognitionNode(Node):
         self.get_logger().info(f"   Тайм-аут диалога: {self.dialog_timeout}с")
         self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
         self.get_logger().info(f"   Стоп-слова: {len(self.stop_words_set)} шт. {list(self.stop_words_set)}")
+        self.get_logger().info(f"   Команды шасси: {len(self.chassis_commands)} шт. {list(self.chassis_commands.keys())}")
         self.get_logger().info(f"   DOA: {'включен' if self.doa_enabled else 'отключен'} (только при capturing)")
 
     def _setup_parameters(self) -> None:
@@ -262,6 +280,13 @@ class SpeechRecognitionNode(Node):
             if (self.dialog_mode or self.capturing_command) and self._check_stop_words(text):
                 self.get_logger().info(f"✋ Стоп-слово найдено: '{text}' - завершение диалога")
                 self._handle_stop_word()
+                return
+            
+            # Проверка команд шасси (в любом режиме)
+            chassis_command = self._check_chassis_commands(text)
+            if chassis_command:
+                self.get_logger().info(f"🚗 Команда шасси найдена: '{text}' -> {chassis_command}")
+                self._send_chassis_command(chassis_command)
                 return
             
             # Поиск триггера (только если не в диалоге)
@@ -515,6 +540,28 @@ class SpeechRecognitionNode(Node):
             
         return False
 
+    def _check_chassis_commands(self, text: str) -> Optional[str]:
+        """Проверка команд для шасси и возврат соответствующей команды"""
+        if not text or len(text) > 50:  # Ограничиваем длину для проверки команд
+            return None
+            
+        words = text.lower().split()
+        if not words:
+            return None
+        
+        # Проверяем каждое слово на команды шасси
+        for word in words:
+            if word in self.chassis_commands:
+                return self.chassis_commands[word]
+                
+        # Также проверяем через регулярное выражение
+        match = self.chassis_pattern.search(text.lower())
+        if match:
+            matched_word = match.group()
+            return self.chassis_commands.get(matched_word)
+            
+        return None
+
     def _reset_to_listening(self) -> None:
         """Сброс в состояние прослушивания (только если не в диалоге)"""
         try:
@@ -627,6 +674,20 @@ class SpeechRecognitionNode(Node):
             
         except Exception as e:
             self.get_logger().error(f"Ошибка отправки команды голове: {e}")
+
+    def _send_chassis_command(self, command: str) -> None:
+        """Отправить команду шасси"""
+        try:
+            msg = String()
+            msg.data = command
+            self.command_publisher.publish(msg)
+            self.get_logger().info(f"🚗 Отправлена команда шасси: {command}")
+            
+            # Воспроизводим звук подтверждения
+            self._play_sound('success.wav')
+            
+        except Exception as e:
+            self.get_logger().error(f"Ошибка отправки команды шасси: {e}")
 
 
     def _play_sound(self, sound_name: str) -> None:
