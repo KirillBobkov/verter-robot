@@ -6,7 +6,6 @@ import threading
 import time
 from typing import Optional
 
-import numpy as np
 import rclpy
 from rclpy.node import Node
 import sounddevice as sd
@@ -68,8 +67,6 @@ class SpeechRecognitionNode(Node):
         # Глобальная блокировка микрофона во время TTS
         self.microphone_enabled = True
         
-        # DOA мониторинг в отдельном потоке
-        self.doa_monitoring_enabled = True
         
         # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
@@ -99,7 +96,6 @@ class SpeechRecognitionNode(Node):
         self._setup_vosk()
         self._setup_doa()
         self._start_audio_capture()
-        self._start_doa_monitoring()
         
         # Запуск простого алгоритма
         self.get_logger().info("🎤 SpeechRecognitionNode запущен (ДИАЛОГОВЫЙ РЕЖИМ)")
@@ -109,6 +105,7 @@ class SpeechRecognitionNode(Node):
         self.get_logger().info(f"   Тайм-аут диалога: {self.dialog_timeout}с")
         self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
         self.get_logger().info(f"   Стоп-слова: {len(self.stop_words_set)} шт. {list(self.stop_words_set)}")
+        self.get_logger().info(f"   DOA: {'включен' if self.doa_enabled else 'отключен'} (только при capturing)")
 
     def _setup_parameters(self) -> None:
         """Настройка параметров."""
@@ -154,10 +151,7 @@ class SpeechRecognitionNode(Node):
         try:
             self.model = vosk.Model(model_path)
             self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate)
-            
-        
             self.recognizer.SetWords(True)  
-            
             self.get_logger().info(f"Vosk оптимизирован для скорости: {model_path}")
         except Exception as e:
             raise RuntimeError(f"Ошибка загрузки Vosk: {e}")
@@ -212,34 +206,6 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка аудио: {e}")
 
-    def _start_doa_monitoring(self) -> None:
-        """Запустить мониторинг DOA в отдельном потоке"""
-        if self.doa_enabled:
-            self.doa_thread = threading.Thread(target=self._doa_monitoring_loop)
-            self.doa_thread.daemon = True
-            self.doa_thread.start()
-            self.get_logger().info("✓ DOA мониторинг запущен (1 раз в секунду)")
-        else:
-            self.get_logger().info("DOA мониторинг отключен (устройство недоступно)")
-
-    def _doa_monitoring_loop(self) -> None:
-        """Цикл мониторинга DOA - раз в секунду"""
-        import time
-        while not self.shutdown_event.is_set():
-            try:
-                if (self.doa_monitoring_enabled and self.doa_enabled and 
-                    self.capturing_command):
-                    doa_angle = self._get_doa_angle()
-                    if doa_angle is not None:
-                        self.get_logger().info(f"🎯 DOA мониторинг: {doa_angle}°")
-                        self._send_eye_command_by_doa(doa_angle)
-                
-                # Ждем 1 секунду перед следующим измерением
-                time.sleep(0.7)
-                
-            except Exception as e:
-                self.get_logger().error(f"Ошибка DOA мониторинга: {e}")
-                time.sleep(0.7)  # Ждем даже при ошибке
 
     def _audio_callback(self, indata, frames, time, status) -> None:
         """Простой callback - Vosk решает всё сам"""
@@ -255,6 +221,10 @@ class SpeechRecognitionNode(Node):
         
         try:
             data = bytes(indata)
+            
+            # Получаем DOA угол в момент capturing_command прямо в audio callback
+            if self.capturing_command:
+                self._handle_doa()
             
             with self.recognition_lock:
                 # Проверяем, что recognizer еще валиден
@@ -529,11 +499,6 @@ class SpeechRecognitionNode(Node):
         command = ' '.join(words[1:]).strip() if len(words) > 1 else None
         return True, command if command else None
 
-    def _is_valid_trigger(self, text: str) -> bool:
-        """Максимально быстрая проверка триггерных слов (legacy метод)"""
-        trigger_found, _ = self._check_trigger_and_command(text)
-        return trigger_found
-    
     def _check_stop_words(self, text: str) -> bool:
         """Проверка стоп-слов для завершения диалога"""
         if not text or len(text) > 50:  # Ограничиваем длину для проверки стоп-слов
@@ -628,15 +593,19 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка управления распознаванием: {e}")
 
-    def _get_doa_angle(self) -> Optional[int]:
-        """Получить текущий DOA угол."""
+    def _handle_doa(self) -> None:
+        """Обработка DOA - получение угла и отправка команды голове."""
         if not self.doa_enabled:
-            return None
+            return
+            
         try:
-            return self.mic_tuning.direction
+            doa_angle = self.mic_tuning.direction
+            if doa_angle is not None:
+                self.get_logger().info(f"🎯 DOA угол: {doa_angle}°")
+                self._send_eye_command_by_doa(doa_angle)
         except Exception as e:
-            self.get_logger().error(f"Ошибка DOA: {e}")
-            return None
+            self.get_logger().error(f"Ошибка получения DOA: {e}")
+
 
     def _send_eye_command_by_doa(self, doa_angle: int) -> None:
         """Отправить команду голове на основе DOA угла"""
@@ -677,9 +646,6 @@ class SpeechRecognitionNode(Node):
             
             # Устанавливаем событие завершения
             self.shutdown_event.set()
-            
-            # Останавливаем DOA мониторинг
-            self.doa_monitoring_enabled = False
             
             # Останавливаем таймеры
             self._stop_command_timer()
