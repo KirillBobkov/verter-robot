@@ -21,6 +21,10 @@ class AIAssistantNode(Node):
         
         # Параметр тестового режима
         self.isTesting = False
+
+                # Publisher для воспроизведения звуков
+        self.sound_player_publisher = self.create_publisher(String, '/play', 10)
+        
         
         # Создание subscriber для получения вопросов
         self.subscription = self.create_subscription(
@@ -56,11 +60,13 @@ class AIAssistantNode(Node):
             
             self.folder = ""
             self.token = ""
-            self.instruction = "Выполняй поиск по базе знаний и не выдумывай ответ"
+            self.instruction = "Выполняй поиск по базе знаний и не выдумывай ответ. "
             
             # Инициализация SDK и индекса
             self._initialize_yandex_sdk()
             self.get_logger().info("AI Assistant Node инициализирован успешно")
+            self._play_sound('trigger.wav')
+
     
     def _initialize_yandex_sdk(self):
         """Инициализация YandexGPT SDK и создание поискового индекса."""
@@ -110,7 +116,7 @@ class AIAssistantNode(Node):
             # Создаем ассистента
             self.assistant = self.sdk.assistants.create(
                 "yandexgpt",
-                instruction="Ты — Вертер, робот-администратор. Ищи информацию в документах, если не нашел - отвечай из своих собственных данных на которой ты обучен. Адаптируй ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах).",
+                instruction="Ты — Вертер, робот-администратор, умеешь говорить, поворачивать головой, и ездить. Ищи информацию в документах, и из данных на которых ты обучен. Ответ должен быть короче 200 символов. Адаптируй свой ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах).",
                 tools=[tool],
             )
             
@@ -127,6 +133,17 @@ class AIAssistantNode(Node):
             self.get_logger().error(f"Ошибка инициализации YandexGPT SDK: {e}")
             raise
     
+    def _play_sound(self, sound_name: str) -> None:
+        """Воспроизвести звук через sound_player_node"""
+        try:
+            msg = String()
+            msg.data = sound_name
+            self.sound_player_publisher.publish(msg)
+            self.get_logger().info(f"🔊 Воспроизводится звук: {sound_name}")
+        except Exception as e:
+            self.get_logger().error(f"Ошибка воспроизведения звука {sound_name}: {e}")
+
+
     def question_callback(self, msg):
         """Callback для обработки входящих вопросов."""
         question = msg.data

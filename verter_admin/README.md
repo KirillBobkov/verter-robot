@@ -75,6 +75,43 @@ ros2 launch verter_admin main.launch.py
 ros2 run verter_admin speech_recognition_node
 ros2 run verter_admin ai_assistant_node
 
-export RCUTILS_CONSOLE_OUTPUT_FORMAT="{message}"
+## Автозапуск через systemd-user
 
-ros2 launch verter_admin silero.launch.py
+```bash
+# 1. Скопировать unit в директорию пользователя
+mkdir -p ~/.config/systemd/user
+cp /home/verter/verter-robot/verter-admin.service ~/.config/systemd/user/
+
+# 2. Перечитать конфигурацию
+systemctl --user daemon-reload
+
+# 3. Включить автозапуск и запустить сразу
+systemctl --user enable --now verter-admin.service
+
+# 4. Проверить статус
+systemctl --user status verter-admin
+
+# 5. Смотреть лог в реальном времени
+journalctl --user -fu verter-admin
+
+# 6. Перезапустить вручную (при обновлениях)
+systemctl --user restart verter-admin
+
+# 7. (Опционально) Разрешить запуск без GUI-логина
+sudo loginctl enable-linger verter
+
+# 8. Отключить автозапуск
+systemctl --user disable --now verter-admin
+
+systemctl --user stop verter-admin
+
+systemctl --user status verter-admin.service
+
+```
+
+systemctl --user daemon-reload
+systemctl --user restart verter-admin
+journalctl --user -fu verter-admin
+
+
+nmcli dev wifi connect "MySSID" password "MySuperSecret"

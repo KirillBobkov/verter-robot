@@ -1,0 +1,19 @@
+[Unit]
+Description=Verter Admin
+After=graphical-session.target sound.target
+PartOf=graphical-session.target         # стоп при выходе из сессии
+
+[Service]
+Type=simple
+WorkingDirectory=/home/verter/verter-robot
+ExecStartPre=/bin/sleep 5
+ExecStart=/home/verter/verter-robot/start_verter_admin.sh
+ExecStop=/home/verter/verter-robot/stop_verter_admin.sh
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=graphical-session.target

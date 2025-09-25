@@ -20,7 +20,7 @@ from .tuning import Tuning
 # Константы для максимальной скорости
 DEFAULT_MODEL_NAME = 'vosk-model-small-ru-0.22'
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 4000  # Уменьшенный размер блока для быстрого отклика
+BLOCK_SIZE = 6000  # Уменьшенный размер блока для быстрого отклика
 CHANNELS = 1
 
 RESPEAKER_VENDOR_ID = 0x2886
@@ -53,8 +53,8 @@ class SpeechRecognitionNode(Node):
         # Команды для шасси робота
         self.chassis_commands = {
             'назад': 'CHASSIS:BACK', 
-            'назад': 'CHASSIS:STOP', 
             'стоп': 'CHASSIS:STOP', 
+            'остановись': 'CHASSIS:STOP',
             'влево': 'CHASSIS:LEFT',
             'налево': 'CHASSIS:LEFT',
             'вправо': 'CHASSIS:RIGHT',
@@ -79,11 +79,13 @@ class SpeechRecognitionNode(Node):
         self.capturing_command = False     # Записываем команду
         self.dialog_mode = False           # Режим диалога
         self.no_speech_timeout = 10.0      # Тайм-аут тишины после триггера
-        self.dialog_timeout = 20.0         # Тайм-аут диалога (20 секунд)
+        self.dialog_timeout = 30.0         # Тайм-аут диалога (20 секунд)
         
         # Глобальная блокировка микрофона во время TTS
+        # --- Anti-spam for DOA eye commands ---
+        self.last_eye_command: Optional[str] = None
+
         self.microphone_enabled = True
-        
         
         # Publisher для отправки к AI
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
@@ -112,6 +114,8 @@ class SpeechRecognitionNode(Node):
         self._setup_parameters()
         self._setup_vosk()
         self._setup_doa()
+        # Запуск отдельного треда для периодического чтения DOA
+        self._start_doa_thread()
         self._start_audio_capture()
         
         # Запуск простого алгоритма
@@ -201,7 +205,24 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка DOA: {e}")
             self.doa_enabled = False
 
+    def _start_doa_thread(self) -> None:
+        """Запуск отдельного треда, который опрашивает DOA каждые 3 с."""
+        self.doa_thread = threading.Thread(target=self._doa_loop, daemon=True)
+        self.doa_thread.start()
 
+    def _doa_loop(self) -> None:
+        """Периодический опрос DOA (каждые 3 с)."""
+        while not self.shutdown_event.is_set():
+            try:
+                # Рассчитываем угол только во время захвата команды,
+                # чтобы не спамить голову лишними командами
+                if self.capturing_command and self.microphone_enabled:
+                    self._handle_doa()
+            except Exception as e:
+                self.get_logger().error(f"Ошибка DOA loop: {e}")
+            # Ожидаем 3 с или выходим, если ноду попросили завершиться
+            if self.shutdown_event.wait(2.0):
+                break
     def _start_audio_capture(self) -> None:
         """Запустить захват аудио."""
         self.audio_thread = threading.Thread(target=self._audio_capture_loop)
@@ -239,10 +260,7 @@ class SpeechRecognitionNode(Node):
         
         try:
             data = bytes(indata)
-            
-            # Получаем DOA угол в момент capturing_command прямо в audio callback
-            if self.capturing_command:
-                self._handle_doa()
+            # DOA теперь обрабатывается в отдельном треде (_doa_loop)
             
             with self.recognition_lock:
                 # Проверяем, что recognizer еще валиден
@@ -282,8 +300,10 @@ class SpeechRecognitionNode(Node):
                 self._handle_stop_word()
                 return
             
-            # Проверка команд шасси (в любом режиме)
-            chassis_command = self._check_chassis_commands(text)
+            # Проверка команд шасси (только в диалоге или при захвате команды)
+            chassis_command = None
+            if self.dialog_mode or self.capturing_command:
+                chassis_command = self._check_chassis_commands(text)
             if chassis_command:
                 self.get_logger().info(f"🚗 Команда шасси найдена: '{text}' -> {chassis_command}")
                 self._send_chassis_command(chassis_command)
@@ -326,11 +346,17 @@ class SpeechRecognitionNode(Node):
     def _handle_command_input(self, text: str) -> None:
         """Обработка ввода команды"""
         self._stop_command_timer()
-        
+
+        # Игнорируем слишком короткие слова/фразы (меньше 5 символов)
+        cleaned = text.strip()
+        if len(cleaned) < 5:
+            self.get_logger().debug(f"Команда проигнорирована как слишком короткая: '{cleaned}'")
+            return
+
         if self.dialog_mode:
-            self._process_command(text, "Команда в диалоге")
+            self._process_command(cleaned, "Команда в диалоге")
         else:
-            self._process_command(text, "Первая команда")
+            self._process_command(cleaned, "Первая команда")
     
     def _handle_stop_word(self) -> None:
         """Обработка стоп-слова - завершение диалога с прощальным сообщением"""
@@ -667,6 +693,12 @@ class SpeechRecognitionNode(Node):
                 self.get_logger().warn(f"Некорректный DOA угол: {doa_angle}°")
                 return
             
+            # --- Debounce: пропускаем повторяющиеся команды подряд ---
+            if command == self.last_eye_command:
+                self.get_logger().debug(f"⚠️ Пропускаем дублирующую DOA команду {command}")
+                return
+            self.last_eye_command = command
+
             msg = String()
             msg.data = command
             self.command_publisher.publish(msg)

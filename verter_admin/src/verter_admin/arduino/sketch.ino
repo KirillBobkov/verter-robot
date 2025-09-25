@@ -5,19 +5,19 @@
 // Подключение: DIN = 12, CLK = 13, CS = 14, 2 матрицы
 LedControl lc = LedControl(12, 13, 14, 2);
 
+// Подключение Cytron MDD10A: два канала, режим Sign-Magnitude
+CytronMD motor1(PWM_DIR, 4, 5);  // Канал 1: PWM = 4, DIR = 5 (левый мотор)
+CytronMD motor2(PWM_DIR, 6, 7);  // Канал 2: PWM = 6, DIR = 7 (правый мотор, инвертирован)
+
 // Серво приводы для поворота и наклона головы
 Servo headServo;        // Поворот влево-вправо (yaw)
 Servo tiltServo;        // Наклон вверх-вниз (pitch)
 const int HEAD_SERVO_PIN = 10;
 const int TILT_SERVO_PIN = 11;
 
-// Подключение Cytron MDD10A: два канала, режим Sign-Magnitude
-CytronMD motor1(PWM_DIR, 4, 5);  // Канал 1: PWM = 4, DIR = 5 (левый мотор)
-CytronMD motor2(PWM_DIR, 6, 7);  // Канал 2: PWM = 6, DIR = 7 (правый мотор, инвертирован)
-
 // Позиции серво для поворота (yaw)
 const int HEAD_CENTER = 90;
-const int HEAD_LEFT =135;
+const int HEAD_LEFT = 135;
 const int HEAD_RIGHT = 45;
 
 // Позиции серво для наклона (pitch)
@@ -25,19 +25,10 @@ const int TILT_CENTER = 90;
 const int TILT_UP = 75;
 const int TILT_DOWN = 120;
 
-// Параметры шасси
-const int TARGET_SPEED = 77;    // 30% от 255 (255 * 0.3 ≈ 77)
-
 // === Состояния ===
 String currentMode = "ACTION";  // Текущий режим
 unsigned long lastBlink = 0;     // Время последнего моргания
 byte* currentEyePattern; // Текущий паттерн глаз
-
-// Переменные для управления движением шасси
-String currentChassisCommand = "";
-bool isMoving = false;
-unsigned long moveStartTime = 0;
-unsigned long moveDuration = 0;
 
 // === Плавное движение серво ===
 int currentHeadPos = HEAD_CENTER;    // Текущая позиция поворота
@@ -46,6 +37,21 @@ int targetHeadPos = HEAD_CENTER;     // Целевая позиция повор
 int targetTiltPos = TILT_CENTER;     // Целевая позиция наклона
 unsigned long lastServoUpdate = 0;   // Время последнего обновления серво
 const int SERVO_SPEED = 1;           // Скорость движения (градусы за шаг)
+
+// === Параметры шасси ===
+const int TARGET_SPEED = 77;        // 30% от 255 (255 * 0.3 ≈ 77)
+const int RAMP_STEPS = 15;           // Количество шагов для плавного разгона/торможения
+const int RAMP_DELAY = 30;           // Задержка между шагами (мс)
+
+// === Переменные для плавного движения шасси ===
+int currentSpeed1 = 0;               // Текущая скорость левого мотора
+int currentSpeed2 = 0;               // Текущая скорость правого мотора
+int targetSpeed1 = 0;                // Целевая скорость левого мотора
+int targetSpeed2 = 0;                // Целевая скорость правого мотора
+unsigned long lastMotorUpdate = 0;   // Время последнего обновления моторов
+bool isMoving = false;               // Флаг движения
+unsigned long moveStartTime = 0;     // Время начала движения
+unsigned long moveDuration = 0;      // Длительность движения
 
 // === Большие круглые глаза (ACTION) ===
 byte bigEyeOpen[8] = {
@@ -114,7 +120,6 @@ byte bigEyeRight[8] = {
   B00011100
 };
 
-
 // === Плавное движение серво ===
 void updateServoPositions() {
   unsigned long currentTime = millis();
@@ -161,53 +166,66 @@ void setServoTargets(int headTarget, int tiltTarget) {
   targetTiltPos = tiltTarget;
 }
 
-// === Функции управления шасси ===
-void executeChassisCommand(String command) {
-  if (command == "CHASSIS:FRONT") {
-    Serial.println("Executing: Forward (7 seconds)");
-    motor1.setSpeed(TARGET_SPEED);
-    motor2.setSpeed(-TARGET_SPEED);
-    isMoving = true;
-    moveStartTime = millis();
-    moveDuration = 7000; // 7 секунд
-  }
-  else if (command == "CHASSIS:BACK") {
-    Serial.println("Executing: Backward (7 seconds)");
-    motor1.setSpeed(-TARGET_SPEED);
-    motor2.setSpeed(TARGET_SPEED);
-    isMoving = true;
-    moveStartTime = millis();
-    moveDuration = 7000; // 7 секунд
-  }
-  else if (command == "CHASSIS:LEFT") {
-    Serial.println("Executing: Turn Left (3 seconds)");
-    motor1.setSpeed(0);
-    motor2.setSpeed(-TARGET_SPEED);
-    isMoving = true;
-    moveStartTime = millis();
-    moveDuration = 3000; // 3 секунды
-  }
-  else if (command == "CHASSIS:RIGHT") {
-    Serial.println("Executing: Turn Right (3 seconds)");
-    motor1.setSpeed(TARGET_SPEED);
-    motor2.setSpeed(0);
-    isMoving = true;
-    moveStartTime = millis();
-    moveDuration = 3000; // 3 секунды
-  }
-  else if (command == "CHASSIS:STOP") {
-    Serial.println("Executing: Stop");
-    motor1.setSpeed(0);
-    motor2.setSpeed(0);
-    isMoving = false;
-    moveDuration = 0;
+// === Плавное движение шасси ===
+void updateMotorSpeeds() {
+  unsigned long currentTime = millis();
+  
+  // Обновляем скорости каждые RAMP_DELAY мс для плавности
+  if (currentTime - lastMotorUpdate > RAMP_DELAY) {
+    bool changed = false;
+    
+    // Плавно изменяем скорость левого мотора
+    if (currentSpeed1 < targetSpeed1) {
+      int step = (targetSpeed1 - currentSpeed1) / RAMP_STEPS + 1;
+      currentSpeed1 += step;
+      if (currentSpeed1 > targetSpeed1) currentSpeed1 = targetSpeed1;
+      changed = true;
+    } else if (currentSpeed1 > targetSpeed1) {
+      int step = (currentSpeed1 - targetSpeed1) / RAMP_STEPS + 1;
+      currentSpeed1 -= step;
+      if (currentSpeed1 < targetSpeed1) currentSpeed1 = targetSpeed1;
+      changed = true;
+    }
+    
+    // Плавно изменяем скорость правого мотора
+    if (currentSpeed2 < targetSpeed2) {
+      int step = (targetSpeed2 - currentSpeed2) / RAMP_STEPS + 1;
+      currentSpeed2 += step;
+      if (currentSpeed2 > targetSpeed2) currentSpeed2 = targetSpeed2;
+      changed = true;
+    } else if (currentSpeed2 > targetSpeed2) {
+      int step = (currentSpeed2 - targetSpeed2) / RAMP_STEPS + 1;
+      currentSpeed2 -= step;
+      if (currentSpeed2 < targetSpeed2) currentSpeed2 = targetSpeed2;
+      changed = true;
+    }
+    
+    // Применяем изменения только если были изменения
+    if (changed) {
+      motor1.setSpeed(currentSpeed1);
+      motor2.setSpeed(currentSpeed2);
+    }
+    
+    lastMotorUpdate = currentTime;
   }
 }
 
-void stopChassisMovement() {
-  Serial.println("Chassis movement timeout - stopping");
-  motor1.setSpeed(0);
-  motor2.setSpeed(0);
+// Установка целевых скоростей моторов
+void setMotorTargets(int speed1, int speed2, unsigned long duration = 0) {
+  targetSpeed1 = speed1;
+  targetSpeed2 = speed2;
+  
+  if (duration > 0) {
+    isMoving = true;
+    moveStartTime = millis();
+    moveDuration = duration;
+  }
+}
+
+// Остановка движения
+void stopChassis() {
+  targetSpeed1 = 0;
+  targetSpeed2 = 0;
   isMoving = false;
   moveDuration = 0;
 }
@@ -220,17 +238,21 @@ void setup() {
   headServo.attach(HEAD_SERVO_PIN);
   tiltServo.attach(TILT_SERVO_PIN);
   
-  // Устанавливаем начальные позиции
+  // Устанавливаем начальные позиции серво
   currentHeadPos = HEAD_CENTER;
   currentTiltPos = TILT_CENTER;
   targetHeadPos = HEAD_CENTER;
   targetTiltPos = TILT_CENTER;
   headServo.write(HEAD_CENTER);
   tiltServo.write(TILT_CENTER);
-
+  
   // Инициализация моторов шасси
   motor1.setSpeed(0);
   motor2.setSpeed(0);
+  currentSpeed1 = 0;
+  currentSpeed2 = 0;
+  targetSpeed1 = 0;
+  targetSpeed2 = 0;
 
   for (int i = 0; i < 2; i++) {
     lc.shutdown(i, false);     // Включить матрицу
@@ -276,7 +298,6 @@ void loop() {
     String command = Serial.readString();
     command.trim();
 
-    // Обработка команд головы
     if (command == "ACTION") {
       if (currentMode != "ACTION") {
         currentMode = "ACTION";
@@ -315,18 +336,34 @@ void loop() {
       currentEyePattern = bigEyeUp;    // Паттерн bigEyeUp показывает глаза вниз
       showBoth(currentEyePattern);
       Serial.println("Head tilted DOWN");
-    }
-    // Обработка команд шасси
-    else if (command.startsWith("CHASSIS:")) {
-      currentChassisCommand = command;
-      executeChassisCommand(command);
+    } else if (command == "CHASSIS:FRONT") {
+      // Движение вперед
+      setMotorTargets(TARGET_SPEED, -TARGET_SPEED, 2000);
+      Serial.println("Chassis moving FRONT");
+    } else if (command == "CHASSIS:BACK") {
+      // Движение назад
+      setMotorTargets(-TARGET_SPEED, TARGET_SPEED, 2000);
+      Serial.println("Chassis moving BACK");
+    } else if (command == "CHASSIS:LEFT") {
+      // Поворот влево
+      setMotorTargets(0, -TARGET_SPEED, 3000);
+      Serial.println("Chassis turning LEFT");
+    } else if (command == "CHASSIS:RIGHT") {
+      // Поворот вправо
+      setMotorTargets(TARGET_SPEED, 0, 3000);
+      Serial.println("Chassis turning RIGHT");
+    } else if (command == "CHASSIS:STOP") {
+      // Остановка
+      stopChassis();
+      Serial.println("Chassis STOPPED");
     }
   }
 
-  // Проверяем таймаут движения шасси
+  // Проверка таймаута движения шасси
   if (isMoving && moveDuration > 0) {
     if (millis() - moveStartTime >= moveDuration) {
-      stopChassisMovement();
+      stopChassis();
+      Serial.println("Chassis movement timeout - stopping");
     }
   }
 
@@ -337,6 +374,9 @@ void loop() {
 
   // Обновление плавного движения серво
   updateServoPositions();
+  
+  // Обновление плавного движения шасси
+  updateMotorSpeeds();
 
   delay(10);  // Уменьшенная задержка для более плавного движения
 }

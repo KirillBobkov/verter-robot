@@ -16,7 +16,7 @@ class SoundPlayerNode(Node):
         if "WSL_DISTRO_NAME" in os.environ:
             self.audio_device = "pulse"  # WSL - используем PulseAudio
         else:
-            self.audio_device = "hw:0,0"  # Raspberry Pi 3.5mm jack
+            self.audio_device = "pulse"  # Используем PulseAudio
         
         # Процессы воспроизведения для остановки
         self.current_ffmpeg = None
@@ -104,7 +104,7 @@ class SoundPlayerNode(Node):
                 # Прямое воспроизведение wav файла - БЫСТРО!
                 self.current_aplay = subprocess.Popen(
                     ['aplay', '-D', self.audio_device, '-q', sound_path],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     env=self.env
                 )
                 self.current_ffmpeg = None  # ffmpeg не нужен
@@ -182,6 +182,9 @@ class SoundPlayerNode(Node):
         try:
             if self.current_aplay:
                 self.current_aplay.wait()
+                if self.current_aplay.returncode != 0:
+                    stderr = self.current_aplay.stderr.read().decode() if self.current_aplay.stderr else ''
+                    self.get_logger().error(f"aplay завершился с кодом {self.current_aplay.returncode}: {stderr}")
                 
             # Очистка процессов после завершения
             if self.current_aplay and self.current_aplay.poll() is not None:

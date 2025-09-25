@@ -110,12 +110,16 @@ class TextToSpeechNode(Node):
             # СНАЧАЛА ОТКЛЮЧАЕМ МИКРОФОН
             self._deactivate_speech_recognition()
             
+            # Добавляем логирование для отладки
+            
+            self.get_logger().info(f"Начинаем синтез речи: '{text[:50]}...' на устройстве {self.audio_device}")
+            
             # Используем streaming API с оптимизированными параметрами
             process = subprocess.Popen(
                 ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1", "--buffer-size=8192"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,  # Захватываем stderr для отладки
                 env=self.env
             )
             
@@ -146,7 +150,14 @@ class TextToSpeechNode(Node):
                     pass
             
             process.stdin.close()
-            process.wait()
+            
+            # Ждем завершения и проверяем ошибки
+            return_code = process.wait()
+            if return_code != 0:
+                stderr_output = process.stderr.read().decode() if process.stderr else "no stderr"
+                self.get_logger().error(f"aplay завершился с кодом {return_code}, stderr: {stderr_output}")
+            else:
+                self.get_logger().info("✓ Аудио воспроизведено успешно")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения: {e}")
