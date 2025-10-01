@@ -112,8 +112,6 @@ class TextToSpeechNode(Node):
             
             # Добавляем логирование для отладки
             
-            self.get_logger().info(f"Начинаем синтез речи: '{text[:50]}...' на устройстве {self.audio_device}")
-            
             # Используем streaming API с оптимизированными параметрами
             process = subprocess.Popen(
                 ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1", "--buffer-size=8192"],

@@ -11,6 +11,7 @@ from yandex_cloud_ml_sdk import YCloudML
 from yandex_cloud_ml_sdk.search_indexes import (
     StaticIndexChunkingStrategy,
     TextSearchIndexType,
+    VectorSearchIndexType,
 )
 
 class AIAssistantNode(Node):
@@ -24,8 +25,7 @@ class AIAssistantNode(Node):
 
                 # Publisher для воспроизведения звуков
         self.sound_player_publisher = self.create_publisher(String, '/play', 10)
-        
-        
+
         # Создание subscriber для получения вопросов
         self.subscription = self.create_subscription(
             String,
@@ -44,6 +44,24 @@ class AIAssistantNode(Node):
             self.dialog_control_callback,
             10
         )
+
+        
+        # Переменная file_labels содержит метаданные,
+        # которые будут присвоены файлам-источникам.
+        self.file_labels = [
+            {"hospital": "Файл с расписанием врачей, расположением кабинетов, временем работы"},
+            {"sicks": "Файл с болезнями, их симптомами и лечением"},
+            {"zdorovie": "Файл с профилактикой заболеваний"},
+            {"zrobot": "Файл с информацией о роботе"},
+        ]
+
+        self.index_label = {
+            "hospital": "Индекс содержит информацию о больнице",
+            "sicks": "Индекс содержит информацию о болезнях",
+            "zdorovie": "Индекс содержит информацию о профилактике заболеваний",
+            "zrobot": "Индекс содержит информацию о роботе",
+        }
+
         
         if self.isTesting:
             self.get_logger().info("AI Assistant Node запущен в ТЕСТОВОМ режиме")
@@ -60,12 +78,13 @@ class AIAssistantNode(Node):
             
             self.folder = ""
             self.token = ""
-            self.instruction = "Выполняй поиск по базе знаний и не выдумывай ответ. "
+            self.instruction = "Выполняй поиск по базе знаний"
             
             # Инициализация SDK и индекса
             self._initialize_yandex_sdk()
             self.get_logger().info("AI Assistant Node инициализирован успешно")
-            self._play_sound('trigger.wav')
+            self._publish_response("Готов к работе")
+            
 
     
     def _initialize_yandex_sdk(self):
@@ -77,14 +96,30 @@ class AIAssistantNode(Node):
             )
             
             # Загружаем файлы
-            paths = pathlib.Path(self.mypath).iterdir()
+            paths = list(pathlib.Path(self.mypath).iterdir())
             files = []
-            for path in paths:
-                if path.is_file():
+            
+            # Фильтруем только файлы и сортируем для предсказуемости
+            file_paths = sorted([p for p in paths if p.is_file()])
+            
+            for i, path in enumerate(file_paths):
+                if i < len(self.file_labels):
                     file = self.sdk.files.upload(
                         path,
-                        ttl_days=5,
+                        ttl_days=2,
                         expiration_policy="static",
+                        name=str(path),
+                        labels=self.file_labels[i],
+                    )
+                    files.append(file)
+                else:
+                    # Если файлов больше чем лейблов, используем последний лейбл
+                    file = self.sdk.files.upload(
+                        path,
+                        ttl_days=2,
+                        expiration_policy="static",
+                        name=str(path),
+                        labels=self.file_labels[-1],
                     )
                     files.append(file)
             
@@ -93,30 +128,21 @@ class AIAssistantNode(Node):
             # Создаем поисковый индекс
             operation = self.sdk.search_indexes.create_deferred(
                 files,
-                index_type=TextSearchIndexType(
-                    chunking_strategy=StaticIndexChunkingStrategy(
-                        max_chunk_size_tokens=700,
-                        chunk_overlap_tokens=300,
-                    )
-                ),
+                index_type=VectorSearchIndexType(),
+                name="verter-medical-index",
+                labels=self.index_label, 
             )
             
             # Ожидаем создания индекса
             self.search_index = operation.wait()
             
             # Создаем инструмент поиска
-            tool = self.sdk.tools.search_index(
-                self.search_index,
-                call_strategy={
-                    "type": "function",
-                    "function": {"name": "guide", "instruction": self.instruction},
-                },
-            )
+            tool = self.sdk.tools.search_index(self.search_index)
             
             # Создаем ассистента
             self.assistant = self.sdk.assistants.create(
                 "yandexgpt",
-                instruction="Ты — Вертер, робот-администратор, умеешь говорить, поворачивать головой, и ездить. Ищи информацию в документах, и из данных на которых ты обучен. Ответ должен быть короче 200 символов. Адаптируй свой ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах).",
+                instruction="Ты — Вертер, робот-администратор, стоишь в больнице на 1 этаже. Ты можешь говорить на любые темы без ограничений. Ищи информацию в базе знаний. Ответ должен быть короче 200 символов. Избегай форматирования. Адаптируй свой ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах). Если не нашел информации в базе знаний - отвечай в свободном стиле без ограничений",
                 tools=[tool],
             )
             

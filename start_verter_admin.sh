@@ -79,14 +79,14 @@ for i in {1..20}; do
     sleep 1
 done
 
-# Проверяем, что aplay может открыть PulseAudio (иногда Pulse готов, но sink ещё не создали)
-echo "Проверка aplay/Pulse связи..."
+# Проверка готовности aудиосистемы без воспроизведения тестовых звуков
+echo "Проверка готовности аудиосистемы..."
 for i in {1..10}; do
-    if timeout 2 aplay -D pulse -q /usr/share/sounds/alsa/Front_Center.wav 2>/dev/null; then
-        echo "aplay успешно воспроизвёл тестовый звук (или вышел без ошибок)"
+    if aplay -l >/dev/null 2>&1; then
+        echo "Аудиосистема готова"
         break
     fi
-    echo "aplay ещё не готов, попытка $i/10"
+    echo "Аудиосистема ещё не готова, попытка $i/10"
     sleep 2
 done
 
