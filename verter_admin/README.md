@@ -1,117 +1,280 @@
-# Verter Admin - Пакет распознавания речи
+# Verter Admin - Система голосового управления роботом
 
-Простой ROS2 пакет для распознавания речи с помощью библиотеки Vosk.
+ROS2 пакет для создания интеллектуальной системы голосового управления роботом с распознаванием речи, AI-ассистентом и синтезом речи.
+
+## Описание системы
+
+Verter Admin - это комплексная система, состоящая из нескольких взаимосвязанных нод, которые обеспечивают:
+
+- **Распознавание речи** с помощью библиотеки Vosk
+- **AI-ассистент** на базе YandexGPT для обработки команд
+- **Синтез речи** через Piper TTS или Silero TTS
+- **Управление Arduino** для контроля движений робота
+- **Воспроизведение звуков** для обратной связи
+
+## Архитектура системы
+
+### Ноды системы
+
+#### 1. `speech_recognition_node`
+**Назначение**: Распознавание голосовых команд с помощью библиотеки Vosk
+
+**Функциональность**:
+- Непрерывное прослушивание аудиопотока
+- Распознавание триггерных слов ("робот", "вертер", "вектор" и др.)
+- Переключение между режимами: ожидание триггера → захват команды → диалоговый режим
+- Определение направления звука (DOA) для управления головой робота
+- Фильтрация команд движения шасси
+- Публикация распознанного текста в топик `ai_question`
+
+**Состояния**:
+- `LISTENING_FOR_TRIGGER` - ожидание триггерного слова
+- `CAPTURING_COMMAND` - захват команды после триггера
+- `DIALOG_MODE` - диалоговый режим с AI
+- `PAUSED` - пауза во время синтеза речи
+
+#### 2. `ai_assistant_node`
+**Назначение**: Обработка голосовых команд с помощью YandexGPT
+
+**Функциональность**:
+- Получение вопросов из топика `ai_question`
+- Поиск по локальному датасету медицинских знаний
+- Генерация ответов через YandexGPT API
+- Публикация ответов в топик `ai_response`
+- Управление диалогом и контекстом разговора
+
+**Датасет**: Содержит медицинские знания по темам здоровья, болезней, роботов
+
+#### 3. `text_to_speech_node` (Piper TTS)
+**Назначение**: Синтез речи из текста с помощью Piper TTS
+
+**Функциональность**:
+- Получение текста из топика `ai_response`
+- Синтез речи с использованием модели `ru_RU-ruslan-medium.onnx`
+- Воспроизведение через PulseAudio
+- Управление состоянием распознавания речи во время синтеза
+
+#### 4. `silero_tts_node` (Silero TTS)
+**Назначение**: Альтернативный синтез речи с помощью Silero TTS
+
+**Функциональность**:
+- Синтез речи с использованием Silero TTS
+- Поддержка различных голосов (aidar, baya, kseniya, xenia)
+- GPU/CPU режимы работы
+- Более быстрый синтез по сравнению с Piper
+
+#### 5. `sound_player_node`
+**Назначение**: Воспроизведение звуковых файлов для обратной связи
+
+**Функциональность**:
+- Воспроизведение системных звуков (trigger.wav, success.wav, fail_timeout.wav)
+- Поддержка различных аудиоформатов (WAV, MP3, OGG)
+- Управление процессами воспроизведения
+- Интеграция с системой шуток и развлечений
+
+#### 6. `arduino_node`
+**Назначение**: Управление Arduino для контроля движений робота
+
+**Функциональность**:
+- Автоматическое подключение к Arduino через USB
+- Отправка команд движения в топик `/verter_commands`
+- Управление шасси робота (вперед, назад, влево, вправо, стоп)
+- Управление головой робота (поворот влево/вправо/центр)
 
 ## Требования
 
-- ROS2 (humble/foxy)
-- Python 3
-- Vosk модель для русского языка
+### Системные требования
+- Ubuntu 20.04+ или Windows с WSL2
+- ROS2 Humble
+- Python 3.8+
+- PulseAudio (для аудио)
 
-## Установка зависимостей
+### Аппаратные требования
+- Микрофон (рекомендуется ReSpeaker USB Array)
+- Динамики или наушники
+- Arduino Uno/Nano для управления роботом
+- USB-кабель для подключения Arduino
+
+## Установка
+
+### 1. Установка зависимостей Python
 
 ```bash
-pip install vosk sounddevice numpy
+pip install vosk sounddevice numpy pyusb yandex-cloud-ml-sdk silero-tts pyserial piper-tts torch torchaudio
 ```
 
-## Установка модели Vosk
+### 2. Установка системных зависимостей
 
+**Ubuntu/Debian:**
 ```bash
-cd /home/verter/verter-robot/verter-admin
-wget https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip
-unzip vosk-model-small-ru-0.22.zip
+sudo apt update
+sudo apt install python3-pip python3-dev portaudio19-dev libasound2-dev
+sudo apt install pulseaudio pulseaudio-utils
 ```
 
-## Сборка пакета
+**Windows (WSL2):**
+```bash
+# Установка PulseAudio для WSL
+sudo apt install pulseaudio pulseaudio-utils
+```
+
+### 3. Настройка API ключей
+
+Создайте файл `src/verter_admin/ai_assistant/api_key.yaml`:
+```yaml
+yandex_api_key: "ваш_yandex_api_ключ"
+```
+
+### 4. Сборка пакета
 
 ```bash
-cd /home/verter/verter-robot/verter-admin
+cd /path/to/verter-robot/verter_admin
 colcon build --packages-select verter_admin
 source install/setup.bash
 ```
 
-## Запуск
+## Запуск системы
+
+### Запуск всей системы (рекомендуется)
 
 ```bash
-source install/setup.bash
-ros2 run verter_admin speech_recognition_node
-```
-
-## Описание
-
-Нода слушает микрофон и выводит распознанный текст в консоль. Автоматически находит доступное аудиоустройство и использует его для захвата звука.
-
-Основные функции:
-- Автоматическое обнаружение аудиоустройств
-- Распознавание русской речи
-- Вывод результатов в консоль и ROS2 логи
-- Корректное завершение работы по Ctrl+C
-
-
-
-WINDOWS:
-
-
-# Копируем исправленный проект и пересобираем
-rm -rf ~/verter_admin && cp -r /mnt/c/Users/Пользователь/Documents/verter-robot/verter_admin ~/verter_admin && cd ~/verter_admin && rm -rf build install log && source /opt/ros/humble/setup.bash && colcon build --symlink-install
-
-# Проверяем что теперь файл создался в правильном месте
-ls -la install/verter_admin/lib/verter_admin/
-
-# Но нужно заново настроить окружение
+# Настройка окружения
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-# И запустить проект
-ros2 launch verter_admin main.launch.py
-
-# Собрать пакет
-colcon build --packages-select verter_admin
-
 # Запуск всей системы
 ros2 launch verter_admin main.launch.py
-
-# Или запуск нод по отдельности:
-ros2 run verter_admin speech_recognition_node
-ros2 run verter_admin ai_assistant_node
-
-## Автозапуск через systemd-user
-
-```bash
-# 1. Скопировать unit в директорию пользователя
-mkdir -p ~/.config/systemd/user
-cp /home/verter/verter-robot/verter-admin.service ~/.config/systemd/user/
-
-# 2. Перечитать конфигурацию
-systemctl --user daemon-reload
-
-# 3. Включить автозапуск и запустить сразу
-systemctl --user enable --now verter-admin.service
-
-# 4. Проверить статус
-systemctl --user status verter-admin
-
-# 5. Смотреть лог в реальном времени
-journalctl --user -fu verter-admin
-
-# 6. Перезапустить вручную (при обновлениях)
-systemctl --user restart verter-admin
-
-# 7. (Опционально) Разрешить запуск без GUI-логина
-sudo loginctl enable-linger verter
-
-# 8. Отключить автозапуск
-systemctl --user disable --now verter-admin
-
-systemctl --user stop verter-admin
-
-systemctl --user status verter-admin.service
-
 ```
 
-systemctl --user daemon-reload
-systemctl --user restart verter-admin
-journalctl --user -fu verter-admin
+### Запуск с Silero TTS
+
+```bash
+ros2 launch verter_admin silero.launch.py
+```
+
+### Запуск отдельных нод
+
+```bash
+# Настройка окружения
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+
+# Запуск нод по отдельности
+ros2 run verter_admin speech_recognition_node
+ros2 run verter_admin ai_assistant_node
+ros2 run verter_admin text_to_speech_node
+ros2 run verter_admin sound_player_node
+ros2 run verter_admin arduino_node
+```
+
+## Управление системой
+
+### Голосовые команды
+
+**Триггерные слова:**
+- "робот", "вертер", "вектор", "ветер" и др.
+
+**Команды движения:**
+- "вперед", "назад", "влево", "вправо", "стоп"
+
+**Команды головы:**
+- Автоматически по направлению звука
+
+**Завершение диалога:**
+- "хватит", "спасибо", "пока", "до свидания"
+
+### ROS2 топики
+
+**Входящие:**
+- `ai_question` (String) - распознанный текст
+- `dialog_control` (String) - управление диалогом
+- `/play` (String) - команды воспроизведения звуков
+- `/verter_commands` (String) - команды для Arduino
+
+**Исходящие:**
+- `ai_response` (String) - ответы AI-ассистента
+- `set_recognition_active` (Bool) - управление распознаванием
+
+## Системный сервис
+
+### Установка как системный сервис
+
+```bash
+# Копирование сервисного файла
+sudo cp verter-admin.service /etc/systemd/system/
+
+# Перезагрузка systemd
+sudo systemctl daemon-reload
+
+# Включение автозапуска
+sudo systemctl enable verter-admin
+
+# Запуск сервиса
+sudo systemctl start verter-admin
+```
+
+### Управление сервисом
+
+```bash
+# Статус сервиса
+sudo systemctl status verter-admin
+
+# Остановка сервиса
+sudo systemctl stop verter-admin
+
+# Перезапуск сервиса
+sudo systemctl restart verter-admin
+
+# Просмотр логов
+sudo journalctl -fu verter-admin
+```
+
+## Отладка и диагностика
+
+### Проверка аудиоустройств
+
+```bash
+# Список аудиоустройств
+pactl list short sources
+pactl list short sinks
+
+# Тест микрофона
+arecord -f cd -d 5 test.wav
+```
+
+### Проверка Arduino
+
+```bash
+# Список USB устройств
+lsusb
+
+# Проверка последовательных портов
+ls /dev/ttyUSB* /dev/ttyACM*
+```
 
 
-nmcli dev wifi connect "MySSID" password "MySuperSecret"
+## Настройка WiFi (для Raspberry Pi)
+
+```bash
+# Подключение к WiFi
+nmcli dev wifi connect "SSID" password "PASSWORD"
+
+# Просмотр подключений
+nmcli connection show
+```
+
+## Структура проекта
+
+```
+verter_admin/
+├── src/verter_admin/
+│   ├── ai_assistant/          # AI-ассистент на YandexGPT
+│   ├── arduino/              # Управление Arduino
+│   ├── launch/               # Launch файлы
+│   ├── sound_player/         # Воспроизведение звуков
+│   ├── speech_recognition/   # Распознавание речи (Vosk)
+│   └── text_to_speech_node/  # Синтез речи (Piper/Silero)
+├── package.xml               # ROS2 пакет
+├── setup.py                 # Конфигурация сборки
+└── README.md                # Документация
+```
