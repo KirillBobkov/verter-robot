@@ -119,6 +119,7 @@ class SpeechRecognitionNode(Node):
         # Запуск потоков
         self._start_doa_thread()
         self._start_audio_capture()
+        self._start_reminder_timer()
         
         # Логирование информации о запуске
         self._log_startup_info()
@@ -165,6 +166,7 @@ class SpeechRecognitionNode(Node):
         self.state_machine = SpeechRecognitionStateMachine()
         self.no_speech_timeout = NO_SPEECH_TIMEOUT
         self.dialog_timeout = DIALOG_TIMEOUT
+        self.reminder_interval = 120.0  # Интервал напоминаний (3 минуты)
 
     def _setup_doa_variables(self) -> None:
         """Инициализация переменных DOA"""
@@ -194,6 +196,7 @@ class SpeechRecognitionNode(Node):
         self.get_logger().info(f"   Логика: Триггер → Диалог → 20с тайм-аут")
         self.get_logger().info(f"   Тайм-аут молчания: {self.no_speech_timeout}с после триггера")
         self.get_logger().info(f"   Тайм-аут диалога: {self.dialog_timeout}с")
+        self.get_logger().info(f"   Интервал напоминаний: {self.reminder_interval}с (3 минуты)")
         self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
         self.get_logger().info(f"   Стоп-слова: {len(self.stop_words_set)} шт. {list(self.stop_words_set)}")
         self.get_logger().info(f"   Команды шасси: {len(self.chassis_commands)} шт. {list(self.chassis_commands.keys())}")
@@ -302,6 +305,11 @@ class SpeechRecognitionNode(Node):
         self.audio_thread = threading.Thread(target=self._audio_capture_loop)
         self.audio_thread.daemon = True
         self.audio_thread.start()
+
+    def _start_reminder_timer(self) -> None:
+        """Запустить таймер напоминаний"""
+        self.reminder_timer = self.create_timer(self.reminder_interval, self._send_reminder_message)
+        self.get_logger().info(f"✓ Таймер напоминаний запущен ({self.reminder_interval}с)")
 
     def _audio_capture_loop(self) -> None:
         """Цикл захвата аудио."""
@@ -487,6 +495,36 @@ class SpeechRecognitionNode(Node):
         farewell_msg.data = "рад был помочь"
         self.response_publisher.publish(farewell_msg)
     
+    def _send_reminder_message(self) -> None:
+        """Отправить напоминание пользователю о том, как использовать систему"""
+        try:
+            # Проверяем, что мы в состоянии LISTENING_FOR_TRIGGER и не в паузе
+            if (self.state_machine.state == RecognitionState.LISTENING_FOR_TRIGGER):
+                self.get_logger().info("🔔 Отправка напоминания пользователю")
+                
+                # Ставим микрофон на паузу
+                self.state_machine.pause()
+                
+                # Отправляем напоминание в TTS
+                reminder_msg = String()
+                reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертэр, Или робот, и задайте свой вопрос."
+                self.response_publisher.publish(reminder_msg)
+                
+                self.get_logger().info("📢 Напоминание отправлено в TTS - микрофон отключен")
+                
+                # Перезапускаем таймер на 3 минуты
+                self._restart_reminder_timer(self.reminder_interval)
+            else:
+                self.get_logger().debug(f"⏸️ Напоминание пропущено - состояние: {self.state_machine.state}")
+                # Перезапускаем таймер на 3 минуты
+                self._restart_reminder_timer(self.reminder_interval)
+                
+        except Exception as e:
+            self.get_logger().error(f"Ошибка отправки напоминания: {e}")
+            # В случае ошибки восстанавливаем состояние и перезапускаем на 3 минуты
+            self.state_machine.resume()
+            self._restart_reminder_timer(self.reminder_interval)
+    
     def _start_dialog(self) -> None:
         """Запустить режим диалога"""
         try:
@@ -551,10 +589,21 @@ class SpeechRecognitionNode(Node):
         """Остановить таймер диалога"""
         self._stop_timer('dialog_timer')
     
+    def _stop_reminder_timer(self) -> None:
+        """Остановить таймер напоминаний"""
+        self._stop_timer('reminder_timer')
+    
+    def _restart_reminder_timer(self, interval: float) -> None:
+        """Перезапустить таймер напоминаний с новым интервалом"""
+        self._stop_reminder_timer()
+        self.reminder_timer = self.create_timer(interval, self._send_reminder_message)
+        self.get_logger().debug(f"🔄 Таймер напоминаний перезапущен с интервалом {interval}с")
+    
     def _stop_all_timers(self) -> None:
-        """Остановить все таймеры (команды и диалога)"""
+        """Остановить все таймеры (команды, диалога и напоминаний)"""
         self._stop_command_timer()
         self._stop_dialog_timer()
+        self._stop_reminder_timer()
     
     def _dialog_timeout(self) -> None:
         """Тайм-аут диалога - завершаем диалог"""
@@ -728,6 +777,9 @@ class SpeechRecognitionNode(Node):
             self.get_logger().info("✓ Микрофон включен (диалог) - буферы очищены")
         else:
             self._reset_to_listening()
+            # Перезапускаем таймер напоминаний только если в LISTENING_FOR_TRIGGER
+            if self.state_machine.state == RecognitionState.LISTENING_FOR_TRIGGER:
+                self._restart_reminder_timer(self.reminder_interval)
             self.get_logger().info("✓ Микрофон включен - буферы очищены")
     
     def _disable_microphone(self) -> None:
