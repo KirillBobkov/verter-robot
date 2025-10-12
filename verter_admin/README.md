@@ -216,17 +216,17 @@ sudo systemctl start verter-admin
 ### Управление сервисом
 
 ```bash
-# Статус сервиса
-sudo systemctl status verter-admin
+Перезагрузить systemd: 
+sudo systemctl daemon-reload
 
-# Остановка сервиса
-sudo systemctl stop verter-admin
+Запустить сервис: 
+sudo systemctl start verter-admin.service
 
-# Перезапуск сервиса
-sudo systemctl restart verter-admin
+Проверить статус: 
+systemctl status verter-admin.service
 
-# Просмотр логов
-sudo journalctl -fu verter-admin
+Подключиться к журналу: 
+journalctl -u verter-admin.service -f
 ```
 
 ## Отладка и диагностика
