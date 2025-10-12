@@ -233,7 +233,7 @@ systemctl --user start verter-admin.service
 почему то не работает
 journalctl -u verter-admin.service -n 100
 
-запускать в папке verter-robot
+запускать в папке verter-admin
 sudo cp verter-admin.service /etc/systemd/system/
 
 ```
