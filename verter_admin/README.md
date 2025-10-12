@@ -220,13 +220,15 @@ sudo systemctl start verter-admin
 sudo systemctl daemon-reload
 
 Запустить сервис: 
-sudo systemctl  --user start verter-admin.service
 
-Проверить статус:
-systemctl --user status verter-admin
+
+systemctl --user daemon-reload
 systemctl --user status verter-admin --no-pager
 systemctl --user restart verter-admin
 systemctl --user stop verter-admin
+systemctl --user enable verter-admin.service
+systemctl --user start verter-admin.service
+
 
 почему то не работает
 journalctl -u verter-admin.service -n 100

@@ -5,13 +5,14 @@ Wants=graphical.target
 
 [Service]
 Type=simple
-User=verter
-Group=verter
 WorkingDirectory=/home/verter/verter-robot
+ExecStartPre=/bin/sleep 5
 ExecStart=/home/verter/verter-robot/verter_admin/start_verter_admin.sh
 ExecStop=/home/verter/verter-robot/verter_admin/stop_verter_admin.sh
-StandardOutput=journal
-StandardError=journal
+StandardOutput=file:/home/verter/verter-robot/verter_admin/journal.log
+StandardError=file:/home/verter/verter-robot/verter_admin/journal-error.log
+
+TimeoutStartSec=120
 
 [Install]
 WantedBy=graphical.target
