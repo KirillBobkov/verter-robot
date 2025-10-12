@@ -66,22 +66,6 @@ class SpeechRecognitionStateMachine:
     def __init__(self):
         self.state = RecognitionState.LISTENING_FOR_TRIGGER
         
-    def can_process_text(self) -> bool:
-        """Можно ли обрабатывать распознанный текст"""
-        return self.state != RecognitionState.PAUSED
-        
-    def listening_for_trigger(self) -> bool:
-        """Можно ли искать триггер"""
-        return self.state == RecognitionState.LISTENING_FOR_TRIGGER
-        
-    def can_process_commands(self) -> bool:
-        """Можно ли обрабатывать команды (стоп-слова, шасси, AI команды)"""
-        return self.state in [RecognitionState.CAPTURING_COMMAND, RecognitionState.DIALOG_MODE]
-        
-    def is_in_dialog(self) -> bool:
-        """Находимся ли в режиме диалога"""
-        return self.state == RecognitionState.DIALOG_MODE
-        
     def set_trigger_found(self):
         """Найден триггер"""
         if self.state == RecognitionState.LISTENING_FOR_TRIGGER:
@@ -97,7 +81,6 @@ class SpeechRecognitionStateMachine:
         
     def pause(self):
         """Пауза (TTS говорит)"""
-        # Не перезаписываем _previous_state если уже в PAUSED
         if self.state != RecognitionState.PAUSED:
             self._previous_state = self.state
             self.state = RecognitionState.PAUSED
@@ -214,7 +197,7 @@ class SpeechRecognitionNode(Node):
         self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
         self.get_logger().info(f"   Стоп-слова: {len(self.stop_words_set)} шт. {list(self.stop_words_set)}")
         self.get_logger().info(f"   Команды шасси: {len(self.chassis_commands)} шт. {list(self.chassis_commands.keys())}")
-        self.get_logger().info(f"   DOA: {'включен' if self.doa_enabled else 'отключен'} (только при capturing)")
+        self.get_logger().info(f"   DOA: {'включен' if self.doa_enabled else 'отключен'} (когда микрофон активен)")
 
     def _setup_parameters(self) -> None:
         """Настройка параметров."""
@@ -306,9 +289,8 @@ class SpeechRecognitionNode(Node):
         """Периодический опрос DOA (каждые 3 с)."""
         while not self.shutdown_event.is_set():
             try:
-                # Рассчитываем угол только во время захвата команды,
-                # чтобы не спамить голову лишними командами
-                if self.state_machine.can_process_commands():
+                # Рассчитываем угол только когда микрофон активен
+                if self.state_machine.state != RecognitionState.PAUSED:
                     self._handle_doa()
             except Exception as e:
                 self.get_logger().error(f"Ошибка DOA loop: {e}")
@@ -371,14 +353,14 @@ class SpeechRecognitionNode(Node):
         try:
             self.get_logger().debug(f"Распознано: '{text}'")
             
-            if not self.state_machine.can_process_text():
+            if self.state_machine.state == RecognitionState.PAUSED:
                 self.get_logger().debug(f"Распознавание неактивно, игнорируем: '{text}'")
                 return
             
             # Единый диспетчер команд по состояниям
-            if self.state_machine.listening_for_trigger():
+            if self.state_machine.state == RecognitionState.LISTENING_FOR_TRIGGER:
                 self._handle_trigger_search(text)
-            elif self.state_machine.can_process_commands():
+            elif self.state_machine.state in [RecognitionState.CAPTURING_COMMAND, RecognitionState.DIALOG_MODE]:
                 self._handle_active_command(text)
                 
         except Exception as e:
@@ -425,10 +407,14 @@ class SpeechRecognitionNode(Node):
     
     def _handle_command_input(self, text: str) -> None:
         """Обработка ввода команды"""
-        # Проверка длины команды
         cleaned = text.strip()
-        if not self._is_command_length_valid(cleaned):
-            self.get_logger().debug(f"Команда проигнорирована как слишком короткая: '{cleaned}'")
+        if not cleaned:  # Проверка на пустоту
+            self.get_logger().debug(f"Команда проигнорирована как пустая: '{cleaned}'")
+            return
+        
+        # Проверка длины команды (КЕЙС 6.1)
+        if len(cleaned) < MIN_COMMAND_LENGTH:
+            self.get_logger().debug(f"Команда проигнорирована как слишком короткая: '{cleaned}' ({len(cleaned)} < {MIN_COMMAND_LENGTH})")
             return  # Не останавливаем таймер - пусть сработает тайм-аут
 
         # Команда валидна - останавливаем таймер и переходим в диалог при необходимости
@@ -442,7 +428,7 @@ class SpeechRecognitionNode(Node):
             self.get_logger().info("✋ Обработка стоп-слова")
             
             # КЕЙС 3.3: завершаем активный диалог с прощанием
-            if self.state_machine.is_in_dialog():
+            if self.state_machine.state == RecognitionState.DIALOG_MODE:
                 self._end_dialog(with_farewell=True)
                 return
             
@@ -473,7 +459,7 @@ class SpeechRecognitionNode(Node):
     
     def _handle_command_error(self) -> None:
         """Обработка ошибки команды"""
-        if self.state_machine.is_in_dialog():
+        if self.state_machine.state == RecognitionState.DIALOG_MODE:
             self._end_dialog()
         else:
             self._reset_to_listening()
@@ -553,11 +539,11 @@ class SpeechRecognitionNode(Node):
         """Сбросить таймер диалога (только если микрофон активен)"""
         try:
             self._stop_dialog_timer()
-            if self.state_machine.is_in_dialog() and self.state_machine.state != RecognitionState.PAUSED:
+            if self.state_machine.state == RecognitionState.DIALOG_MODE:
                 self.dialog_timer = self.create_timer(self.dialog_timeout, self._dialog_timeout)
                 self.get_logger().debug(f"⏱️ Таймер диалога сброшен ({self.dialog_timeout}с)")
             else:
-                self.get_logger().debug("⏸️ Таймер диалога не запускается (микрофон отключен)")
+                self.get_logger().debug("⏸️ Таймер диалога не запускается (не в диалоге)")
         except Exception as e:
             self.get_logger().error(f"Ошибка сброса таймера диалога: {e}")
     
@@ -584,14 +570,13 @@ class SpeechRecognitionNode(Node):
     def _start_command_capture(self) -> None:
         """Начать захват команды - ждем первую фразу от Vosk"""
         try:
-            if not self.state_machine.is_in_dialog():
-                # Запускаем тайм-аут "нет речи" только ВНЕ диалога
+            if self.state_machine.state == RecognitionState.CAPTURING_COMMAND:
+                # Запускаем тайм-аут "нет речи" только в CAPTURING_COMMAND
                 self._stop_command_timer()
                 self.no_speech_timer = self.create_timer(self.no_speech_timeout, self._no_speech_timeout)
                 context = f"произнесение ({self.no_speech_timeout}с)"
             else:
                 # В диалоге полагаемся только на 30-секундный таймер диалога
-                # 10-секундный таймер команды НЕ нужен!
                 context = f"диалоге (таймер диалога {self.dialog_timeout}с)"
                 
             self.get_logger().info(f"🎤 Ожидание команды от Vosk на {context}")
@@ -673,7 +658,7 @@ class SpeechRecognitionNode(Node):
         """Сброс в состояние прослушивания (только если не в диалоге)"""
         try:
             self.get_logger().info(f"🔄 _reset_to_listening: state={self.state_machine.state}")
-            if not self.state_machine.is_in_dialog():
+            if self.state_machine.state != RecognitionState.DIALOG_MODE:
                 self.state_machine.end_dialog()  # Возвращает в LISTENING_FOR_TRIGGER
                 self.get_logger().info("✓ Состояние сброшено в LISTENING_FOR_TRIGGER")
             
@@ -687,7 +672,7 @@ class SpeechRecognitionNode(Node):
                 except Exception as e:
                     self.get_logger().error(f"Ошибка сброса recognizer: {e}")
             
-            mode = "диалог" if self.state_machine.is_in_dialog() else "прослушивание"
+            mode = "диалог" if self.state_machine.state == RecognitionState.DIALOG_MODE else "прослушивание"
             self.get_logger().debug(f"🔄 Возврат в режим {mode}")
             
         except Exception as e:
@@ -705,7 +690,7 @@ class SpeechRecognitionNode(Node):
             self.ai_question_publisher.publish(msg)
             
             # Сохраняем информацию о диалоге до паузы
-            mode_info = "(диалог)" if self.state_machine.is_in_dialog() else ""
+            mode_info = "(диалог)" if self.state_machine.state == RecognitionState.DIALOG_MODE else ""
             
             # Переходим в PAUSED - микрофон отключается
             self.state_machine.pause()
@@ -715,7 +700,7 @@ class SpeechRecognitionNode(Node):
             self.get_logger().error(f"Ошибка отправки к AI: {e}")
             # В случае ошибки восстанавливаем состояние
             self.state_machine.resume()
-            if self.state_machine.is_in_dialog():
+            if self.state_machine.state == RecognitionState.DIALOG_MODE:
                 self._end_dialog()
             else:
                 self._reset_to_listening()
@@ -737,7 +722,7 @@ class SpeechRecognitionNode(Node):
         
         self.state_machine.resume()
         
-        if self.state_machine.is_in_dialog():
+        if self.state_machine.state == RecognitionState.DIALOG_MODE:
             self._start_command_capture()
             self._reset_dialog_timer()
             self.get_logger().info("✓ Микрофон включен (диалог) - буферы очищены")
@@ -831,9 +816,6 @@ class SpeechRecognitionNode(Node):
         """Проверка валидности текста для обработки"""
         return bool(text and len(text) <= max_length)
     
-    def _is_command_length_valid(self, command: str) -> bool:
-        """Проверка длины команды"""
-        return len(command) >= MIN_COMMAND_LENGTH
     
     def _convert_doa_angle_to_command(self, doa_angle: int) -> Optional[str]:
         """Конвертация DOA угла в команду"""
@@ -853,7 +835,7 @@ class SpeechRecognitionNode(Node):
             self._transition_to_dialog_if_needed()
             
             # Если в диалоге - сбрасываем таймер диалога
-            if self.state_machine.is_in_dialog():
+            if self.state_machine.state == RecognitionState.DIALOG_MODE:
                 self._reset_dialog_timer()
             
             msg = String()
