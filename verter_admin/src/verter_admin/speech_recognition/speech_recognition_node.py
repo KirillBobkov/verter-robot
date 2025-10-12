@@ -507,7 +507,7 @@ class SpeechRecognitionNode(Node):
                 
                 # Отправляем напоминание в TTS
                 reminder_msg = String()
-                reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертэр, Или робот, и задайте свой вопрос."
+                reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертер, Или робот, и задайте свой вопрос."
                 self.response_publisher.publish(reminder_msg)
                 
                 self.get_logger().info("📢 Напоминание отправлено в TTS - микрофон отключен")

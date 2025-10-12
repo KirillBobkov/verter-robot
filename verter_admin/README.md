@@ -220,13 +220,20 @@ sudo systemctl start verter-admin
 sudo systemctl daemon-reload
 
 Запустить сервис: 
-sudo systemctl start verter-admin.service
+sudo systemctl  --user start verter-admin.service
 
-Проверить статус: 
-systemctl status verter-admin.service
+Проверить статус:
+systemctl --user status verter-admin
+systemctl --user status verter-admin --no-pager
+systemctl --user restart verter-admin
+systemctl --user stop verter-admin
 
-Подключиться к журналу: 
-journalctl -u verter-admin.service -f
+почему то не работает
+journalctl -u verter-admin.service -n 100
+
+запускать в папке verter-robot
+sudo cp verter-admin.service /etc/systemd/system/
+
 ```
 
 ## Отладка и диагностика
@@ -251,7 +258,6 @@ lsusb
 # Проверка последовательных портов
 ls /dev/ttyUSB* /dev/ttyACM*
 ```
-
 
 ## Настройка WiFi (для Raspberry Pi)
 

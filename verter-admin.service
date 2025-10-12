@@ -8,12 +8,8 @@ Type=simple
 User=verter
 Group=verter
 WorkingDirectory=/home/verter/verter-robot
-ExecStartPre=/bin/sleep 5
 ExecStart=/home/verter/verter-robot/start_verter_admin.sh
 ExecStop=/home/verter/verter-robot/stop_verter_admin.sh
-Restart=on-failure
-RestartSec=15
-TimeoutStartSec=120
 StandardOutput=journal
 StandardError=journal
 
