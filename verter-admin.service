@@ -8,8 +8,8 @@ Type=simple
 User=verter
 Group=verter
 WorkingDirectory=/home/verter/verter-robot
-ExecStart=/home/verter/verter-robot/start_verter_admin.sh
-ExecStop=/home/verter/verter-robot/stop_verter_admin.sh
+ExecStart=/home/verter/verter-robot/verter_admin/start_verter_admin.sh
+ExecStop=/home/verter/verter-robot/verter_admin/stop_verter_admin.sh
 StandardOutput=journal
 StandardError=journal
 
