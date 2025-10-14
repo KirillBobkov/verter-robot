@@ -230,8 +230,7 @@ systemctl --user enable verter-admin.service
 systemctl --user start verter-admin.service
 
 
-почему то не работает
-journalctl -u verter-admin.service -n 100
+journalctl --user -u verter-admin.service -f
 
 запускать в папке verter-admin
 sudo cp verter-admin.service /etc/systemd/system/
@@ -265,11 +264,47 @@ ls /dev/ttyUSB* /dev/ttyACM*
 
 ```bash
 # Подключение к WiFi
-nmcli dev wifi connect "SSID" password "PASSWORD"
+nmcli dev wifi connect "iPhone 13 Pro" password "patrol555" 
+
+nmcli connection modify "iPhone 13 Pro" connection.autoconnect yes
+
+
+nmcli device wifi connect "KOKB" ifname wlan0
+ 
+
+nmcli device wifi connect "RT-WiFi-53BA" password "ВАШ_ПАРОЛЬ" ifname wlan0
+nmcli connection modify "RT-WiFi-53BA" connection.autoconnect yes
 
 # Просмотр подключений
 nmcli connection show
+
+# Общий статус NM и устройств
+nmcli general status
+nmcli device status
+
+# Подробно по конкретному девайсу (замени на свой, напр. wlan0/eth0)
+nmcli device show wlan0
+
+
+# Скан доступных Wi‑Fi
+nmcli device wifi list
+
+# Мониторинг событий NM в реальном времени
+nmcli monitor
+
+# Все интерфейсы и адреса
+ip a
+# Статус линка (UP/DOWN), MTU, ошибки
+ip -s link
+# Только IPv4 адреса
+hostname -I
+# Таблица маршрутов
+ip r
+# Какой маршрут пойдет до адреса
+ip route get 8.8.8.8
 ```
+
+
 
 ## Структура проекта
 
@@ -286,3 +321,5 @@ verter_admin/
 ├── setup.py                 # Конфигурация сборки
 └── README.md                # Документация
 ```
+
+
