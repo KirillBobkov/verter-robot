@@ -77,6 +77,10 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('src/verter_admin/launch', '*.launch.py'))),
+        # Включаем Arduino скетчи для distance_sensors
+        (os.path.join('share', package_name, 'distance_sensors'), [
+            'src/verter_admin/distance_sensors/sensors.ino',
+        ]),
         # Включаем dataset в пакет
         *get_dataset_files(),
         # Включаем модели Vosk в пакет
@@ -100,7 +104,8 @@ setup(
             'text_to_speech_node = verter_admin.text_to_speech_node.text_to_speech_node:main',
             'silero_tts_node = verter_admin.text_to_speech_node.silero_tts_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
-            'arduino_node = verter_admin.arduino.arduino_node:main',
+            'chassis_node = verter_admin.chassis.chassis_node:main',
+            'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
         ],
     },
 )

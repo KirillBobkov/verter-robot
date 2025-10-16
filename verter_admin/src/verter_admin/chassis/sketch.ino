@@ -49,9 +49,6 @@ int currentSpeed2 = 0;               // Текущая скорость прав
 int targetSpeed1 = 0;                // Целевая скорость левого мотора
 int targetSpeed2 = 0;                // Целевая скорость правого мотора
 unsigned long lastMotorUpdate = 0;   // Время последнего обновления моторов
-bool isMoving = false;               // Флаг движения
-unsigned long moveStartTime = 0;     // Время начала движения
-unsigned long moveDuration = 0;      // Длительность движения
 
 // === Большие круглые глаза (ACTION) ===
 byte bigEyeOpen[8] = {
@@ -211,23 +208,15 @@ void updateMotorSpeeds() {
 }
 
 // Установка целевых скоростей моторов
-void setMotorTargets(int speed1, int speed2, unsigned long duration = 0) {
+void setMotorTargets(int speed1, int speed2) {
   targetSpeed1 = speed1;
   targetSpeed2 = speed2;
-  
-  if (duration > 0) {
-    isMoving = true;
-    moveStartTime = millis();
-    moveDuration = duration;
-  }
 }
 
 // Остановка движения
 void stopChassis() {
   targetSpeed1 = 0;
   targetSpeed2 = 0;
-  isMoving = false;
-  moveDuration = 0;
 }
 
 // === Инициализация ===
@@ -293,10 +282,13 @@ void actionAnimation() {
 
 
 void loop() {
-  // Проверка команд из Serial
-  if (Serial.available()) {
-    String command = Serial.readString();
+  // Проверка команд из Serial - обрабатываем ВСЕ доступные команды
+  while (Serial.available()) {
+    String command = Serial.readStringUntil('\n');
     command.trim();
+    
+    // Пропускаем пустые команды
+    if (command.length() == 0) continue;
 
     if (command == "ACTION") {
       if (currentMode != "ACTION") {
@@ -338,32 +330,27 @@ void loop() {
       Serial.println("Head tilted DOWN");
     } else if (command == "CHASSIS:FRONT") {
       // Движение вперед
-      setMotorTargets(TARGET_SPEED, -TARGET_SPEED, 2000);
+      setMotorTargets(TARGET_SPEED, -TARGET_SPEED);
       Serial.println("Chassis moving FRONT");
     } else if (command == "CHASSIS:BACK") {
       // Движение назад
-      setMotorTargets(-TARGET_SPEED, TARGET_SPEED, 2000);
+      setMotorTargets(-TARGET_SPEED, TARGET_SPEED);
       Serial.println("Chassis moving BACK");
     } else if (command == "CHASSIS:LEFT") {
       // Поворот влево
-      setMotorTargets(0, -TARGET_SPEED, 3000);
+      setMotorTargets(0, -TARGET_SPEED);
       Serial.println("Chassis turning LEFT");
     } else if (command == "CHASSIS:RIGHT") {
       // Поворот вправо
-      setMotorTargets(TARGET_SPEED, 0, 3000);
+      setMotorTargets(TARGET_SPEED, 0);
       Serial.println("Chassis turning RIGHT");
     } else if (command == "CHASSIS:STOP") {
       // Остановка
       stopChassis();
       Serial.println("Chassis STOPPED");
-    }
-  }
-
-  // Проверка таймаута движения шасси
-  if (isMoving && moveDuration > 0) {
-    if (millis() - moveStartTime >= moveDuration) {
-      stopChassis();
-      Serial.println("Chassis movement timeout - stopping");
+    } else {
+      // Неизвестная команда - логируем для отладки
+      Serial.println("Unknown command: " + command);
     }
   }
 

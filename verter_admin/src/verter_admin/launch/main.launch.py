@@ -40,11 +40,19 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # Узел Arduino
+        # Узел Chassis
         Node(
             package='verter_admin',
-            executable='arduino_node',
-            name='arduino_node',
+            executable='chassis_node',
+            name='chassis_node',
+            output='screen'
+        ),
+
+        # Узел датчиков расстояния (Arduino Mega)
+        Node(
+            package='verter_admin',
+            executable='distance_sensors_node',
+            name='distance_sensors_node',
             output='screen'
         ),
     ])

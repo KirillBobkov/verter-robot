@@ -834,7 +834,7 @@ class SpeechRecognitionNode(Node):
         try:
             doa_angle = self.mic_tuning.direction
             if doa_angle is not None:
-                self.get_logger().info(f"🎯 DOA угол: {doa_angle}°")
+                # self.get_logger().info(f"🎯 DOA угол: {doa_angle}°")
                 self._send_eye_command_by_doa(doa_angle)
         except Exception as e:
             self.get_logger().error(f"Ошибка получения DOA: {e}")
@@ -857,7 +857,6 @@ class SpeechRecognitionNode(Node):
             msg = String()
             msg.data = command
             self.command_publisher.publish(msg)
-            self.get_logger().info(f"Отправлена команда голове: {command} (DOA: {doa_angle}°)")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка отправки команды голове: {e}")
