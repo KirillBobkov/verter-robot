@@ -14,7 +14,7 @@ class DistanceSensorsNode(Node):
     BAUD_RATE = 9600
     CONNECTION_TIMEOUT = 2.0
     SERIAL_TIMEOUT = 0.1
-    CRITICAL_DISTANCE = 30.0  # 30 см
+    CRITICAL_DISTANCE = 50.0  # 30 см
     NUM_SENSORS = 7
     
     def __init__(self):
@@ -175,37 +175,22 @@ class DistanceSensorsNode(Node):
                 self.get_logger().warn(f'СТОП: {sensor_values}')
                 self._send_command("CHASSIS:STOP")
             else:
-                # Проверяем что все датчики 2-6 дальше критического расстояния
-                all_sensors_safe = True
-                for i in range(1, 6):  # Датчики 2-6 (индексы 1-5)
-                    if self.sensor_data[i] != 999.0 and self.sensor_data[i] < self.CRITICAL_DISTANCE:
-                        all_sensors_safe = False
-                        break
-                
-                if all_sensors_safe:
-                    # Логируем Прямо с данными датчиков
-                    sensor_values = ', '.join([f'S{i+1}:{self.sensor_data[i]:.0f}' for i in range(self.NUM_SENSORS)])
-                    self.get_logger().info(f'Прямо: {sensor_values}')
-                    self._send_command("CHASSIS:FRONT")
+                # Препятствий нет - ничего не делаем
+                pass
          
-            
         except Exception as e:
             self.get_logger().error(f'Ошибка обработки данных датчиков: {e}')
 
     def _send_command(self, command: str):
-        """Отправка команды с проверкой на дублирование."""
-        # Отправляем команду только если она отличается от последней
-        if self.last_command != command:
-            try:
-                msg = String()
-                msg.data = command
-                self.command_publisher.publish(msg)
-                self.last_command = command
-                self.get_logger().info(f'Отправлена команда: {command}')
-            except Exception as e:
-                self.get_logger().error(f'Ошибка отправки команды {command}: {e}')
-        else:
-            self.get_logger().debug(f'Команда {command} уже отправлена, пропускаем')
+        """Отправка команды."""
+        try:
+            msg = String()
+            msg.data = command
+            self.command_publisher.publish(msg)
+            self.last_command = command
+            self.get_logger().info(f'Отправлена команда: {command}')
+        except Exception as e:
+            self.get_logger().error(f'Ошибка отправки команды {command}: {e}')
 
     def _reconnect_arduino(self):
         """Переподключение к Arduino Mega."""

@@ -229,7 +229,6 @@ systemctl --user stop verter-admin
 systemctl --user enable verter-admin.service
 systemctl --user start verter-admin.service
 
-
 journalctl --user -u verter-admin.service -f
 
 запускать в папке verter-admin
@@ -258,6 +257,12 @@ lsusb
 
 # Проверка последовательных портов
 ls /dev/ttyUSB* /dev/ttyACM*
+
+for device in /dev/ttyUSB* /dev/ttyACM*; do [ -e "$device" ] && echo -n "$device: " && udevadm info --query=property --name="$device" | grep DEVPATH | grep -o '1-1\.[0-9]*\.[0-9]*' | head -1; done
+
+
+udevadm info -a -n /dev/ttyUSB1 | grep devpath
+
 ```
 
 ## Настройка WiFi (для Raspberry Pi)

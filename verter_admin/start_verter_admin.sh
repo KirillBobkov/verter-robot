@@ -23,17 +23,11 @@ echo $$ > "$LOCK_FILE"
 cleanup() {
     echo "Очистка..."
     rm -f "$LOCK_FILE"
-    pkill -TERM -f "speech_recognition_node"
-    pkill -TERM -f "ai_assistant_node"
-    pkill -TERM -f "text_to_speech_node"
-    pkill -TERM -f "sound_player_node"
-    pkill -TERM -f "arduino_node"
+    pkill -TERM -f "ros2 launch verter_admin"
+    pkill -TERM -f "ros2 run verter_admin"
     sleep 2
-    pkill -KILL -f "speech_recognition_node"
-    pkill -KILL -f "ai_assistant_node"
-    pkill -KILL -f "text_to_speech_node"
-    pkill -KILL -f "sound_player_node"
-    pkill -KILL -f "arduino_node"
+    pkill -KILL -f "ros2 launch verter_admin"
+    pkill -KILL -f "ros2 run verter_admin"
     exit 0
 }
 
@@ -42,12 +36,8 @@ trap cleanup EXIT SIGTERM SIGINT
 
 # Убить старые процессы
 echo "Остановка старых процессов..."
-pkill -KILL -f "speech_recognition_node" 2>/dev/null || true
-pkill -KILL -f "ai_assistant_node" 2>/dev/null || true
-pkill -KILL -f "text_to_speech_node" 2>/dev/null || true
-pkill -KILL -f "sound_player_node" 2>/dev/null || true
-pkill -KILL -f "arduino_node" 2>/dev/null || true
-
+pkill -KILL -f "ros2 launch verter_admin" 2>/dev/null || true
+pkill -KILL -f "ros2 run verter_admin" 2>/dev/null || true
 sleep 2
 
 # Настройка переменных окружения для аудио

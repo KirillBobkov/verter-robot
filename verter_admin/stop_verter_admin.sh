@@ -5,21 +5,25 @@ echo "Остановка Verter Admin системы..."
 # Удаляем lock файл
 rm -f /tmp/verter_admin.lock
 
-# Сначала мягко завершаем процессы
-pkill -TERM -f "speech_recognition_node"
-pkill -TERM -f "ai_assistant_node"
-pkill -TERM -f "text_to_speech_node"
-pkill -TERM -f "sound_player_node"
-pkill -TERM -f "arduino_node"
+# Мягко завершаем все ROS2 процессы
+echo "Мягкая остановка ROS2 процессов..."
+pkill -TERM -f "ros2 launch verter_admin"
+pkill -TERM -f "ros2 run verter_admin"
 
-# Ждем 3 секунды
+# Ждем 3 секунды для корректного завершения
 sleep 3
 
-# Потом жестко завершаем
+# Жестко завершаем если что-то осталось
+echo "Жесткая остановка оставшихся процессов..."
+pkill -KILL -f "ros2 launch verter_admin"
+pkill -KILL -f "ros2 run verter_admin"
+
+# Дополнительно убиваем по именам нод (на всякий случай)
 pkill -KILL -f "speech_recognition_node"
 pkill -KILL -f "ai_assistant_node"
 pkill -KILL -f "text_to_speech_node"
 pkill -KILL -f "sound_player_node"
-pkill -KILL -f "arduino_node"
+pkill -KILL -f "chassis_node"
+pkill -KILL -f "distance_sensors_node"
 
 echo "Все процессы Verter Admin остановлены"

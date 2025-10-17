@@ -100,6 +100,7 @@ class ChassisNode(Node):
     def command_callback(self, msg):
         """Обработчик команд из топика /verter_commands."""
         command = msg.data
+        self.get_logger().info(f'Получена команда: "{command}"')
         self._send_to_arduino(command)
 
     def _send_to_arduino(self, command: str):

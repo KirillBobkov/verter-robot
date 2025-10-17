@@ -134,7 +134,7 @@ class SpeechRecognitionNode(Node):
         
         self.stop_words_set: Set[str] = {
             'хватит', 'спасибо', 'пока', 'досвидания', 'до свидания', 
-            'завершить', 'закончить', 'конец', 'всё', 'все', 'достаточно'
+             'конец', 'достаточно'
         }
         
         self.chassis_commands: Dict[str, str] = {
@@ -166,7 +166,7 @@ class SpeechRecognitionNode(Node):
         self.state_machine = SpeechRecognitionStateMachine()
         self.no_speech_timeout = NO_SPEECH_TIMEOUT
         self.dialog_timeout = DIALOG_TIMEOUT
-        self.reminder_interval = 120.0  # Интервал напоминаний (3 минуты)
+        self.reminder_interval = 180.0  # Интервал напоминаний (3 минуты)
 
     def _setup_doa_variables(self) -> None:
         """Инициализация переменных DOA"""
