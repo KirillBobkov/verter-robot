@@ -9,13 +9,9 @@ from enum import Enum, auto
 import rclpy
 from rclpy.node import Node
 import sounddevice as sd
-import usb.core
-import usb.util
 import vosk
 from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import String, Bool
-
-from .tuning import Tuning
 
 # === КОНСТАНТЫ ===
 DEFAULT_MODEL_NAME = 'vosk-model-small-ru-0.22'
@@ -29,29 +25,14 @@ RESPEAKER_PRODUCT_ID = 0x0018
 # Таймауты
 NO_SPEECH_TIMEOUT = 10.0
 DIALOG_TIMEOUT = 30.0
-DOA_POLLING_INTERVAL = 2.0
 MIN_COMMAND_LENGTH = 5
 MAX_TEXT_LENGTH_FOR_TRIGGER = 100
 MAX_TEXT_LENGTH_FOR_COMMANDS = 50
-
-# DOA углы для команд головы
-DOA_CENTER_MIN = 10
-DOA_CENTER_MAX = 150
-DOA_RIGHT_MIN = 270
-DOA_RIGHT_MAX = 360
-DOA_RIGHT_EDGE_MAX = 10
-DOA_LEFT_MIN = 150
-DOA_LEFT_MAX = 270
 
 # Звуковые файлы
 SOUND_TRIGGER = 'trigger.wav'
 SOUND_SUCCESS = 'success.wav'
 SOUND_TIMEOUT = 'fail_timeout.wav'
-
-# Команды головы
-HEAD_CENTER = "HEAD:CENTER"
-HEAD_RIGHT = "HEAD:RIGHT"
-HEAD_LEFT = "HEAD:LEFT"
 
 class RecognitionState(Enum):
     """Состояния системы распознавания речи"""
@@ -106,7 +87,6 @@ class SpeechRecognitionNode(Node):
         self._setup_word_sets()
         self._setup_patterns()
         self._setup_state_variables()
-        self._setup_doa_variables()
         
         # Настройка ROS2 коммуникации
         self._setup_ros_communication()
@@ -114,10 +94,8 @@ class SpeechRecognitionNode(Node):
         # Настройка системы
         self._setup_parameters()
         self._setup_vosk()
-        self._setup_doa()
         
         # Запуск потоков
-        self._start_doa_thread()
         self._start_audio_capture()
         self._start_reminder_timer()
         
@@ -168,9 +146,6 @@ class SpeechRecognitionNode(Node):
         self.dialog_timeout = DIALOG_TIMEOUT
         self.reminder_interval = 180.0  # Интервал напоминаний (3 минуты)
 
-    def _setup_doa_variables(self) -> None:
-        """Инициализация переменных DOA"""
-        self.last_eye_command: Optional[str] = None
 
     def _setup_ros_communication(self) -> None:
         """Настройка ROS2 publishers и subscribers"""
@@ -200,7 +175,6 @@ class SpeechRecognitionNode(Node):
         self.get_logger().info(f"   Триггерные слова: {len(self.trigger_words_set)} шт.")
         self.get_logger().info(f"   Стоп-слова: {len(self.stop_words_set)} шт. {list(self.stop_words_set)}")
         self.get_logger().info(f"   Команды шасси: {len(self.chassis_commands)} шт. {list(self.chassis_commands.keys())}")
-        self.get_logger().info(f"   DOA: {'включен' if self.doa_enabled else 'отключен'} (когда микрофон активен)")
 
     def _setup_parameters(self) -> None:
         """Настройка параметров."""
@@ -268,38 +242,6 @@ class SpeechRecognitionNode(Node):
         
         return model_path if os.path.isdir(model_path) else None
 
-    def _setup_doa(self) -> None:
-        """Инициализация DOA."""
-        try:
-            self.doa_dev = usb.core.find(idVendor=RESPEAKER_VENDOR_ID, idProduct=RESPEAKER_PRODUCT_ID)
-            if self.doa_dev is None:
-                self.doa_enabled = False
-                self.get_logger().warn("⚠️ ReSpeaker устройство не найдено - DOA отключен")
-            else:
-                self.mic_tuning = Tuning(self.doa_dev)
-                self.doa_enabled = True
-                self.get_logger().info("✓ DOA инициализирован")
-        except Exception as e:
-            self.get_logger().error(f"❌ Ошибка инициализации DOA: {e}")
-            self.doa_enabled = False
-
-    def _start_doa_thread(self) -> None:
-        """Запуск отдельного треда, который опрашивает DOA каждые 3 с."""
-        self.doa_thread = threading.Thread(target=self._doa_loop, daemon=True)
-        self.doa_thread.start()
-
-    def _doa_loop(self) -> None:
-        """Периодический опрос DOA (каждые 3 с)."""
-        while not self.shutdown_event.is_set():
-            try:
-                # Рассчитываем угол только когда микрофон активен
-                if self.state_machine.state != RecognitionState.PAUSED:
-                    self._handle_doa()
-            except Exception as e:
-                self.get_logger().error(f"Ошибка DOA loop: {e}")
-            # Ожидаем или выходим, если ноду попросили завершиться
-            if self.shutdown_event.wait(DOA_POLLING_INTERVAL):
-                break
     def _start_audio_capture(self) -> None:
         """Запустить захват аудио."""
         self.audio_thread = threading.Thread(target=self._audio_capture_loop)
@@ -342,7 +284,6 @@ class SpeechRecognitionNode(Node):
         
         try:
             data = bytes(indata)
-            # DOA теперь обрабатывается в отдельном треде (_doa_loop)
             with self.recognition_lock:
                 # Проверяем, что recognizer еще валиден
                 if not hasattr(self, 'recognizer') or self.recognizer is None:
@@ -809,12 +750,6 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().warn(f"Ошибка остановки аудио: {e}")
         
-        # Освобождаем USB ресурсы
-        if hasattr(self, 'doa_dev') and self.doa_dev:
-            try:
-                usb.util.dispose_resources(self.doa_dev)
-            except Exception as e:
-                self.get_logger().warn(f"Ошибка освобождения USB: {e}")
 
     def _reset_vosk_recognizer(self) -> None:
         """Сброс Vosk recognizer для очистки внутренних буферов"""
@@ -826,57 +761,11 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка сброса Vosk recognizer: {e}")
 
-    def _handle_doa(self) -> None:
-        """Обработка DOA - получение угла и отправка команды голове."""
-        if not self.doa_enabled:
-            return
-            
-        try:
-            doa_angle = self.mic_tuning.direction
-            if doa_angle is not None:
-                # self.get_logger().info(f"🎯 DOA угол: {doa_angle}°")
-                self._send_eye_command_by_doa(doa_angle)
-        except Exception as e:
-            self.get_logger().error(f"Ошибка получения DOA: {e}")
-
-
-    def _send_eye_command_by_doa(self, doa_angle: int) -> None:
-        """Отправить команду голове на основе DOA угла"""
-        try:
-            command = self._convert_doa_angle_to_command(doa_angle)
-            if not command:
-                self.get_logger().warn(f"Некорректный DOA угол: {doa_angle}°")
-                return
-            
-            # --- Debounce: пропускаем повторяющиеся команды подряд ---
-            if command == self.last_eye_command:
-                self.get_logger().debug(f"⚠️ Пропускаем дублирующую DOA команду {command}")
-                return
-            self.last_eye_command = command
-
-            msg = String()
-            msg.data = command
-            self.command_publisher.publish(msg)
-            
-        except Exception as e:
-            self.get_logger().error(f"Ошибка отправки команды голове: {e}")
-
     # === МЕТОДЫ-ХЕЛПЕРЫ ===
     
     def _is_text_valid_for_processing(self, text: str, max_length: int) -> bool:
         """Проверка валидности текста для обработки"""
         return bool(text and len(text) <= max_length)
-    
-    
-    def _convert_doa_angle_to_command(self, doa_angle: int) -> Optional[str]:
-        """Конвертация DOA угла в команду"""
-        if DOA_CENTER_MIN <= doa_angle <= DOA_CENTER_MAX:
-            return HEAD_CENTER
-        elif (DOA_RIGHT_MIN <= doa_angle <= DOA_RIGHT_MAX) or (0 <= doa_angle < DOA_RIGHT_EDGE_MAX):
-            return HEAD_RIGHT
-        elif DOA_LEFT_MIN < doa_angle < DOA_LEFT_MAX:
-            return HEAD_LEFT
-        return None
     
     def _send_chassis_command(self, command: str) -> None:
         """Отправить команду шасси"""

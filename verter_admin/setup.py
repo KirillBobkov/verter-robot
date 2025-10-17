@@ -106,6 +106,7 @@ setup(
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
             'chassis_node = verter_admin.chassis.chassis_node:main',
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
+            'doa_node = verter_admin.doa.doa_node:main',
         ],
     },
 )

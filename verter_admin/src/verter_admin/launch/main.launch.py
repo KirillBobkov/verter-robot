@@ -55,4 +55,12 @@ def generate_launch_description():
             name='distance_sensors_node',
             output='screen'
         ),
+
+        # Узел DOA (Direction of Arrival)
+        Node(
+            package='verter_admin',
+            executable='doa_node',
+            name='doa_node',
+            output='screen'
+        ),
     ])

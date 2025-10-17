@@ -25,5 +25,6 @@ pkill -KILL -f "text_to_speech_node"
 pkill -KILL -f "sound_player_node"
 pkill -KILL -f "chassis_node"
 pkill -KILL -f "distance_sensors_node"
+pkill -KILL -f "doa_node"
 
 echo "Все процессы Verter Admin остановлены"
