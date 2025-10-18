@@ -24,8 +24,8 @@ class VoskNode(Node):
         super().__init__('vosk_node')
         
         # Инициализация базовых атрибутов
-        self.publisher_ = self.create_publisher(String, '/verter_commands', 10)
-        self.sound_publisher_ = self.create_publisher(String, '/verter_say', 10)
+        self.publisher_ = self.create_publisher(String, 'verter_commands', 10)
+        self.sound_publisher_ = self.create_publisher(String, 'verter_say', 10)
         self.audio_queue_ = queue.Queue()
         self.shutdown_event_ = threading.Event()
         self._triggered = False
@@ -38,7 +38,7 @@ class VoskNode(Node):
         # Подписка на топик состояния воспроизведения звука
         self.audio_status_subscription = self.create_subscription(
             String,
-            '/audio_in_progress',
+            'audio_in_progress',
             self.audio_status_callback,
             10
         )
@@ -439,7 +439,7 @@ class VoskNode(Node):
         msg = String()
         msg.data = command
         self.publisher_.publish(msg)
-        self.get_logger().info(f'Команда роботу отправлена в /verter_commands: {command}')
+        self.get_logger().info(f'Команда роботу отправлена в verter_commands: {command}')
 
     def _send_sound_command(self, command):
         """Отправка звуковой команды"""

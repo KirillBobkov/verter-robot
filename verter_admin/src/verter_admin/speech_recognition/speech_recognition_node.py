@@ -152,9 +152,9 @@ class SpeechRecognitionNode(Node):
         # Publishers
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
         self.response_publisher = self.create_publisher(String, 'ai_response', 10)
-        self.sound_player_publisher = self.create_publisher(String, '/play', 10)
+        self.sound_player_publisher = self.create_publisher(String, 'play', 10)
         self.dialog_control_publisher = self.create_publisher(String, 'dialog_control', 10)
-        self.command_publisher = self.create_publisher(String, '/verter_commands', 10)
+        self.command_publisher = self.create_publisher(String, 'verter_commands', 10)
         
         # Subscribers
         self.create_subscription(

@@ -6,30 +6,30 @@ class DistanceControllerNode(Node):
     def __init__(self):
         super().__init__('distance_controller_node')
         
-        # Создаем подписчика на топик /distance_h04
+        # Создаем подписчика на топик distance_h04
         self.distance_subscriber = self.create_subscription(
             Float32,
-            '/distance_h04',
+            'distance_h04',
             self.distance_callback,
             10
         )
-        self.get_logger().info('Подписчик для /distance_h04 создан.')
+        self.get_logger().info('Подписчик для distance_h04 создан.')
         
-        # Создаем издателя для топика /verter_commands
+        # Создаем издателя для топика verter_commands
         self.command_publisher = self.create_publisher(
             String, 
-            '/verter_commands', 
+            'verter_commands', 
             10
         )
-        self.get_logger().info('Издатель для /verter_commands создан.')
+        self.get_logger().info('Издатель для verter_commands создан.')
         
-        # Создаем издателя для топика /verter_say
+        # Создаем издателя для топика verter_say
         self.say_publisher = self.create_publisher(
             String, 
-            '/verter_say', 
+            'verter_say', 
             10
         )
-        self.get_logger().info('Издатель для /verter_say создан.')
+        self.get_logger().info('Издатель для verter_say создан.')
         
         # Пороговое значение расстояния (в см)
         # Можно настроить через параметр
@@ -54,13 +54,13 @@ class DistanceControllerNode(Node):
             # Если расстояние меньше порога - препятствие, останавливаемся и воспроизводим звук
             command_msg.data = "CHASSIS:STOP"
             self.command_publisher.publish(command_msg)
-            self.get_logger().info(f'Отправлена команда в /verter_commands: "{command_msg.data}"')
+            self.get_logger().info(f'Отправлена команда в verter_commands: "{command_msg.data}"')
             
             # Воспроизводим звук о препятствии
             say_msg = String()
             say_msg.data = "obstacle"
             self.say_publisher.publish(say_msg)
-            self.get_logger().info(f'Отправлена команда в /verter_say: "{say_msg.data}"')
+            self.get_logger().info(f'Отправлена команда в verter_say: "{say_msg.data}"')
             self.get_logger().info(f'Обнаружено препятствие на расстоянии {distance:.2f} см (порог: {self.distance_threshold} см)')
     
     def destroy_node(self):

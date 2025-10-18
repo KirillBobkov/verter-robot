@@ -30,9 +30,9 @@ class ChassisNode(Node):
     def _setup_subscribers(self):
         """Настройка подписчиков."""
         self.command_subscriber = self.create_subscription(
-            String, '/verter_commands', self.command_callback, 10
+            String, 'verter_commands', self.command_callback, 10
         )
-        self.get_logger().info('Подписчик для /verter_commands создан')
+        self.get_logger().info('Подписчик для verter_commands создан')
 
     def _find_arduino_port(self) -> List[str]:
         """Автоматический поиск портов Arduino по devpath."""

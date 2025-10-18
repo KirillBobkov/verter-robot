@@ -22,10 +22,10 @@ class SoundPlayerNode(Node):
         # Счетчик для чередования шуток
         self.joke_counter = 0
         
-        # Создание подписчика на топик /verter_say
+        # Создание подписчика на топик verter_say
         self.subscription = self.create_subscription(
             String,
-            '/verter_say',
+            'verter_say',
             self.sound_command_callback,
             10
         )
@@ -33,7 +33,7 @@ class SoundPlayerNode(Node):
         # Создание publisher для сигнализации о состоянии воспроизведения
         self.audio_status_publisher = self.create_publisher(
             String,
-            '/audio_in_progress',
+            'audio_in_progress',
             10
         )
         

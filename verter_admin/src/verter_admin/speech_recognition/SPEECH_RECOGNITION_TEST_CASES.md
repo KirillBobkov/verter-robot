@@ -947,8 +947,8 @@ vs.
 ТОПИКИ ROS2:
 • ai_question: Speech → AI
 • ai_response: AI → TTS  
-• /play: → Sound
-• /verter_commands: → Arduino
+• play: → Sound
+• verter_commands: → Arduino
 • set_recognition_active: TTS ⟷ Speech
 • dialog_control: Speech ⟷ AI
 

@@ -38,9 +38,9 @@ class DistanceSensorsNode(Node):
     def _setup_publisher(self):
         """Настройка издателя для команд."""
         self.command_publisher = self.create_publisher(
-            String, '/verter_commands', 10
+            String, 'verter_commands', 10
         )
-        self.get_logger().info('Издатель для /verter_commands создан')
+        self.get_logger().info('Издатель для verter_commands создан')
 
     def _find_arduino_mega_port(self) -> List[str]:
         """Автоматический поиск портов Arduino Mega по devpath."""

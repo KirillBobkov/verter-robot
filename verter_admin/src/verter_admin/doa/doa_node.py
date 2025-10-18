@@ -61,7 +61,7 @@ class DOANode(Node):
     def _setup_ros_communication(self):
         """Настройка ROS2 publishers и subscribers"""
         # Publisher для команд головы
-        self.command_publisher = self.create_publisher(String, '/verter_commands', 10)
+        self.command_publisher = self.create_publisher(String, 'verter_commands', 10)
         
         # Subscriber для управления активностью DOA
         self.create_subscription(

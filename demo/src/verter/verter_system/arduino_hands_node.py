@@ -36,15 +36,15 @@ class ArduinoHandsNode(Node):
     def _setup_publishers_and_subscribers(self):
         """Настройка подписчиков и издателей."""
         self.command_subscriber = self.create_subscription(
-            String, '/verter_commands', self.command_callback, 10
+            String, 'verter_commands', self.command_callback, 10
         )
-        self.get_logger().info('Подписчик для /verter_commands создан.')
+        self.get_logger().info('Подписчик для verter_commands создан.')
         
-        self.log_publisher = self.create_publisher(String, '/arduino_logs', 10)
-        self.get_logger().info('Издатель для /arduino_logs создан.')
+        self.log_publisher = self.create_publisher(String, 'arduino_logs', 10)
+        self.get_logger().info('Издатель для arduino_logs создан.')
         
-        self.command_publisher = self.create_publisher(String, '/verter_commands', 10)
-        self.get_logger().info('Издатель для /verter_commands создан.')
+        self.command_publisher = self.create_publisher(String, 'verter_commands', 10)
+        self.get_logger().info('Издатель для verter_commands создан.')
 
     def _find_arduino_port(self) -> List[str]:
         """Автоматический поиск портов Arduino по devpath."""
@@ -257,7 +257,7 @@ class ArduinoHandsNode(Node):
         for line in lines:
             line = line.strip()
             if line == "EYES:CENTER":
-                self.get_logger().info('Получена команда EYES:CENTER от Arduino, перенаправляю в /verter_commands')
+                self.get_logger().info('Получена команда EYES:CENTER от Arduino, перенаправляю в verter_commands')
                 cmd_msg = String()
                 cmd_msg.data = line
                 self.command_publisher.publish(cmd_msg)

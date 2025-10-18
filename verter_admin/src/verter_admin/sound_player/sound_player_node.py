@@ -25,10 +25,10 @@ class SoundPlayerNode(Node):
         # Счетчик для чередования шуток
         self.joke_counter = 0
         
-        # Создание подписчика на топик /play
+        # Создание подписчика на топик play
         self.subscription = self.create_subscription(
             String,
-            '/play',
+            'play',
             self.sound_command_callback,
             10
         )

@@ -35,18 +35,18 @@ class ArduinoMovingNavigationNode(Node):
     
     def _setup_publishers(self):
         """Инициализация издателей."""
-        self.distance_publisher = self.create_publisher(Float32, '/distance_h04', 10)
-        self.get_logger().info('Издатель для /distance_h04 создан.')
+        self.distance_publisher = self.create_publisher(Float32, 'distance_h04', 10)
+        self.get_logger().info('Издатель для distance_h04 создан.')
         
-        self.status_publisher = self.create_publisher(String, '/arduino_status', 10)
-        self.get_logger().info('Издатель для /arduino_status создан.')
+        self.status_publisher = self.create_publisher(String, 'arduino_status', 10)
+        self.get_logger().info('Издатель для arduino_status создан.')
     
     def _setup_subscribers(self):
         """Инициализация подписчиков."""
         self.command_subscriber = self.create_subscription(
-            String, '/verter_commands', self.command_callback, 10
+            String, 'verter_commands', self.command_callback, 10
         )
-        self.get_logger().info('Подписчик для /verter_commands создан.')
+        self.get_logger().info('Подписчик для verter_commands создан.')
     
     def _find_arduino_ports(self) -> List[str]:
         """Поиск доступных портов Arduino по devpath."""
