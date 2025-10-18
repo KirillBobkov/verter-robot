@@ -151,7 +151,7 @@ class SpeechRecognitionNode(Node):
         """Настройка ROS2 publishers и subscribers"""
         # Publishers
         self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
-        self.response_publisher = self.create_publisher(String, 'ai_response', 10)
+        self.text_to_speech_publisher = self.create_publisher(String, 'text_to_speech', 10)
         self.sound_player_publisher = self.create_publisher(String, 'play', 10)
         self.dialog_control_publisher = self.create_publisher(String, 'dialog_control', 10)
         self.command_publisher = self.create_publisher(String, 'verter_commands', 10)
@@ -434,7 +434,7 @@ class SpeechRecognitionNode(Node):
         """Отправить прощальное сообщение в TTS"""
         farewell_msg = String()
         farewell_msg.data = "рад был помочь"
-        self.response_publisher.publish(farewell_msg)
+        self.text_to_speech_publisher.publish(farewell_msg)
     
     def _send_reminder_message(self) -> None:
         """Отправить напоминание пользователю о том, как использовать систему"""
@@ -449,7 +449,7 @@ class SpeechRecognitionNode(Node):
                 # Отправляем напоминание в TTS
                 reminder_msg = String()
                 reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертер, Или робот, и задайте свой вопрос."
-                self.response_publisher.publish(reminder_msg)
+                self.text_to_speech_publisher.publish(reminder_msg)
                 
                 self.get_logger().info("📢 Напоминание отправлено в TTS - микрофон отключен")
                 
@@ -501,7 +501,7 @@ class SpeechRecognitionNode(Node):
             self.state_machine.end_dialog()
 
             if with_farewell:
-                # Отправляем прощальное сообщение в ai_response для TTS
+                # Отправляем прощальное сообщение в text_to_speech для TTS
                 self._send_farewell_message()
                 self.get_logger().info("🔚 Диалог завершен с прощанием - TTS включит микрофон автоматически")
             else:

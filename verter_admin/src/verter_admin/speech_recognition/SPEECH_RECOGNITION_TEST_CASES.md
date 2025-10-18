@@ -680,7 +680,7 @@ vs.
 👤 "Робот включи музыку"
 🤖 *SpeechRecognition: триггер найден*
 🤖 *SpeechRecognition → AI: ai_question="включи музыку"*
-🤖 *AI → TTS: ai_response="Музыка включена"*
+🤖 *AI → TTS: text_to_speech="Музыка включена"*
 🤖 *TTS: микрофон выкл → синтез → aplay → микрофон вкл*
 🤖 *Sound: trigger.wav → success.wav*
 ```
@@ -946,7 +946,7 @@ vs.
 
 ТОПИКИ ROS2:
 • ai_question: Speech → AI
-• ai_response: AI → TTS  
+• text_to_speech: AI → TTS  
 • play: → Sound
 • verter_commands: → Arduino
 • set_recognition_active: TTS ⟷ Speech

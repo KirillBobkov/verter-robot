@@ -43,7 +43,7 @@ class TextToSpeechNode(Node):
         self._initialize_tts()
         
         # ROS2 подписки
-        self.subscription = self.create_subscription(String, 'ai_response', self.text_callback, 10)
+        self.subscription = self.create_subscription(String, 'text_to_speech', self.text_callback, 10)
         self.recognition_publisher = self.create_publisher(Bool, 'set_recognition_active', 10)
         
         # Управление конкуренцией

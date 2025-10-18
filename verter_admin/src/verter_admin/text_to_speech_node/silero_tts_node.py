@@ -33,7 +33,7 @@ class SileroTTSNode(Node):
         self._setup_environment()
         self._initialize_tts()
         
-        self.subscription = self.create_subscription(String, 'ai_response', self.text_callback, 10)
+        self.subscription = self.create_subscription(String, 'text_to_speech', self.text_callback, 10)
         self.recognition_publisher = self.create_publisher(Bool, 'set_recognition_active', 10)
         
         self._busy_lock = threading.Lock()

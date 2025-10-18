@@ -45,7 +45,7 @@ class AIAssistantNode(Node):
     def _setup_ros_interface(self):
         """Настройка ROS интерфейса."""
         self.sound_player_publisher = self.create_publisher(String, 'play', 10)
-        self.response_publisher = self.create_publisher(String, 'ai_response', 10)
+        self.response_publisher = self.create_publisher(String, 'text_to_speech', 10)
         
         self.create_subscription(String, 'ai_question', self.question_callback, 10)
         self.create_subscription(String, 'dialog_control', self.dialog_control_callback, 10)
