@@ -102,6 +102,7 @@ setup(
             'speech_recognition_node = verter_admin.speech_recognition.speech_recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech_node.text_to_speech_node:main',
+            'silero_tts_node = verter_admin.text_to_speech_node.silero_tts_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
             'chassis_node = verter_admin.chassis.chassis_node:main',
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
