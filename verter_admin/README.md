@@ -142,8 +142,9 @@ source install/setup.bash
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 
-# Запуск всей системы
+# Запуск системы
 ros2 launch verter_admin main.launch.py
+ros2 launch verter_admin verter_base.launch.py
 ```
 
 ### Запуск с Silero TTS
