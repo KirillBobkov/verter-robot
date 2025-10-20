@@ -3,8 +3,9 @@ import json
 import os
 import re
 import threading
-from typing import Optional, Dict, Set, Tuple, Any
+from typing import Optional, Dict, Set, Tuple, Any, List
 from enum import Enum, auto
+from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
@@ -13,101 +14,53 @@ import vosk
 from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import String, Bool
 
-# === КОНСТАНТЫ ===
-DEFAULT_MODEL_NAME = 'vosk-model-small-ru-0.22'
-SAMPLE_RATE = 16000
-BLOCK_SIZE = 6000
-CHANNELS = 1
-
-# Таймауты
-NO_SPEECH_TIMEOUT = 10.0
-DIALOG_TIMEOUT = 30.0
-MIN_COMMAND_LENGTH = 5
-MAX_TEXT_LENGTH_FOR_TRIGGER = 100
-MAX_TEXT_LENGTH_FOR_COMMANDS = 50
-
-# Звуковые файлы
-SOUND_TRIGGER = 'trigger.wav'
-SOUND_SUCCESS = 'success.wav'
-SOUND_TIMEOUT = 'fail_timeout.wav'
+# === КОНСТАНТЫ И КОНФИГУРАЦИЯ ===
+@dataclass
+class SpeechConfig:
+    """Конфигурация распознавания речи"""
+    MODEL_NAME: str = 'vosk-model-small-ru-0.22'
+    SAMPLE_RATE: int = 16000
+    BLOCK_SIZE: int = 6000
+    CHANNELS: int = 1
+    
+    # Таймауты
+    NO_SPEECH_TIMEOUT: float = 10.0
+    DIALOG_TIMEOUT: float = 30.0
+    REMINDER_INTERVAL: float = 180.0
+    
+    # Ограничения текста
+    MIN_COMMAND_LENGTH: int = 5
+    MAX_TEXT_LENGTH_FOR_TRIGGER: int = 100
+    MAX_TEXT_LENGTH_FOR_COMMANDS: int = 50
+    
+    # Звуковые файлы
+    SOUND_TRIGGER: str = 'trigger.wav'
+    SOUND_SUCCESS: str = 'success.wav'
+    SOUND_TIMEOUT: str = 'fail_timeout.wav'
 
 class RecognitionState(Enum):
     """Состояния системы распознавания речи"""
-    LISTENING_FOR_TRIGGER = auto()  # Ждем триггер
-    CAPTURING_COMMAND = auto()      # Ждем команду после триггера  
-    DIALOG_MODE = auto()            # Режим диалога
+    LISTENING_FOR_TRIGGER = auto()  # Ожидание триггера
+    CAPTURING_COMMAND = auto()      # Захват команды после триггера  
+    DIALOG_MODE = auto()            # Активный диалог
     PAUSED = auto()                 # Пауза (TTS говорит)
 
-class SpeechRecognitionStateMachine:
-    """Конечный автомат для управления состояниями распознавания"""
+class CommandProcessor:
+    """Обработчик команд с четкой стратегией приоритетов"""
     
     def __init__(self):
-        self.state = RecognitionState.LISTENING_FOR_TRIGGER
-        self._previous_state = None
-        
-    def set_trigger_found(self):
-        """Найден триггер - переход к захвату команды"""
-        if self.state == RecognitionState.LISTENING_FOR_TRIGGER:
-            self.state = RecognitionState.CAPTURING_COMMAND
-            
-    def start_dialog(self):
-        """Запуск режима диалога"""
-        self.state = RecognitionState.DIALOG_MODE
-        
-    def end_dialog(self):
-        """Завершение диалога"""
-        self.state = RecognitionState.LISTENING_FOR_TRIGGER
-        
-    def pause(self):
-        """Пауза (TTS говорит)"""
-        if self.state != RecognitionState.PAUSED:
-            self._previous_state = self.state
-            self.state = RecognitionState.PAUSED
-        
-    def resume(self):
-        """Возобновление после паузы"""
-        if self._previous_state:
-            self.state = self._previous_state
-            self._previous_state = None
-        else:
-            self.state = RecognitionState.LISTENING_FOR_TRIGGER
-
-class SpeechRecognitionNode(Node):
-    """ROS2 узел для распознавания речи с полным соответствием тест-кейсам"""
+        self._setup_word_patterns()
     
-    def __init__(self) -> None:
-        super().__init__('speech_recognition_node')
-        
-        # Потокобезопасность
-        self.shutdown_event = threading.Event()
-        self.recognition_lock = threading.Lock()
-        
-        # Инициализация компонентов
-        self._setup_word_sets()
-        self._setup_patterns()
-        self._setup_state_variables()
-        
-        # Настройка ROS2
-        self._setup_ros_communication()
-        self._setup_parameters()
-        self._setup_vosk()
-        
-        # Запуск системы
-        self._start_audio_capture()
-        self._start_reminder_timer()
-        
-        self._log_startup_info()
-
-    def _setup_word_sets(self) -> None:
-        """Инициализация наборов слов"""
-        self.trigger_words_set: Set[str] = {
+    def _setup_word_patterns(self) -> None:
+        """Инициализация паттернов команд"""
+        self.trigger_words: Set[str] = {
             'робот', 'робат', 'бертом', 'верстах', 'вертэр', 'вертер',
             'ветер', 'ертер', 'верте', 'вектор', 'ветера', 'мерсер',
             'вертера', 'вердер', 'лестер'
         }
         
-        self.stop_words_set: Set[str] = {
-            'хватит', 'спасибо', 'пока', 'досвидания', 'до свидания', 
+        self.stop_words: Set[str] = {
+            'хватит', 'спасибо', 'пасибо', 'пока', 'досвидания', 'до свидания', 
             'конец', 'достаточно'
         }
         
@@ -123,140 +76,263 @@ class SpeechRecognitionNode(Node):
             'прямо': 'CHASSIS:FRONT',
             'вперёд': 'CHASSIS:FRONT',
         }
-
-    def _setup_patterns(self) -> None:
-        """Создание регулярных выражений"""
-        trigger_pattern = '|'.join(re.escape(word) for word in self.trigger_words_set)
-        self.trigger_pattern = re.compile(trigger_pattern, re.IGNORECASE)
         
-        stop_pattern = '|'.join(re.escape(word) for word in self.stop_words_set)
-        self.stop_pattern = re.compile(stop_pattern, re.IGNORECASE)
+        # Компиляция regex паттернов
+        self.trigger_pattern = self._compile_pattern(self.trigger_words)
+        self.stop_pattern = self._compile_pattern(self.stop_words)
+        self.chassis_pattern = self._compile_pattern(self.chassis_commands.keys())
+    
+    def _compile_pattern(self, words: Set[str]) -> re.Pattern:
+        """Компиляция regex паттерна из набора слов"""
+        pattern = '|'.join(re.escape(word) for word in words)
+        return re.compile(pattern, re.IGNORECASE)
+    
+    def extract_trigger_and_command(self, text: str, max_length: int) -> Tuple[bool, Optional[str]]:
+        """Извлечение триггера и команды из текста"""
+        if not self._is_valid_text(text, max_length):
+            return False, None
+            
+        words = text.lower().split()
+        if not words:
+            return False, None
+            
+        first_word = words[0]
+        is_trigger = (first_word in self.trigger_words or 
+                     self.trigger_pattern.search(first_word))
         
-        chassis_pattern = '|'.join(re.escape(word) for word in self.chassis_commands.keys())
-        self.chassis_pattern = re.compile(chassis_pattern, re.IGNORECASE)
+        if not is_trigger:
+            return False, None
+        
+        # Извлечение команды после триггера
+        command = ' '.join(words[1:]).strip() if len(words) > 1 else None
+        return True, command
+    
+    def is_stop_command(self, text: str, max_length: int) -> bool:
+        """Проверка является ли текст стоп-командой"""
+        if not self._is_valid_text(text, max_length):
+            return False
+            
+        words = text.lower().split()
+        if not words:
+            return False
+            
+        first_word = words[0]
+        return (first_word in self.stop_words or 
+                self.stop_pattern.search(text.lower()))
+    
+    def get_chassis_command(self, text: str, max_length: int) -> Optional[str]:
+        """Получение команды шасси из текста"""
+        if not self._is_valid_text(text, max_length):
+            return None
+            
+        words = text.lower().split()
+        for word in words:
+            if word in self.chassis_commands:
+                return self.chassis_commands[word]
+                
+        match = self.chassis_pattern.search(text.lower())
+        return self.chassis_commands.get(match.group()) if match else None
+    
+    def _is_valid_text(self, text: str, max_length: int) -> bool:
+        """Проверка валидности текста"""
+        return bool(text and len(text) <= max_length)
 
-    def _setup_state_variables(self) -> None:
-        """Инициализация переменных состояния"""
-        self.state_machine = SpeechRecognitionStateMachine()
-        self.no_speech_timeout = NO_SPEECH_TIMEOUT
-        self.dialog_timeout = DIALOG_TIMEOUT
-        self.reminder_interval = 180.0
+class StateManager:
+    """Управление состояниями системы с чистыми переходами"""
+    
+    def __init__(self):
+        self.state = RecognitionState.LISTENING_FOR_TRIGGER
+        self._previous_state = None
+    
+    def on_trigger_detected(self) -> None:
+        """Обработка обнаружения триггера"""
+        if self.state == RecognitionState.LISTENING_FOR_TRIGGER:
+            self.state = RecognitionState.CAPTURING_COMMAND
+    
+    def start_dialog(self) -> None:
+        """Начало диалога"""
+        self.state = RecognitionState.DIALOG_MODE
+    
+    def end_dialog(self) -> None:
+        """Завершение диалога"""
+        self.state = RecognitionState.LISTENING_FOR_TRIGGER
+    
+    def pause(self) -> None:
+        """Пауза системы"""
+        if self.state != RecognitionState.PAUSED:
+            self._previous_state = self.state
+            self.state = RecognitionState.PAUSED
+    
+    def resume(self) -> None:
+        """Возобновление работы"""
+        if self._previous_state:
+            self.state = self._previous_state
+            self._previous_state = None
+        else:
+            self.state = RecognitionState.LISTENING_FOR_TRIGGER
+    
+    def is_active_listening(self) -> bool:
+        """Проверка активного прослушивания"""
+        return self.state in [
+            RecognitionState.CAPTURING_COMMAND, 
+            RecognitionState.DIALOG_MODE
+        ]
+    
+    def is_passive_listening(self) -> bool:
+        """Проверка пассивного прослушивания"""
+        return self.state == RecognitionState.LISTENING_FOR_TRIGGER
 
+class TimerManager:
+    """Централизованное управление таймерами"""
+    
+    def __init__(self, node: Node, config: SpeechConfig):
+        self.node = node
+        self.config = config
+        self.timers: Dict[str, Any] = {}
+    
+    def start_timer(self, name: str, interval: float, callback) -> None:
+        """Запуск таймера"""
+        self.stop_timer(name)
+        self.timers[name] = self.node.create_timer(interval, callback)
+    
+    def stop_timer(self, name: str) -> None:
+        """Остановка таймера"""
+        if name in self.timers and self.timers[name]:
+            self.node.destroy_timer(self.timers[name])
+            self.timers[name] = None
+    
+    def stop_all_timers(self) -> None:
+        """Остановка всех таймеров"""
+        for name in list(self.timers.keys()):
+            self.stop_timer(name)
+
+class SpeechRecognitionNode(Node):
+    """Улучшенный ROS2 узел распознавания речи с чистотой кода"""
+    
+    def __init__(self) -> None:
+        super().__init__('speech_recognition_node')
+        
+        # Конфигурация и компоненты
+        self.config = SpeechConfig()
+        self.command_processor = CommandProcessor()
+        self.state_manager = StateManager()
+        
+        # Потокобезопасность
+        self.shutdown_event = threading.Event()
+        self.recognition_lock = threading.Lock()
+        
+        # Инициализация системы
+        self._setup_ros_communication()
+        self._setup_audio_system()
+        self.timer_manager = TimerManager(self, self.config)
+        
+        # Запуск подсистем
+        self._start_audio_capture()
+        self._start_reminder_timer()
+        
+        self._log_system_startup()
+
+    # === ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ ===
+    
     def _setup_ros_communication(self) -> None:
-        """Настройка ROS2 publishers и subscribers"""
+        """Настройка ROS2 коммуникации"""
         # Publishers
-        self.ai_question_publisher = self.create_publisher(String, 'ai_question', 10)
-        self.text_to_speech_publisher = self.create_publisher(String, 'text_to_speech', 10)
-        self.sound_player_publisher = self.create_publisher(String, 'play', 10)
-        self.dialog_control_publisher = self.create_publisher(String, 'dialog_control', 10)
-        self.command_publisher = self.create_publisher(String, 'verter_commands', 10)
+        self.ai_question_pub = self.create_publisher(String, 'ai_question', 10)
+        self.text_to_speech_pub = self.create_publisher(String, 'text_to_speech', 10)
+        self.sound_player_pub = self.create_publisher(String, 'play', 10)
+        self.dialog_control_pub = self.create_publisher(String, 'dialog_control', 10)
+        self.command_pub = self.create_publisher(String, 'verter_commands', 10)
         
         # Subscribers
-        self.create_subscription(
-            Bool,
-            'set_recognition_active',
-            self._handle_recognition_control,
-            10
-        )
+        self.create_subscription(Bool, 'set_recognition_active', 
+                               self._handle_recognition_control, 10)
 
-    def _log_startup_info(self) -> None:
-        """Логирование информации при запуске"""
-        self.get_logger().info("🎤 SpeechRecognitionNode запущен (ДИАЛОГОВЫЙ РЕЖИМ)")
-        self.get_logger().info(f"   Тайм-аут команды: {self.no_speech_timeout}с")
-        self.get_logger().info(f"   Тайм-аут диалога: {self.dialog_timeout}с")
-        self.get_logger().info(f"   Интервал напоминаний: {self.reminder_interval}с")
-
-    def _setup_parameters(self) -> None:
-        """Настройка параметров"""
-        self.model_name = DEFAULT_MODEL_NAME
-        self.sample_rate = SAMPLE_RATE
-        self.block_size = BLOCK_SIZE
-        self.channels = CHANNELS
-        self.device = self._find_audio_device()
-        vosk.SetLogLevel(-1)
+    def _setup_audio_system(self) -> None:
+        """Настройка аудио системы и Vosk"""
+        self.audio_device = self._find_audio_device()
+        self.vosk_model = self._load_vosk_model()
+        self.recognizer = vosk.KaldiRecognizer(self.vosk_model, self.config.SAMPLE_RATE)
+        self.recognizer.SetWords(True)
 
     def _find_audio_device(self) -> int:
-        """Найти рабочее аудио устройство"""
+        """Поиск подходящего аудио устройства"""
         devices = sd.query_devices()
         
-        # Поиск ReSpeaker
+        # Приоритет: ReSpeaker → устройство 1 → первое доступное
         for i, device in enumerate(devices):
-            if 'ReSpeaker' in device['name'] or 'ArrayUAC10' in device['name']:
+            if any(name in device['name'] for name in ['ReSpeaker', 'ArrayUAC10']):
                 if device['max_input_channels'] > 0:
-                    self.get_logger().info(f"✓ Найден ReSpeaker: {i} - {device['name']}")
+                    self.get_logger().info(f"✓ Найден ReSpeaker: {device['name']}")
                     return i
         
-        # Fallback на устройство 1
-        if len(devices) > 1 and devices[1]['max_input_channels'] > 0:
-            self.get_logger().info(f"✓ Используется устройство 1: {devices[1]['name']}")
-            return 1
-        
-        # Любое рабочее устройство
-        for i, device in enumerate(devices):
-            if device['max_input_channels'] > 0:
-                self.get_logger().info(f"✓ Fallback на устройство {i}: {device['name']}")
+        # Fallback стратегия
+        fallback_devices = [1] + list(range(len(devices)))
+        for i in fallback_devices:
+            if i < len(devices) and devices[i]['max_input_channels'] > 0:
+                self.get_logger().info(f"✓ Используется устройство {i}: {devices[i]['name']}")
                 return i
         
-        self.get_logger().warn("Входные устройства не найдены, используется дефолт")
+        self.get_logger().warn("⚠️ Входные устройства не найдены, используется дефолт")
         return None
 
-    def _setup_vosk(self) -> None:
-        """Инициализация Vosk"""
+    def _load_vosk_model(self) -> vosk.Model:
+        """Загрузка модели Vosk"""
         model_path = self._resolve_model_path()
         if not model_path:
-            raise RuntimeError(f"Не удалось найти модель Vosk: {self.model_name}")
-            
+            raise RuntimeError(f"Модель Vosk не найдена: {self.config.MODEL_NAME}")
+        
         try:
-            self.model = vosk.Model(model_path)
-            self.recognizer = vosk.KaldiRecognizer(self.model, self.sample_rate)
-            self.recognizer.SetWords(True)  
-            self.get_logger().info(f"✓ Vosk инициализирован: {model_path}")
+            model = vosk.Model(model_path)
+            self.get_logger().info(f"✓ Модель Vosk загружена: {model_path}")
+            return model
         except Exception as e:
-            raise RuntimeError(f"Ошибка загрузки Vosk модели {model_path}: {e}")
+            raise RuntimeError(f"Ошибка загрузки модели Vosk: {e}")
 
     def _resolve_model_path(self) -> Optional[str]:
-        """Определить путь к модели"""
-        if os.path.isabs(self.model_name):
-            model_path = self.model_name
-        else:
-            try:
-                package_share = get_package_share_directory('verter_admin')
-                model_path = os.path.join(package_share, self.model_name)
-            except Exception:
-                return None
+        """Определение пути к модели"""
+        if os.path.isabs(self.config.MODEL_NAME):
+            return self.config.MODEL_NAME
         
-        return model_path if os.path.isdir(model_path) else None
+        try:
+            package_share = get_package_share_directory('verter_admin')
+            model_path = os.path.join(package_share, self.config.MODEL_NAME)
+            return model_path if os.path.isdir(model_path) else None
+        except Exception:
+            return None
 
+    def _log_system_startup(self) -> None:
+        """Логирование информации о запуске"""
+        self.get_logger().info("🎤 SpeechRecognitionNode запущен")
+        self.get_logger().info(f"   Состояние: {self.state_manager.state.name}")
+        self.get_logger().info(f"   Таймауты: команда={self.config.NO_SPEECH_TIMEOUT}с, диалог={self.config.DIALOG_TIMEOUT}с")
+
+    # === АУДИО ОБРАБОТКА ===
+    
     def _start_audio_capture(self) -> None:
-        """Запустить захват аудио"""
+        """Запуск захвата аудио в отдельном потоке"""
         self.audio_thread = threading.Thread(target=self._audio_capture_loop)
         self.audio_thread.daemon = True
         self.audio_thread.start()
-
-    def _start_reminder_timer(self) -> None:
-        """Запустить таймер напоминаний"""
-        self.reminder_timer = self.create_timer(self.reminder_interval, self._send_reminder_message)
-        self.get_logger().info(f"✓ Таймер напоминаний запущен ({self.reminder_interval}с)")
+        self.get_logger().info("✓ Захват аудио запущен")
 
     def _audio_capture_loop(self) -> None:
-        """Цикл захвата аудио"""
+        """Основной цикл захвата аудио"""
         try:
             with sd.RawInputStream(
-                samplerate=self.sample_rate,
-                blocksize=self.block_size,  
-                device=self.device,
+                samplerate=self.config.SAMPLE_RATE,
+                blocksize=self.config.BLOCK_SIZE,  
+                device=self.audio_device,
                 dtype='int16',
-                channels=self.channels,
+                channels=self.config.CHANNELS,
                 callback=self._audio_callback
             ):
-                self.get_logger().info("✓ Захват аудио запущен")
                 self.shutdown_event.wait()
         except Exception as e:
-            self.get_logger().error(f"Ошибка аудио: {e}")
+            self.get_logger().error(f"Ошибка аудио потока: {e}")
 
     def _audio_callback(self, indata, frames, time, status) -> None:
-        """Callback обработки аудио - только финальные результаты Vosk"""
-        if self.shutdown_event.is_set() or self.state_machine.state == RecognitionState.PAUSED:
+        """Callback обработки аудио данных"""
+        if self.shutdown_event.is_set() or self.state_manager.state == RecognitionState.PAUSED:
             return
             
         if status:
@@ -265,389 +341,337 @@ class SpeechRecognitionNode(Node):
         try:
             data = bytes(indata)
             with self.recognition_lock:
-                if not hasattr(self, 'recognizer') or self.recognizer is None:
-                    return
-                    
-                # Только финальные результаты для избежания дублирования
                 if self.recognizer.AcceptWaveform(data):
-                    self._process_vosk_result()
-                        
+                    self._process_final_recognition_result()
         except Exception as e:
             self.get_logger().error(f"Ошибка аудио callback: {e}")
 
-    def _process_vosk_result(self) -> None:
-        """Обработка результата от Vosk"""
+    def _process_final_recognition_result(self) -> None:
+        """Обработка финального результата распознавания"""
         try:
             result = json.loads(self.recognizer.Result())
             text = result.get('text', '').strip()
             
             if text:
-                self._handle_recognized_text(text)
+                self._handle_recognized_speech(text)
         except json.JSONDecodeError as e:
-            self.get_logger().error(f"❌ Ошибка парсинга JSON от Vosk: {e}")
+            self.get_logger().error(f"Ошибка JSON от Vosk: {e}")
         except Exception as e:
-            self.get_logger().error(f"❌ Ошибка обработки результата Vosk: {e}")
+            self.get_logger().error(f"Ошибка обработки результата Vosk: {e}")
 
-    def _handle_recognized_text(self, text: str) -> None:
-        """Единый диспетчер распознанного текста"""
-        try:
-            self.get_logger().debug(f"Распознано: '{text}'")
-            
-            # Игнорируем в состоянии PAUSED
-            if self.state_machine.state == RecognitionState.PAUSED:
-                return
-            
-            # Диспетчеризация по состояниям
-            if self.state_machine.state == RecognitionState.LISTENING_FOR_TRIGGER:
-                self._process_trigger_state(text)
-            else:
-                self._process_active_state(text)
-                
-        except Exception as e:
-            self.get_logger().error(f"Ошибка обработки текста: {e}")
-
-    def _process_trigger_state(self, text: str) -> None:
-        """Обработка текста в состоянии ожидания триггера"""
-        trigger_found, command_after_trigger = self._check_trigger_and_command(text)
+    # === ОСНОВНАЯ ЛОГИКА ОБРАБОТКИ ===
+    
+    def _handle_recognized_speech(self, text: str) -> None:
+        """Главный диспетчер распознанной речи"""
+        self.get_logger().debug(f"🎤 Распознано: '{text}'")
         
-        if not trigger_found:
-            return
-            
-        self.get_logger().info(f"✓ Триггер найден: '{text}'")
+        if self.state_manager.state == RecognitionState.PAUSED:
+            return  # Игнорируем в состоянии паузы
         
-        if command_after_trigger:
-            # КЕЙС 1.2, 1.3: Триггер + команда - сразу в диалог
-            self._start_dialog_with_command(command_after_trigger)
+        # Маршрутизация по состояниям
+        if self.state_manager.is_passive_listening():
+            self._handle_passive_listening(text)
         else:
-            # КЕЙС 1.1: Только триггер - ждем команду
-            self._play_sound(SOUND_TRIGGER)
-            self.state_machine.set_trigger_found()
-            self._start_command_capture()
+            self._handle_active_listening(text)
 
-    def _process_active_state(self, text: str) -> None:
-        """Обработка текста в активных состояниях (CAPTURING_COMMAND, DIALOG_MODE)"""
-        # Приоритет 1: Стоп-слова
-        if self._check_stop_words(text):
-            self.get_logger().info(f"✋ Стоп-слово найдено: '{text}'")
-            self._handle_stop_word()
+    def _handle_passive_listening(self, text: str) -> None:
+        """Обработка речи в пассивном режиме (ожидание триггера)"""
+        is_trigger, command = self.command_processor.extract_trigger_and_command(
+            text, self.config.MAX_TEXT_LENGTH_FOR_TRIGGER
+        )
+        
+        if not is_trigger:
             return
+            
+        self.get_logger().info(f"🔔 Триггер обнаружен: '{text}'")
         
-        # Приоритет 2: Команды шасси
-        chassis_command = self._check_chassis_words(text)
-        if chassis_command:
-            self.get_logger().info(f"🚗 Команда шасси: '{text}' -> {chassis_command}")
-            self._handle_chassis_command(chassis_command)
-            return
-        
-        # Приоритет 3: Обычная команда для AI
-        self._handle_ai_command(text)
-
-    def _handle_stop_word(self) -> None:
-        """Обработка стоп-слова"""
-        current_state = self.state_machine.state
-        
-        if current_state == RecognitionState.DIALOG_MODE:
-            # КЕЙС 3.3: Завершение диалога с прощанием
-            self._end_dialog(with_farewell=True)
-        elif current_state == RecognitionState.CAPTURING_COMMAND:
-            # КЕЙС 2.3: Стоп-слово после триггера
-            self._send_farewell_message()
-            self._reset_to_listening()
+        if command:
+            # Триггер + команда: сразу начинаем диалог
+            self._start_dialog_with_command(command)
         else:
-            # Резервный сброс
-            self._reset_to_listening()
+            # Только триггер: переходим к захвату команды
+            self._transition_to_command_capture()
 
-    def _handle_chassis_command(self, command: str) -> None:
-        """Обработка команды шасси"""
-        # Останавливаем таймер команды и переходим в диалог если нужно
-        self._stop_command_timer()
-        self._transition_to_dialog_if_needed()
+    def _handle_active_listening(self, text: str) -> None:
+        """Обработка речи в активном режиме (диалог/захват команды)"""
+        # Приоритетная обработка по типам команд
+        if self._process_stop_command(text):
+            return
+        if self._process_chassis_command(text):
+            return
+        if self._process_ai_command(text):
+            return
         
-        # Отправляем команду
-        msg = String()
-        msg.data = command
-        self.command_publisher.publish(msg)
-        self._play_sound(SOUND_SUCCESS)
-        
-        # В диалоге сбрасываем таймер
-        if self.state_machine.state == RecognitionState.DIALOG_MODE:
-            self._reset_dialog_timer()
+        self.get_logger().debug(f"❓ Необработанная команда: '{text}'")
 
-    def _handle_ai_command(self, text: str) -> None:
-        """Обработка команды для AI"""
+    def _process_stop_command(self, text: str) -> bool:
+        """Обработка стоп-команды (высший приоритет)"""
+        if not self.command_processor.is_stop_command(text, self.config.MAX_TEXT_LENGTH_FOR_COMMANDS):
+            return False
+            
+        self.get_logger().info(f"🛑 Стоп-команда: '{text}'")
+        self._execute_stop_sequence()
+        return True
+
+    def _process_chassis_command(self, text: str) -> bool:
+        """Обработка команды шасси (средний приоритет)"""
+        chassis_command = self.command_processor.get_chassis_command(
+            text, self.config.MAX_TEXT_LENGTH_FOR_COMMANDS
+        )
+        
+        if not chassis_command:
+            return False
+            
+        self.get_logger().info(f"🚗 Команда шасси: '{text}' -> {chassis_command}")
+        self._execute_chassis_command(chassis_command)
+        return True
+
+    def _process_ai_command(self, text: str) -> bool:
+        """Обработка команды для AI (низший приоритет)"""
         cleaned_text = text.strip()
         
         # Валидация команды
-        if not cleaned_text or len(cleaned_text) < MIN_COMMAND_LENGTH:
-            self.get_logger().debug(f"Команда проигнорирована: '{cleaned_text}'")
-            return
+        if (not cleaned_text or 
+            len(cleaned_text) < self.config.MIN_COMMAND_LENGTH or
+            len(cleaned_text) > self.config.MAX_TEXT_LENGTH_FOR_COMMANDS):
+            return False
 
-        # Останавливаем таймер и переходим в диалог
-        self._stop_command_timer()
+        self.get_logger().info(f"🤖 Команда AI: '{cleaned_text}'")
+        self._execute_ai_command(cleaned_text)
+        return True
+
+    # === ВЫПОЛНЕНИЕ КОМАНД ===
+    
+    def _execute_stop_sequence(self) -> None:
+        """Выполнение последовательности остановки"""
+        current_state = self.state_manager.state
+        
+        if current_state == RecognitionState.DIALOG_MODE:
+            self._end_dialog(with_farewell=True)
+        elif current_state == RecognitionState.CAPTURING_COMMAND:
+            self._send_farewell_message()
+            self._reset_to_listening_state()
+        else:
+            self._reset_to_listening_state()
+
+    def _execute_chassis_command(self, command: str) -> None:
+        """Выполнение команды шасси"""
+        self.timer_manager.stop_timer('command_timeout')
         self._transition_to_dialog_if_needed()
         
-        # Отправляем к AI
-        self.get_logger().info(f"📤 Команда AI: '{cleaned_text}'")
-        self._play_sound(SOUND_SUCCESS)
-        self._send_to_ai(cleaned_text)
+        # Отправка команды
+        msg = String()
+        msg.data = command
+        self.command_pub.publish(msg)
+        self._play_sound(self.config.SOUND_SUCCESS)
+        
+        # Сброс таймера диалога если в диалоге
+        if self.state_manager.state == RecognitionState.DIALOG_MODE:
+            self._reset_dialog_timer()
+
+    def _execute_ai_command(self, command: str) -> None:
+        """Выполнение команды для AI"""
+        self.timer_manager.stop_timer('command_timeout')
+        self._transition_to_dialog_if_needed()
+        
+        # Отправка к AI
+        self._play_sound(self.config.SOUND_SUCCESS)
+        self._send_to_ai_processor(command)
+
+    def _send_to_ai_processor(self, text: str) -> None:
+        """Отправка команды в AI процессор"""
+        self.timer_manager.stop_all_timers()
+        
+        msg = String()
+        msg.data = text
+        self.ai_question_pub.publish(msg)
+        
+        self.state_manager.pause()
+        self.get_logger().info(f"📤 Отправлено в AI: '{text}'")
+
+    # === УПРАВЛЕНИЕ СОСТОЯНИЯМИ И ПЕРЕХОДАМИ ===
+    
+    def _transition_to_command_capture(self) -> None:
+        """Переход в состояние захвата команды"""
+        self.state_manager.on_trigger_detected()
+        self._play_sound(self.config.SOUND_TRIGGER)
+        self._start_command_timeout_timer()
 
     def _start_dialog_with_command(self, command: str) -> None:
-        """Запуск диалога с немедленной обработкой команды"""
-        self._start_dialog()
-        self._process_active_state(command)
+        """Начало диалога с немедленным выполнением команды"""
+        self._start_dialog_mode()
+        self._handle_active_listening(command)  # Обрабатываем команду в контексте диалога
 
-    def _start_dialog(self) -> None:
+    def _start_dialog_mode(self) -> None:
         """Запуск режима диалога"""
-        self.state_machine.start_dialog()
+        self.state_manager.start_dialog()
         self._reset_dialog_timer()
         
-        # Уведомляем AI о начале диалога
+        # Уведомление AI о начале диалога
         msg = String()
         msg.data = "start_dialog"
-        self.dialog_control_publisher.publish(msg)
+        self.dialog_control_pub.publish(msg)
         
-        self.get_logger().info("🗣️ Режим диалога запущен")
+        self.get_logger().info("💬 Режим диалога активирован")
 
     def _end_dialog(self, with_farewell: bool = False) -> None:
         """Завершение режима диалога"""
-        self._stop_all_timers()
+        self.timer_manager.stop_all_timers()
         
-        # Уведомляем AI о завершении диалога
+        # Уведомление AI о завершении диалога
         msg = String()
         msg.data = "end_dialog"
-        self.dialog_control_publisher.publish(msg)
+        self.dialog_control_pub.publish(msg)
         
         if with_farewell:
             self._send_farewell_message()
         
-        self.state_machine.end_dialog()
+        self.state_manager.end_dialog()
         self.get_logger().info("🔚 Диалог завершен")
-
-    def _send_farewell_message(self) -> None:
-        """Отправка прощального сообщения"""
-        farewell_msg = String()
-        farewell_msg.data = "рад был помочь"
-        self.text_to_speech_publisher.publish(farewell_msg)
-
-    def _send_to_ai(self, text: str) -> None:
-        """Отправка команды к AI с переходом в PAUSED"""
-        self._stop_all_timers()
-        
-        msg = String()
-        msg.data = text
-        self.ai_question_publisher.publish(msg)
-        
-        self.state_machine.pause()
-        self.get_logger().info(f"📤 Отправлено в AI: '{text}' | ⏸️ Микрофон отключен")
-
-    # === ТАЙМЕРЫ ===
-
-    def _start_command_capture(self) -> None:
-        """Запуск захвата команды с таймаутом"""
-        self._stop_command_timer()
-        if self.state_machine.state == RecognitionState.CAPTURING_COMMAND:
-            self.no_speech_timer = self.create_timer(self.no_speech_timeout, self._no_speech_timeout)
-            self.get_logger().info(f"⏱️ Таймер команды запущен ({self.no_speech_timeout}с)")
-
-    def _reset_dialog_timer(self) -> None:
-        """Сброс таймера диалога"""
-        self._stop_dialog_timer()
-        if self.state_machine.state == RecognitionState.DIALOG_MODE:
-            self.dialog_timer = self.create_timer(self.dialog_timeout, self._dialog_timeout)
-            self.get_logger().debug(f"⏱️ Таймер диалога сброшен ({self.dialog_timeout}с)")
 
     def _transition_to_dialog_if_needed(self) -> None:
         """Автоматический переход в диалог при обработке команды"""
-        if self.state_machine.state == RecognitionState.CAPTURING_COMMAND:
-            self._start_dialog()
-            self.get_logger().debug("🔄 Автоматический переход: CAPTURING_COMMAND → DIALOG_MODE")
+        if self.state_manager.state == RecognitionState.CAPTURING_COMMAND:
+            self._start_dialog_mode()
+            self.get_logger().debug("🔄 Автопереход в режим диалога")
 
-    def _stop_command_timer(self) -> None:
-        """Остановка таймера команды"""
-        if hasattr(self, 'no_speech_timer') and self.no_speech_timer:
-            self.destroy_timer(self.no_speech_timer)
-            self.no_speech_timer = None
-
-    def _stop_dialog_timer(self) -> None:
-        """Остановка таймера диалога"""
-        if hasattr(self, 'dialog_timer') and self.dialog_timer:
-            self.destroy_timer(self.dialog_timer)
-            self.dialog_timer = None
-
-    def _stop_reminder_timer(self) -> None:
-        """Остановка таймера напоминаний"""
-        if hasattr(self, 'reminder_timer') and self.reminder_timer:
-            self.destroy_timer(self.reminder_timer)
-            self.reminder_timer = None
-
-    def _stop_all_timers(self) -> None:
-        """Остановка всех таймеров"""
-        self._stop_command_timer()
-        self._stop_dialog_timer()
-
-    def _restart_reminder_timer(self, interval: float) -> None:
-        """Перезапуск таймера напоминаний"""
-        self._stop_reminder_timer()
-        self.reminder_timer = self.create_timer(interval, self._send_reminder_message)
-
-    def _no_speech_timeout(self) -> None:
-        """Тайм-аут отсутствия речи после триггера"""
-        self.get_logger().warn(f"⏰ Тайм-аут команды: {self.no_speech_timeout}с тишины")
-        self._play_sound(SOUND_TIMEOUT)
-        self._reset_to_listening()
-
-    def _dialog_timeout(self) -> None:
-        """Тайм-аут диалога"""
-        self.get_logger().warn(f"⏰ Тайм-аут диалога: {self.dialog_timeout}с тишины")
-        self._play_sound(SOUND_TIMEOUT)
-        self._end_dialog()
-
-    def _send_reminder_message(self) -> None:
-        """Отправка напоминания пользователю"""
-        try:
-            if self.state_machine.state == RecognitionState.LISTENING_FOR_TRIGGER:
-                self.state_machine.pause()
-                
-                reminder_msg = String()
-                reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертер, Или робот, и задайте свой вопрос."
-                self.text_to_speech_publisher.publish(reminder_msg)
-                
-                self.get_logger().info("📢 Напоминание отправлено в TTS")
-                self._restart_reminder_timer(self.reminder_interval)
-            else:
-                self._restart_reminder_timer(self.reminder_interval)
-                
-        except Exception as e:
-            self.get_logger().error(f"Ошибка отправки напоминания: {e}")
-            self.state_machine.resume()
-            self._restart_reminder_timer(self.reminder_interval)
-
-    # === ПОИСК КОМАНД ===
-
-    def _check_trigger_and_command(self, text: str) -> Tuple[bool, Optional[str]]:
-        """Проверка триггера и извлечение команды после него"""
-        words = self._preprocess_text_for_checking(text, MAX_TEXT_LENGTH_FOR_TRIGGER)
-        if not words:
-            return False, None
-            
-        first_word = words[0]
-        trigger_found = (first_word in self.trigger_words_set or 
-                        self.trigger_pattern.search(first_word))
+    def _reset_to_listening_state(self) -> None:
+        """Сброс в состояние пассивного прослушивания"""
+        self.state_manager.end_dialog()
+        self.timer_manager.stop_timer('command_timeout')
         
-        if not trigger_found:
-            return False, None
-        
-        command = ' '.join(words[1:]).strip() if len(words) > 1 else None
-        return True, command if command else None
-
-    def _check_stop_words(self, text: str) -> bool:
-        """Проверка стоп-слов"""
-        words = self._preprocess_text_for_checking(text, MAX_TEXT_LENGTH_FOR_COMMANDS)
-        if not words:
-            return False
-        
-        first_word = words[0]
-        if first_word in self.stop_words_set or self.stop_pattern.search(text.lower()):
-            return True
-            
-        return False
-
-    def _check_chassis_words(self, text: str) -> Optional[str]:
-        """Проверка команд шасси"""
-        words = self._preprocess_text_for_checking(text, MAX_TEXT_LENGTH_FOR_COMMANDS)
-        if not words:
-            return None
-        
-        for word in words:
-            if word in self.chassis_commands:
-                return self.chassis_commands[word]
-                
-        match = self.chassis_pattern.search(text.lower())
-        if match:
-            matched_word = match.group()
-            return self.chassis_commands.get(matched_word)
-            
-        return None
-
-    def _preprocess_text_for_checking(self, text: str, max_length: int) -> Optional[list[str]]:
-        """Предварительная обработка текста"""
-        if not text or len(text) > max_length:
-            return None
-            
-        words = text.lower().split()
-        return words if words else None
-
-    # === УПРАВЛЕНИЕ СОСТОЯНИЯМИ ===
-
-    def _reset_to_listening(self) -> None:
-        """Сброс в состояние прослушивания"""
-        self.state_machine.end_dialog()
-        self._stop_command_timer()
-        
+        # Сброс распознавателя
         with self.recognition_lock:
             try:
                 self.recognizer.Reset()
             except Exception as e:
-                self.get_logger().error(f"Ошибка сброса recognizer: {e}")
+                self.get_logger().error(f"Ошибка сброса распознавателя: {e}")
         
         self.get_logger().debug("🔄 Возврат в режим прослушивания")
 
+    def _send_farewell_message(self) -> None:
+        """Отправка прощального сообщения"""
+        msg = String()
+        msg.data = "рад был помочь"
+        self.text_to_speech_pub.publish(msg)
+
+    # === УПРАВЛЕНИЕ ТАЙМЕРАМИ ===
+    
+    def _start_reminder_timer(self) -> None:
+        """Запуск таймера напоминаний"""
+        self.timer_manager.start_timer(
+            'reminder', 
+            self.config.REMINDER_INTERVAL, 
+            self._send_user_reminder
+        )
+        self.get_logger().info("⏰ Таймер напоминаний запущен")
+
+    def _start_command_timeout_timer(self) -> None:
+        """Запуск таймера таймаута команды"""
+        if self.state_manager.state == RecognitionState.CAPTURING_COMMAND:
+            self.timer_manager.start_timer(
+                'command_timeout',
+                self.config.NO_SPEECH_TIMEOUT,
+                self._handle_command_timeout
+            )
+
+    def _reset_dialog_timer(self) -> None:
+        """Сброс таймера диалога"""
+        if self.state_manager.state == RecognitionState.DIALOG_MODE:
+            self.timer_manager.start_timer(
+                'dialog_timeout',
+                self.config.DIALOG_TIMEOUT,
+                self._handle_dialog_timeout
+            )
+
+    def _handle_command_timeout(self) -> None:
+        """Обработка таймаута команды"""
+        self.get_logger().warn(f"⏰ Таймаут команды ({self.config.NO_SPEECH_TIMEOUT}с)")
+        self._play_sound(self.config.SOUND_TIMEOUT)
+        self._reset_to_listening_state()
+
+    def _handle_dialog_timeout(self) -> None:
+        """Обработка таймаута диалога"""
+        self.get_logger().warn(f"⏰ Таймаут диалога ({self.config.DIALOG_TIMEOUT}с)")
+        self._play_sound(self.config.SOUND_TIMEOUT)
+        self._end_dialog()
+
+    def _send_user_reminder(self) -> None:
+        """Отправка напоминания пользователю"""
+        try:
+            if self.state_manager.is_passive_listening():
+                self.state_manager.pause()
+                
+                reminder_msg = String()
+                reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертер, Или робот, и задайте свой вопрос."
+                self.text_to_speech_pub.publish(reminder_msg)
+                
+                self.get_logger().info("🔔 Напоминание отправлено")
+                self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
+            else:
+                self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
+                
+        except Exception as e:
+            self.get_logger().error(f"Ошибка напоминания: {e}")
+            self.state_manager.resume()
+            self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
+
+    # === ВНЕШНЕЕ УПРАВЛЕНИЕ ===
+    
     def _handle_recognition_control(self, msg: Bool) -> None:
-        """Управление состоянием распознавания"""
+        """Обработка внешнего управления распознаванием"""
         try:
             if msg.data:
-                self._enable_microphone()
+                self._activate_recognition()
             else:
-                self._disable_microphone()
+                self._deactivate_recognition()
         except Exception as e:
-            self.get_logger().error(f"❌ Ошибка управления распознаванием: {e}")
+            self.get_logger().error(f"Ошибка управления распознаванием: {e}")
     
-    def _enable_microphone(self) -> None:
-        """Включение микрофона"""
+    def _activate_recognition(self) -> None:
+        """Активация распознавания"""
         self._reset_vosk_recognizer()
-        self.state_machine.resume()
+        self.state_manager.resume()
         
-        if self.state_machine.state == RecognitionState.DIALOG_MODE:
+        if self.state_manager.state == RecognitionState.DIALOG_MODE:
             self._reset_dialog_timer()
-            self.get_logger().info("✓ Микрофон включен (диалог)")
+            self.get_logger().info("✅ Распознавание активировано (диалог)")
         else:
-            if self.state_machine.state == RecognitionState.LISTENING_FOR_TRIGGER:
-                self._restart_reminder_timer(self.reminder_interval)
-            self.get_logger().info("✓ Микрофон включен")
+            if self.state_manager.is_passive_listening():
+                self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
+            self.get_logger().info("✅ Распознавание активировано")
     
-    def _disable_microphone(self) -> None:
-        """Отключение микрофона"""
-        self.state_machine.pause()
-        self._stop_all_timers()
+    def _deactivate_recognition(self) -> None:
+        """Деактивация распознавания"""
+        self.state_manager.pause()
+        self.timer_manager.stop_all_timers()
         self._reset_vosk_recognizer()
-        self.get_logger().info("🔇 Микрофон отключен")
+        self.get_logger().info("⏸️ Распознавание деактивировано")
 
     def _reset_vosk_recognizer(self) -> None:
-        """Сброс Vosk recognizer"""
+        """Сброс распознавателя Vosk"""
         try:
             with self.recognition_lock:
                 if hasattr(self, 'recognizer') and self.recognizer:
                     self.recognizer.Reset()
         except Exception as e:
-            self.get_logger().error(f"Ошибка сброса Vosk recognizer: {e}")
+            self.get_logger().error(f"Ошибка сброса Vosk: {e}")
 
+    # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
+    
     def _play_sound(self, sound_name: str) -> None:
         """Воспроизведение звука"""
         try:
             msg = String()
             msg.data = sound_name
-            self.sound_player_publisher.publish(msg)
+            self.sound_player_pub.publish(msg)
         except Exception as e:
-            self.get_logger().error(f"Ошибка воспроизведения звука {sound_name}: {e}")
+            self.get_logger().error(f"Ошибка воспроизведения {sound_name}: {e}")
 
     def _cleanup_resources(self) -> None:
         """Очистка ресурсов"""
         with self.recognition_lock:
-            try:
-                if hasattr(self, 'recognizer') and self.recognizer:
-                    self.recognizer = None
-            except Exception:
-                pass
+            self.recognizer = None
         
         try:
             sd.stop()
@@ -655,26 +679,26 @@ class SpeechRecognitionNode(Node):
             pass
 
     def shutdown(self) -> None:
-        """Завершение работы"""
+        """Корректное завершение работы"""
         try:
-            self.get_logger().info("🔄 Завершение работы ноды...")
+            self.get_logger().info("🔄 Завершение работы...")
             self.shutdown_event.set()
-            self._stop_all_timers()
-            self._stop_reminder_timer()
+            self.timer_manager.stop_all_timers()
             self._cleanup_resources()
-            self.get_logger().info("✓ Завершение работы завершено")
+            self.get_logger().info("✅ Завершение работы завершено")
         except Exception as e:
-            self.get_logger().error(f"Ошибка при завершении: {e}")
+            self.get_logger().error(f"Ошибка завершения: {e}")
 
 def main(args=None) -> None:
-    """Главная функция"""
+    """Главная функция запуска"""
     rclpy.init(args=args)
     node = None
     
     try:
         node = SpeechRecognitionNode()
-        print("🎤 VOSK РАСПОЗНАВАТЕЛЬ: Wake Word → Dialog Mode → Continuous AI")
-        print("   Состояния: listening_for_trigger ↔ dialog_mode ↔ capturing_command")
+        print("🎤 УЛУЧШЕННЫЙ РАСПОЗНАВАТЕЛЬ РЕЧИ")
+        print("   Архитектура: CommandProcessor + StateManager + TimerManager")
+        print("   Состояния: LISTENING → CAPTURING → DIALOG → PAUSED")
         rclpy.spin(node)
     except KeyboardInterrupt:
         print("\n🔄 Завершение по Ctrl+C...")
@@ -686,7 +710,7 @@ def main(args=None) -> None:
             node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
-        print("✓ Завершено")
+        print("✅ Система завершена")
 
 if __name__ == '__main__':
     main()
