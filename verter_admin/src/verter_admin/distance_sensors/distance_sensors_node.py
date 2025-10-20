@@ -136,50 +136,7 @@ class DistanceSensorsNode(Node):
 
     def _process_sensor_data(self, data_line: str):
         """Обработка данных с датчиков."""
-        try:
-            # Ожидаем формат: "DISTANCE:10:23:24:23:23:22:22"
-            if not data_line.startswith('DISTANCE:'):
-                return
-            
-            # Парсим данные датчиков
-            parts = data_line.split(':')
-            if len(parts) != 8:  # DISTANCE + 7 датчиков
-                self.get_logger().warn(f'Неверный формат данных: {len(parts)-1} датчиков, ожидается 7')
-                return
-            
-            critical_distance_detected = False
-            
-            for i in range(1, 8):  # Пропускаем "DISTANCE"
-                try:
-                    distance = float(parts[i])
-                    
-                    # 999 означает ошибку или вне диапазона
-                    if distance == 999:
-                        self.sensor_data[i-1] = 999.0
-                        continue
-                    
-                    self.sensor_data[i-1] = distance
-                    
-                    # Проверяем критическое расстояние только для датчиков 2-6 (индексы 1-5)
-                    # Датчики 1 и 7 - боковые, их не учитываем
-                    if 1 <= i <= 5 and distance < self.CRITICAL_DISTANCE:
-                        critical_distance_detected = True
-                        
-                except ValueError:
-                    self.get_logger().error(f'Ошибка парсинга расстояния для датчика {i}: {parts[i]}')
-            
-            # Определяем команду на основе состояния датчиков
-            if critical_distance_detected:
-                # Логируем СТОП с данными датчиков
-                sensor_values = ', '.join([f'S{i+1}:{self.sensor_data[i]:.0f}' for i in range(self.NUM_SENSORS)])
-                self.get_logger().warn(f'СТОП: {sensor_values}')
-                self._send_command("CHASSIS:STOP")
-            else:
-                # Препятствий нет - ничего не делаем
-                pass
-         
-        except Exception as e:
-            self.get_logger().error(f'Ошибка обработки данных датчиков: {e}')
+        pass
 
     def _send_command(self, command: str):
         """Отправка команды."""
