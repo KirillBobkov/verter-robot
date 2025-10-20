@@ -432,8 +432,7 @@ class SpeechRecognitionNode(Node):
         
         # Валидация команды
         if (not cleaned_text or 
-            len(cleaned_text) < self.config.MIN_COMMAND_LENGTH or
-            len(cleaned_text) > self.config.MAX_TEXT_LENGTH_FOR_COMMANDS):
+            len(cleaned_text) < self.config.MIN_COMMAND_LENGTH):
             return False
 
         self.get_logger().info(f"🤖 Команда AI: '{cleaned_text}'")
