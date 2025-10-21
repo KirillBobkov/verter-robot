@@ -96,7 +96,7 @@ setup(
         # Включаем звуковые файлы в пакет
         *get_sound_files(),
     ],
-    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy', 'pyusb', 'yandex-cloud-ml-sdk', 'silero-tts', 'pyserial'], 
+    install_requires=['setuptools', 'vosk', 'sounddevice', 'numpy<2.0', 'pyusb', 'yandex-cloud-ml-sdk', 'silero-tts', 'pyserial', 'opencv-python'], 
     zip_safe=True,
     maintainer='Имя Пользователя',
     maintainer_email='user@example.com',
@@ -115,6 +115,7 @@ setup(
             'ultrasonic_to_laserscan_node = verter_admin.distance_sensors.ultrasonic_to_laserscan_node:main',
             'odometry_node = verter_admin.odometry.odometry_node:main',
             'doa_node = verter_admin.doa.doa_node:main',
+            'tof_camera_node = verter_admin.tof_camera.tof_camera_node:main',
         ],
     },
 )

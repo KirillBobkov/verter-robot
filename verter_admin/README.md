@@ -151,6 +151,9 @@ ros2 launch verter_admin verter_base.launch.py
 
 ```bash
 ros2 launch verter_admin silero.launch.py
+
+ros2 launch verter_admin tof_camera.launch.py
+
 ```
 
 ### Запуск отдельных нод
@@ -328,4 +331,11 @@ verter_admin/
 └── README.md                # Документация
 ```
 
+
+python3 /tmp/test_tof_stable.py
+
+cd /home/verter/verter-robot/verter_admin
+source /opt/ros/humble/setup.bash 2>/dev/null || true
+source install/local_setup.bash 2>/dev/null || true
+python3 src/verter_admin/tof_camera/tof_camera_node.py
 
