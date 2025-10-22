@@ -158,8 +158,8 @@ class ChassisNode(Node):
 
         elif linear_vel > 0:
             # Движение вперед
-            return "CHASSIS:FRONT"
-
+            self.get_logger().debug('Скорость вперед, скорость:' + str(linear_vel))
+            return "CHASSIS:FRONT:" + linear_vel
         elif linear_vel < 0:
             # Движение назад
             return "CHASSIS:BACK"
