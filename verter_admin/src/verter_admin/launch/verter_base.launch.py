@@ -7,9 +7,11 @@ VERTER BASE LAUNCH FILE - Базовые компоненты робота
 Назначение:
 -----------
 Запускает базовые компоненты робота Verter:
-1. robot_state_publisher - публикует URDF модель и TF дерево
+1. robot_state_publisher - публикует URDF модель и статические TF
 2. odometry_node - публикует одометрию и TF: odom -> base_link
-3. ultrasonic_to_laserscan_node - конвертирует датчики в LaserScan
+3. joint_state_publisher - публикует состояния джоинтов колес
+4. chassis_node - управляет моторами робота (получает /verter_commands)
+5. ultrasonic_to_laserscan_node - конвертирует датчики в LaserScan
 
 Это минимальный набор для работы робота.
 
@@ -27,8 +29,10 @@ ros2 launch verter_admin verter_base.launch.py
 
 Что будет запущено:
 ------------------
-✓ robot_state_publisher (TF: base_link -> sensors/wheels)
+✓ robot_state_publisher (TF: base_link -> sensors/caster)
 ✓ odometry_node (TF: odom -> base_link, топик /odom)
+✓ joint_state_publisher (TF: base_link -> wheels, топик /joint_states)
+✓ chassis_node (управление моторами, топик /verter_commands)
 ✓ ultrasonic_to_laserscan_node (топик /scan)
 
 Проверка:
@@ -119,7 +123,30 @@ def generate_launch_description():
         }]
     )
 
-    # 3. ultrasonic_to_laserscan_node - конвертирует датчики в LaserScan
+    # 3. joint_state_publisher - публикует состояния джоинтов (для колес)
+    #  не нужен пока нет данных с колес
+    # joint_state_publisher_node = Node(
+    #     package='joint_state_publisher',
+    #     executable='joint_state_publisher',
+    #     name='joint_state_publisher',
+    #     output='screen',
+    #     parameters=[{
+    #         'use_sim_time': use_sim_time
+    #     }]
+    # )
+
+    # 4. chassis_node - управляет моторами робота
+    chassis_node = Node(
+        package='verter_admin',
+        executable='chassis_node',
+        name='chassis_node',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time
+        }]
+    )
+
+    # 5. ultrasonic_to_laserscan_node - конвертирует датчики в LaserScan
     ultrasonic_to_laserscan_node = Node(
         package='verter_admin',
         executable='ultrasonic_to_laserscan_node',
@@ -142,6 +169,7 @@ def generate_launch_description():
         # Ноды
         robot_state_publisher_node,
         odometry_node,
+        chassis_node,
         ultrasonic_to_laserscan_node,
     ])
 

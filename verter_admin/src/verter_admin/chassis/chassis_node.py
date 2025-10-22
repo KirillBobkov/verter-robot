@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
+from geometry_msgs.msg import Twist
 import serial
 import serial.tools.list_ports
 import time
@@ -13,15 +14,19 @@ class ChassisNode(Node):
     BAUD_RATE = 9600
     CONNECTION_TIMEOUT = 2.0
     SERIAL_TIMEOUT = 0.1
-    
+
+    # Пороги для определения движения
+    LINEAR_THRESHOLD = 0.01    # 1 см/с
+    ANGULAR_THRESHOLD = 0.01   # ~0.57 градуса/с
+
     def __init__(self):
         super().__init__('chassis_node')
-        
+
         self.arduino_serial: Optional[serial.Serial] = None
         self.current_port = None
-        
+
         self._setup_subscribers()
-        
+
         if self._connect_to_arduino():
             self.get_logger().info('Chassis нода инициализирована и готова к работе')
         else:
@@ -29,10 +34,17 @@ class ChassisNode(Node):
 
     def _setup_subscribers(self):
         """Настройка подписчиков."""
+        # Подписчик на команды от голосового управления
         self.command_subscriber = self.create_subscription(
             String, 'verter_commands', self.command_callback, 10
         )
         self.get_logger().info('Подписчик для verter_commands создан')
+
+        # Подписчик на команды скорости от Nav2
+        self.cmd_vel_subscriber = self.create_subscription(
+            Twist, '/cmd_vel', self.cmd_vel_callback, 10
+        )
+        self.get_logger().info('Подписчик для /cmd_vel создан')
 
     def _find_arduino_port(self) -> List[str]:
         """Автоматический поиск портов Arduino по devpath."""
@@ -98,10 +110,63 @@ class ChassisNode(Node):
         return self.arduino_serial and self.arduino_serial.is_open
 
     def command_callback(self, msg):
-        """Обработчик команд из топика /verter_commands."""
+        """Обработчик команд из топика /verter_commands (голосовое управление)."""
         command = msg.data
-        self.get_logger().info(f'Получена команда: "{command}"')
+        self.get_logger().info(f'Получена голосовая команда: "{command}"')
         self._send_to_arduino(command)
+
+    def cmd_vel_callback(self, msg: Twist):
+        """
+        Обработчик команд скорости из топика /cmd_vel (от Nav2).
+
+        Конвертирует команды Twist в формат verter_commands и отправляет на Arduino.
+        """
+        linear_vel = msg.linear.x
+        angular_vel = msg.angular.z
+
+        # Конвертируем в команду
+        command = self._twist_to_command(linear_vel, angular_vel)
+
+        # Отправляем на Arduino
+        self._send_to_arduino(command)
+        self.get_logger().debug(
+            f'Команда Nav2: vx={linear_vel:.2f}, vth={angular_vel:.2f} → {command}'
+        )
+
+    def _twist_to_command(self, linear_vel: float, angular_vel: float) -> str:
+        """
+        Конвертирует команды скорости (Twist) в команды для Arduino.
+
+        Args:
+            linear_vel: Линейная скорость (м/с)
+            angular_vel: Угловая скорость (рад/с)
+
+        Returns:
+            Строка команды для Arduino (CHASSIS:FRONT, CHASSIS:STOP и т.д.)
+        """
+        # Определяем команду на основе скоростей
+        if abs(linear_vel) < self.LINEAR_THRESHOLD and abs(angular_vel) < self.ANGULAR_THRESHOLD:
+            # Робот не двигается
+            return "CHASSIS:STOP"
+
+        elif abs(angular_vel) > abs(linear_vel):
+            # Преобладает поворот
+            if angular_vel > 0:
+                return "CHASSIS:LEFT"   # Поворот налево
+            else:
+                return "CHASSIS:RIGHT"  # Поворот направо
+
+        elif linear_vel > 0:
+            # Движение вперед
+            return "CHASSIS:FRONT"
+
+        elif linear_vel < 0:
+            # Движение назад
+            return "CHASSIS:BACK"
+
+        else:
+            # На всякий случай - стоп
+            return "CHASSIS:STOP"
 
     def _send_to_arduino(self, command: str):
         """Отправка команды на Arduino."""

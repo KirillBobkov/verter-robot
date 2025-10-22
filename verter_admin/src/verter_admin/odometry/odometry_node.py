@@ -74,9 +74,8 @@ ODOMETRY NODE - Нода одометрии для мобильного робо
     - angular.z: скорость поворота (рад/с)
     - Аналогия: "Газ и руль" для робота
 
-/verter_commands (String):
-    - Команды управления роботом (CHASSIS:FRONT, CHASSIS:STOP и т.д.)
-    - Используется текущей системой управления
+ВАЖНО: odometry_node ТОЛЬКО считает одометрию, не управляет моторами!
+Управление моторами выполняет chassis_node, который также слушает /cmd_vel
 ===================================================================================
 """
 
@@ -84,7 +83,6 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, TransformStamped, Quaternion
 from nav_msgs.msg import Odometry
-from std_msgs.msg import String
 from tf2_ros import TransformBroadcaster
 import math
 import time
@@ -160,15 +158,6 @@ class OdometryNode(Node):
             10                  # Размер очереди (если сообщения идут быстрее, чем обрабатываются)
         )
         self.get_logger().info('Публикатор одометрии создан для топика /odom')
-
-        # Публикатор команд для шасси
-        # Будем пересылать команды из cmd_vel в формат verter_commands
-        self.command_publisher = self.create_publisher(
-            String,
-            '/verter_commands',
-            10
-        )
-        self.get_logger().info('Публикатор команд создан для топика /verter_commands')
 
         # ============================================================================
         # TF BROADCASTER
@@ -265,57 +254,6 @@ class OdometryNode(Node):
             if self.is_moving:
                 self.get_logger().info('Остановка')
                 self.is_moving = False
-
-        # Конвертируем команды скорости в команды для chassis_node
-        # Это нужно для совместимости с текущей системой управления
-        self._send_chassis_command(self.vx, self.vth)
-
-
-    def _send_chassis_command(self, linear_vel, angular_vel):
-        """
-        Конвертирует команды скорости Nav2 в команды для chassis_node.
-
-        Эта функция преобразует стандартные команды ROS2 (Twist)
-        в формат команд вашего робота (CHASSIS:FRONT, CHASSIS:STOP и т.д.)
-
-        Args:
-            linear_vel (float): Линейная скорость (м/с)
-            angular_vel (float): Угловая скорость (рад/с)
-        """
-        # Пороговые значения для определения "движется" или "стоит"
-        linear_threshold = 0.01    # 1 см/с
-        angular_threshold = 0.01   # ~0.57 градуса/с
-
-        # Определяем команду на основе скоростей
-        if abs(linear_vel) < linear_threshold and abs(angular_vel) < angular_threshold:
-            # Робот не двигается - команда STOP
-            command = "CHASSIS:STOP"
-
-        elif abs(angular_vel) > abs(linear_vel):
-            # Преобладает поворот
-            if angular_vel > 0:
-                command = "CHASSIS:LEFT"   # Поворот налево
-            else:
-                command = "CHASSIS:RIGHT"  # Поворот направо
-
-        elif linear_vel > 0:
-            # Движение вперед
-            command = "CHASSIS:FRONT"
-
-        elif linear_vel < 0:
-            # Движение назад
-            command = "CHASSIS:BACK"
-
-        else:
-            # На всякий случай - стоп
-            command = "CHASSIS:STOP"
-
-        # Публикуем команду
-        msg = String()
-        msg.data = command
-        self.command_publisher.publish(msg)
-
-        self.get_logger().debug(f'Команда шасси: {command} (vx={linear_vel:.2f}, vth={angular_vel:.2f})')
 
 
     def update_odometry_callback(self):
@@ -582,12 +520,6 @@ class OdometryNode(Node):
         """
         self.get_logger().info('Завершение работы ноды одометрии')
         self.get_logger().info(f'Финальная позиция: x={self.x:.3f}м, y={self.y:.3f}м, θ={math.degrees(self.theta):.1f}°')
-
-        # Останавливаем робота
-        self.vx = 0.0
-        self.vy = 0.0
-        self.vth = 0.0
-        self._send_chassis_command(0.0, 0.0)
 
         # Вызываем родительский метод для корректного завершения
         super().destroy_node()
