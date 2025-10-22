@@ -152,17 +152,16 @@ class ChassisNode(Node):
         elif abs(angular_vel) > abs(linear_vel):
             # Преобладает поворот
             if angular_vel > 0:
-                return "CHASSIS:LEFT"   # Поворот налево
+                return f"CHASSIS:LEFT:{abs(angular_vel):.2f}"   # Поворот налево
             else:
-                return "CHASSIS:RIGHT"  # Поворот направо
+                return f"CHASSIS:RIGHT:{abs(angular_vel):.2f}"  # Поворот направо
 
         elif linear_vel > 0:
             # Движение вперед
-            self.get_logger().debug('Скорость вперед, скорость:' + str(linear_vel))
-            return "CHASSIS:FRONT:" + linear_vel
+            return f"CHASSIS:FRONT:{linear_vel:.2f}"
         elif linear_vel < 0:
             # Движение назад
-            return "CHASSIS:BACK"
+            return f"CHASSIS:BACK:{abs(linear_vel):.2f}"
 
         else:
             # На всякий случай - стоп
