@@ -12,6 +12,7 @@ VERTER BASE LAUNCH FILE - Базовые компоненты робота
 3. joint_state_publisher - публикует состояния джоинтов колес
 4. chassis_node - управляет моторами робота (получает /verter_commands)
 5. ultrasonic_to_laserscan_node - конвертирует датчики в LaserScan
+6. tof_camera_node - ToF камера (публикует PointCloud2 для Nav2)
 
 Это минимальный набор для работы робота.
 
@@ -29,16 +30,17 @@ ros2 launch verter_admin verter_base.launch.py
 
 Что будет запущено:
 ------------------
-✓ robot_state_publisher (TF: base_link -> sensors/caster)
+✓ robot_state_publisher (TF: base_link -> sensors/caster/camera_tof)
 ✓ odometry_node (TF: odom -> base_link, топик /odom)
 ✓ joint_state_publisher (TF: base_link -> wheels, топик /joint_states)
 ✓ chassis_node (управление моторами, топик /verter_commands)
 ✓ ultrasonic_to_laserscan_node (топик /scan)
+✓ tof_camera_node (топик /camera/depth/points)
 
 Проверка:
 ---------
 ros2 topic list
-# Должны быть: /tf, /tf_static, /odom, /scan, /robot_description
+# Должны быть: /tf, /tf_static, /odom, /scan, /camera/depth/points, /robot_description
 
 ros2 run tf2_tools view_frames
 # TF дерево: odom -> base_footprint -> base_link -> {sensors, wheels}
@@ -157,6 +159,24 @@ def generate_launch_description():
         }]
     )
 
+    # 6. tof_camera_node - ToF камера для 3D обнаружения препятствий
+    tof_camera_node = Node(
+        package='verter_admin',
+        executable='tof_camera_node',
+        name='tof_camera_node',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'frame_id': 'camera_tof_optical',
+            'fps': 15,  # 15 FPS для экономии ресурсов
+            'depth_min': 0.1,  # метры
+            'depth_max': 5.0,   # метры
+            'fov_h': 60.0,      # градусы
+            'fov_v': 45.0,      # градусы
+            'downsample': 2,    # каждый 2-й пиксель
+        }]
+    )
+
     # =========================================================================
     # ВОЗВРАТ
     # =========================================================================
@@ -171,6 +191,7 @@ def generate_launch_description():
         odometry_node,
         chassis_node,
         ultrasonic_to_laserscan_node,
+        tof_camera_node,
     ])
 
 
