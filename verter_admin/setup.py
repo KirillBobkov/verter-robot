@@ -116,6 +116,7 @@ setup(
             'odometry_node = verter_admin.odometry.odometry_node:main',
             'doa_node = verter_admin.doa.doa_node:main',
             'tof_camera_node = verter_admin.tof_camera.tof_camera_node:main',
+            'rotation_calibration_node = verter_admin.calibration.rotation_calibration_node:main',
         ],
     },
 )
