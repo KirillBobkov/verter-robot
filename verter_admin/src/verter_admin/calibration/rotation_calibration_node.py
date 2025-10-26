@@ -70,6 +70,8 @@ class RotationCalibrationNode(Node):
         # Состояние
         self.start_theta = None
         self.current_theta = 0.0
+        self.previous_theta = 0.0
+        self.accumulated_angle = 0.0  # Накопленный угол (может быть > 2*pi)
         self.calibration_started = False
         self.calibration_done = False
 
@@ -133,6 +135,8 @@ class RotationCalibrationNode(Node):
             else:
                 # Начинаем калибровку
                 self.start_theta = self.current_theta
+                self.previous_theta = self.current_theta
+                self.accumulated_angle = 0.0
                 self.calibration_started = True
                 self.rotation_start_time = current_time
                 self.get_logger().info('')
@@ -142,17 +146,27 @@ class RotationCalibrationNode(Node):
                 self.get_logger().info('='*70)
                 return
 
-        # Вычисляем пройденный угол
-        delta_theta = self.normalize_angle(self.current_theta - self.start_theta)
+        # Вычисляем изменение угла с прошлого измерения
+        delta = self.current_theta - self.previous_theta
+
+        # Обрабатываем переход через 0/2π
+        if delta > math.pi:
+            delta -= 2 * math.pi
+        elif delta < -math.pi:
+            delta += 2 * math.pi
+
+        # Накапливаем угол (используем абсолютное значение, т.к. поворачиваем в одну сторону)
+        self.accumulated_angle += abs(delta)
+        self.previous_theta = self.current_theta
 
         # Проверяем, достигли ли целевого угла
-        if abs(delta_theta) >= self.target_angle:
+        if self.accumulated_angle >= self.target_angle:
             # Калибровка завершена
             self.stop_robot()
             self.calibration_done = True
 
             elapsed_time = current_time - self.rotation_start_time
-            actual_angle_deg = math.degrees(delta_theta)
+            actual_angle_deg = math.degrees(self.accumulated_angle)
 
             self.get_logger().info('')
             self.get_logger().info('='*70)
@@ -191,7 +205,7 @@ class RotationCalibrationNode(Node):
         self.cmd_vel_publisher.publish(cmd)
 
         # Логируем прогресс каждые 45 градусов
-        progress_deg = math.degrees(delta_theta)
+        progress_deg = math.degrees(self.accumulated_angle)
         if int(progress_deg / 45) != int((progress_deg + 1) / 45):
             self.get_logger().info(f'Прогресс: {progress_deg:.0f}° / {math.degrees(self.target_angle):.0f}°')
 
