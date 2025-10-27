@@ -38,9 +38,9 @@ slam_toolbox:
 
     # Position Variance (uncertainty in position)
     # For odometry-based SLAM with differential drive
-    # Увеличено для компенсации погрешности одометрии
-    minimum_travel_distance: 0.15  # 15 см минимальное расстояние для обновления
-    minimum_travel_heading: 0.15   # ~8.6° минимальный поворот
+    # Уменьшено для работы с ультразвуковыми датчиками (мало точек)
+    minimum_travel_distance: 0.05  # 5 см минимальное расстояние для обновления
+    minimum_travel_heading: 0.05   # ~2.9° минимальный поворот
 
     # Scan Matching Parameters
     scan_buffer_size: 10
