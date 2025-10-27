@@ -123,31 +123,24 @@ controller_server:
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle:
-        class: dwb_critics::BaseObstacleCritic
-        scale: 0.02
-      PathAlign:
-        class: dwb_critics::PathAlignCritic
-        scale: 32.0
-        forward_point_distance: 0.1
-      GoalAlign:
-        class: dwb_critics::GoalAlignCritic
-        scale: 24.0
-        forward_point_distance: 0.1
-      PathDist:
-        class: dwb_critics::PathDistCritic
-        scale: 32.0
-      GoalDist:
-        class: dwb_critics::GoalDistCritic
-        scale: 24.0
-      RotateToGoal:
-        class: dwb_critics::RotateToGoalCritic
-        scale: 32.0
-        slowing_factor: 5.0
-        lookahead_time: -1.0
-      Oscillation:
-        class: dwb_critics::OscillationCritic
-        scale: 1.0
+      BaseObstacle.class: dwb_critics::BaseObstacleCritic
+      BaseObstacle.scale: 0.02
+      PathAlign.class: dwb_critics::PathAlignCritic
+      PathAlign.scale: 32.0
+      PathAlign.forward_point_distance: 0.1
+      GoalAlign.class: dwb_critics::GoalAlignCritic
+      GoalAlign.scale: 24.0
+      GoalAlign.forward_point_distance: 0.1
+      PathDist.class: dwb_critics::PathDistCritic
+      PathDist.scale: 32.0
+      GoalDist.class: dwb_critics::GoalDistCritic
+      GoalDist.scale: 24.0
+      RotateToGoal.class: dwb_critics::RotateToGoalCritic
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+      Oscillation.class: dwb_critics::OscillationCritic
+      Oscillation.scale: 1.0
 
 local_costmap:
   local_costmap:
