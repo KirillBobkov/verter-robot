@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+ #!/usr/bin/env python3
 """
 ===================================================================================
 EXPLORE LITE AUTONOMOUS EXPLORATION LAUNCH FILE
@@ -40,7 +40,7 @@ def generate_launch_description():
     """Генерирует описание запуска автономного исследования с explore_lite."""
 
     # =========================================================================
-    # ПУТИ К LAUNCH ФАЙЛАМ
+    # ПУТИ К LAUNCH ФАЙЛАМ И КОНФИГУРАЦИЯМ
     # =========================================================================
 
     pkg_dir = get_package_share_directory('verter_admin')
@@ -48,6 +48,9 @@ def generate_launch_description():
     verter_base_launch = os.path.join(pkg_dir, 'launch', 'verter_base.launch.py')
     slam_toolbox_launch = os.path.join(pkg_dir, 'launch', 'slam_toolbox.launch.py')
     nav2_bringup_launch = os.path.join(pkg_dir, 'launch', 'nav2_bringup.launch.py')
+
+    # Путь к конфигурации explore_lite
+    explore_params_file = os.path.join(pkg_dir, 'config', 'explore', 'explore_lite_params.yaml')
 
     # =========================================================================
     # LAUNCH АРГУМЕНТЫ
@@ -96,20 +99,10 @@ def generate_launch_description():
         executable='explore',
         name='explore',
         output='screen',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            'robot_base_frame': 'base_link',
-            'costmap_topic': 'local_costmap/costmap',
-            'costmap_updates_topic': 'local_costmap/costmap_updates',
-            'visualize': True,
-            'planner_frequency': 0.33,
-            'progress_timeout': 30.0,
-            'potential_scale': 3.0,
-            'orientation_scale': 0.0,
-            'gain_scale': 1.0,
-            'transform_tolerance': 0.3,
-            'min_frontier_size': 0.5,
-        }]
+        parameters=[
+            explore_params_file,
+            {'use_sim_time': use_sim_time}
+        ]
     )
 
     # =========================================================================

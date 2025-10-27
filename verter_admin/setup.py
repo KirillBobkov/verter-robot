@@ -83,6 +83,8 @@ setup(
         (os.path.join('share', package_name, 'config', 'nav2'), glob(os.path.join('src/verter_admin/config/nav2', '*.yaml'))),
         # Включаем конфигурацию SLAM
         (os.path.join('share', package_name, 'config', 'slam'), glob(os.path.join('src/verter_admin/config/slam', '*.yaml'))),
+        # Включаем конфигурацию Explore Lite
+        (os.path.join('share', package_name, 'config', 'explore'), glob(os.path.join('src/verter_admin/config/explore', '*.yaml'))),
         # Включаем Arduino скетчи для distance_sensors
         (os.path.join('share', package_name, 'distance_sensors'), [
             'src/verter_admin/distance_sensors/sensors.ino',
@@ -116,7 +118,7 @@ setup(
             'odometry_node = verter_admin.odometry.odometry_node:main',
             'doa_node = verter_admin.doa.doa_node:main',
             'tof_camera_node = verter_admin.tof_camera.tof_camera_node:main',
-            'rotation_calibration_node = verter_admin.calibration.rotation_calibration_node:main',
+            'autonomous_explorer_node = verter_admin.autonomous_explorer.autonomous_explorer_node:main',
         ],
     },
 )

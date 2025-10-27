@@ -204,6 +204,11 @@ global_costmap:
       robot_radius: 0.40
       resolution: 0.05
       track_unknown_space: true
+      # Размеры для exploration (автоматически расширяются при необходимости)
+      width: 20
+      height: 20
+      # Тип карты - статический (следует за SLAM картой)
+      rolling_window: false
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
