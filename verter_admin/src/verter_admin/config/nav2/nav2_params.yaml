@@ -97,9 +97,9 @@ controller_server:
       debug_trajectory_details: True
       min_vel_x: 0.0
       min_vel_y: 0.0
-      max_vel_x: 0.5  # 0.5 м/с максимальная линейная скорость
+      max_vel_x: 0.2  # 0.2 м/с максимальная линейная скорость
       max_vel_y: 0.0  # Нет боковой скорости для дифференциального привода
-      max_vel_theta: 1.0  # 1.0 рад/с максимальная угловая скорость
+      max_vel_theta: 0.3  # 1.0 рад/с максимальная угловая скорость
       min_speed_xy: 0.0
       max_speed_xy: 0.5
       min_speed_theta: 0.0
@@ -123,16 +123,31 @@ controller_server:
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
-      PathAlign.scale: 32.0
-      PathAlign.forward_point_distance: 0.1
-      GoalAlign.scale: 24.0
-      GoalAlign.forward_point_distance: 0.1
-      PathDist.scale: 32.0
-      GoalDist.scale: 24.0
-      RotateToGoal.scale: 32.0
-      RotateToGoal.slowing_factor: 5.0
-      RotateToGoal.lookahead_time: -1.0
+      BaseObstacle:
+        class: dwb_critics::BaseObstacleCritic
+        scale: 0.02
+      PathAlign:
+        class: dwb_critics::PathAlignCritic
+        scale: 32.0
+        forward_point_distance: 0.1
+      GoalAlign:
+        class: dwb_critics::GoalAlignCritic
+        scale: 24.0
+        forward_point_distance: 0.1
+      PathDist:
+        class: dwb_critics::PathDistCritic
+        scale: 32.0
+      GoalDist:
+        class: dwb_critics::GoalDistCritic
+        scale: 24.0
+      RotateToGoal:
+        class: dwb_critics::RotateToGoalCritic
+        scale: 32.0
+        slowing_factor: 5.0
+        lookahead_time: -1.0
+      Oscillation:
+        class: dwb_critics::OscillationCritic
+        scale: 1.0
 
 local_costmap:
   local_costmap:
@@ -298,8 +313,8 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.5, 0.0, 1.0]
-    min_velocity: [-0.5, 0.0, -1.0]
+    max_velocity: [0.3, 0.0, 1.0]
+    min_velocity: [-0.3, 0.0, -1.0]
     max_accel: [1.0, 0.0, 3.2]
     max_decel: [-1.0, 0.0, -3.2]
     odom_topic: "odom"
