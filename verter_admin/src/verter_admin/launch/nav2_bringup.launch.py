@@ -64,14 +64,14 @@ def generate_launch_description():
     pkg_dir = get_package_share_directory('verter_admin')
 
     # Путь к конфигурации Nav2
-    # nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2', 'nav2_params.yaml')
+    nav2_params_file = os.path.join(pkg_dir, 'config', 'nav2', 'nav2_params.yaml')
 
     # Альтернативный путь для разработки
     # Раскомментируйте если запускаете из исходников:
-    nav2_params_file = os.path.join(
-        os.path.dirname(__file__),
-        '..', 'config', 'nav2', 'nav2_params.yaml'
-    )
+    # nav2_params_file = os.path.join(
+    #     os.path.dirname(__file__),
+    #     '..', 'config', 'nav2', 'nav2_params.yaml'
+    # )
 
 
     # =========================================================================
