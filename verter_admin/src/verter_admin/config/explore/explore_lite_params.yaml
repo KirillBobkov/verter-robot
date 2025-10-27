@@ -17,7 +17,7 @@
 #
 # ============================================================================
 
-explore_lite:
+explore:
   ros__parameters:
     use_sim_time: False
 
