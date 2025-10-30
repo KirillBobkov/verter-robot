@@ -62,7 +62,7 @@ class AIAssistantNode(Node):
     def _initialize_yandex_sdk(self):
         """Инициализация YandexGPT SDK и создание поискового индекса."""
         try:
-            self.sdk = YCloudML(folder_id="", auth="")
+            self.sdk = YCloudML(folder_id="", auth="-")
             self.mypath = self._get_dataset_path()
             
             files = self._upload_files()
