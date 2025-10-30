@@ -28,7 +28,7 @@ class TextToSpeechNode(Node):
         # Найти модель Piper
         try:
             package_share = get_package_share_directory('verter_admin')
-            tts_models_dir = os.path.join(package_share, 'text_to_speech_node')
+            tts_models_dir = os.path.join(package_share, 'text_to_speech')
             self.model_path = os.path.join(tts_models_dir, "ru_RU-ruslan-medium.onnx")
         except Exception as e:
             self.get_logger().error(f"Модель не найдена: {e}")
@@ -44,7 +44,8 @@ class TextToSpeechNode(Node):
         
         # ROS2 подписки
         self.subscription = self.create_subscription(String, 'text_to_speech', self.text_callback, 10)
-        self.recognition_publisher = self.create_publisher(Bool, 'set_recognition_active', 10)
+        # Publisher для управления распознаванием (и speech_to_text, и speech_recognition)
+        self.tts_control_pub = self.create_publisher(Bool, 'tts_control', 10)
         
         # Управление конкуренцией
         self._busy_lock = threading.Lock()
@@ -170,14 +171,14 @@ class TextToSpeechNode(Node):
         """Отключить распознавание перед TTS"""
         msg = Bool()
         msg.data = False
-        self.recognition_publisher.publish(msg)
+        self.tts_control_pub.publish(msg)
         self.get_logger().info("🔇 Отключаю микрофон перед TTS")
     
     def _activate_speech_recognition(self):
         """Включить распознавание после TTS"""
         msg = Bool()
         msg.data = True
-        self.recognition_publisher.publish(msg)
+        self.tts_control_pub.publish(msg)
         self.get_logger().info("🎤 Включаю микрофон после TTS")
 
 def main(args=None):

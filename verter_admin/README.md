@@ -16,7 +16,7 @@ Verter Admin - это комплексная система, состоящая 
 
 ### Ноды системы
 
-#### 1. `speech_recognition_node`
+#### 1. `recognition_node`
 **Назначение**: Распознавание голосовых команд с помощью библиотеки Vosk
 
 **Функциональность**:
@@ -164,7 +164,7 @@ source /opt/ros/humble/setup.bash
 source install/setup.bash
 
 # Запуск нод по отдельности
-ros2 run verter_admin speech_recognition_node
+ros2 run verter_admin recognition_node
 ros2 run verter_admin ai_assistant_node
 ros2 run verter_admin text_to_speech_node
 ros2 run verter_admin sound_player_node

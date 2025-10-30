@@ -6,13 +6,13 @@ from glob import glob
 def get_model_files():
     """Специальная функция для копирования модели Vosk в правильное место"""
     model_files = []
-    model_dir = 'src/verter_admin/speech_recognition/vosk-model-small-ru-0.22'
+    model_dir = 'src/verter_admin/speech_to_text/vosk-model-small-ru-0.22'
     
     for root, dirs, filenames in os.walk(model_dir):
         for filename in filenames:
             src_path = os.path.join(root, filename)
-            # Убираем префикс 'src/verter_admin/speech_recognition/' из пути
-            rel_path = os.path.relpath(src_path, 'src/verter_admin/speech_recognition/')
+            # Убираем префикс 'src/verter_admin/speech_to_text/' из пути
+            rel_path = os.path.relpath(src_path, 'src/verter_admin/speech_to_text/')
             dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
             model_files.append((dest_dir, [src_path]))
     
@@ -36,15 +36,15 @@ def get_dataset_files():
 def get_tts_model_files():
     """Специальная функция для копирования TTS моделей в правильное место"""
     tts_files = []
-    tts_dir = 'src/verter_admin/text_to_speech_node'
+    tts_dir = 'src/verter_admin/text_to_speech'
     
     for root, dirs, filenames in os.walk(tts_dir):
         for filename in filenames:
             if filename.startswith('ru_') and (filename.endswith('.onnx') or filename.endswith('.json') or filename.endswith('.txt')):
                 src_path = os.path.join(root, filename)
-                # Убираем префикс 'src/verter_admin/' из пути
-                rel_path = os.path.relpath(src_path, 'src/verter_admin/')
-                dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
+                # Убираем префикс 'src/verter_admin/text_to_speech/' из пути
+                rel_path = os.path.relpath(src_path, 'src/verter_admin/text_to_speech/')
+                dest_dir = os.path.join('share', 'verter_admin', 'text_to_speech', os.path.dirname(rel_path))
                 tts_files.append((dest_dir, [src_path]))
     
     return tts_files
@@ -107,10 +107,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'speech_recognition_node = verter_admin.speech_recognition.speech_recognition_node:main',
+            'speech_to_text_node = verter_admin.speech_to_text.speech_to_text_node:main',
+            'recognition_node = verter_admin.recognition.recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
-            'text_to_speech_node = verter_admin.text_to_speech_node.text_to_speech_node:main',
-            'silero_tts_node = verter_admin.text_to_speech_node.silero_tts_node:main',
+            'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
             'chassis_node = verter_admin.chassis.chassis_node:main',
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',

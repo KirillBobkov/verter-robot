@@ -711,7 +711,7 @@ vs.
 ### **22.1 Успешный запуск всех компонентов**
 ```
 🔧 *ros2 launch*
-🤖 *SpeechRecognitionNode: Vosk модель загружена*
+🤖 *RecognitionNode: Vosk модель загружена*
 🤖 *AIAssistantNode: YandexGPT подключен*
 🤖 *TextToSpeechNode: Piper модель готова*
 🤖 *SoundPlayerNode: аудио система настроена*
@@ -722,7 +722,7 @@ vs.
 ### **22.2 Частичный сбой компонентов**
 ```
 🔧 *ros2 launch*
-✓ *SpeechRecognitionNode: успех*
+✓ *RecognitionNode: успех*
 ❌ *AIAssistantNode: нет интернета*
 ✓ *TextToSpeechNode: успех*
 ✓ *SoundPlayerNode: успех*
@@ -902,7 +902,7 @@ vs.
 │    │                                                           │
 │    ▼                                                           │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │               SpeechRecognitionNode                     │   │
+│  │               RecognitionNode                           │   │
 │  │  • Vosk распознавание                                  │   │
 │  │  • Конечный автомат состояний                          │   │
 │  │  • DOA обработка (ReSpeaker)                           │   │

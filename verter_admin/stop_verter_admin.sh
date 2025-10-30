@@ -19,7 +19,7 @@ pkill -KILL -f "ros2 launch verter_admin"
 pkill -KILL -f "ros2 run verter_admin"
 
 # Дополнительно убиваем по именам нод (на всякий случай)
-pkill -KILL -f "speech_recognition_node"
+pkill -KILL -f "recognition_node"
 pkill -KILL -f "ai_assistant_node"
 pkill -KILL -f "text_to_speech_node"
 pkill -KILL -f "sound_player_node"

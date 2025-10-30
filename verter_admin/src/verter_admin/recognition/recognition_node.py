@@ -1,28 +1,17 @@
 #!/usr/bin/env python3
-import json
-import os
 import re
-import threading
-from typing import Optional, Dict, Set, Tuple, Any, List
+from typing import Optional, Dict, Set, Tuple, Any
 from enum import Enum, auto
 from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
-import sounddevice as sd
-import vosk
-from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import String, Bool
 
 # === КОНСТАНТЫ И КОНФИГУРАЦИЯ ===
 @dataclass
 class SpeechConfig:
     """Конфигурация распознавания речи"""
-    MODEL_NAME: str = 'vosk-model-small-ru-0.22'
-    SAMPLE_RATE: int = 16000
-    BLOCK_SIZE: int = 6000
-    CHANNELS: int = 1
-    
     # Таймауты
     NO_SPEECH_TIMEOUT: float = 10.0
     DIALOG_TIMEOUT: float = 30.0
@@ -206,28 +195,22 @@ class TimerManager:
         for name in list(self.timers.keys()):
             self.stop_timer(name)
 
-class SpeechRecognitionNode(Node):
+class RecognitionNode(Node):
     """Улучшенный ROS2 узел распознавания речи с чистотой кода"""
     
     def __init__(self) -> None:
-        super().__init__('speech_recognition_node')
+        super().__init__('recognition_node')
         
         # Конфигурация и компоненты
         self.config = SpeechConfig()
         self.command_processor = CommandProcessor()
         self.state_manager = StateManager()
         
-        # Потокобезопасность
-        self.shutdown_event = threading.Event()
-        self.recognition_lock = threading.Lock()
-        
         # Инициализация системы
         self._setup_ros_communication()
-        self._setup_audio_system()
         self.timer_manager = TimerManager(self, self.config)
         
         # Запуск подсистем
-        self._start_audio_capture()
         self._start_reminder_timer()
         
         self._log_system_startup()
@@ -242,130 +225,46 @@ class SpeechRecognitionNode(Node):
         self.sound_player_pub = self.create_publisher(String, 'play', 10)
         self.dialog_control_pub = self.create_publisher(String, 'dialog_control', 10)
         self.command_pub = self.create_publisher(String, 'verter_commands', 10)
+        # Publisher для управления speech_to_text_node
+        self.speech_control_pub = self.create_publisher(Bool, 'speech_control', 10)
         
         # Subscribers
-        self.create_subscription(Bool, 'set_recognition_active', 
-                               self._handle_recognition_control, 10)
-
-    def _setup_audio_system(self) -> None:
-        """Настройка аудио системы и Vosk"""
-        self.audio_device = self._find_audio_device()
-        self.vosk_model = self._load_vosk_model()
-        self.recognizer = vosk.KaldiRecognizer(self.vosk_model, self.config.SAMPLE_RATE)
-        self.recognizer.SetWords(True)
-
-    def _find_audio_device(self) -> int:
-        """Поиск подходящего аудио устройства"""
-        devices = sd.query_devices()
-        
-        # Приоритет: ReSpeaker → устройство 1 → первое доступное
-        for i, device in enumerate(devices):
-            if any(name in device['name'] for name in ['ReSpeaker', 'ArrayUAC10']):
-                if device['max_input_channels'] > 0:
-                    self.get_logger().info(f"✓ Найден ReSpeaker: {device['name']}")
-                    return i
-        
-        # Fallback стратегия
-        fallback_devices = [1] + list(range(len(devices)))
-        for i in fallback_devices:
-            if i < len(devices) and devices[i]['max_input_channels'] > 0:
-                self.get_logger().info(f"✓ Используется устройство {i}: {devices[i]['name']}")
-                return i
-        
-        self.get_logger().warn("⚠️ Входные устройства не найдены, используется дефолт")
-        return None
-
-    def _load_vosk_model(self) -> vosk.Model:
-        """Загрузка модели Vosk"""
-        model_path = self._resolve_model_path()
-        if not model_path:
-            raise RuntimeError(f"Модель Vosk не найдена: {self.config.MODEL_NAME}")
-        
-        try:
-            model = vosk.Model(model_path)
-            self.get_logger().info(f"✓ Модель Vosk загружена: {model_path}")
-            return model
-        except Exception as e:
-            raise RuntimeError(f"Ошибка загрузки модели Vosk: {e}")
-
-    def _resolve_model_path(self) -> Optional[str]:
-        """Определение пути к модели"""
-        if os.path.isabs(self.config.MODEL_NAME):
-            return self.config.MODEL_NAME
-        
-        try:
-            package_share = get_package_share_directory('verter_admin')
-            model_path = os.path.join(package_share, self.config.MODEL_NAME)
-            return model_path if os.path.isdir(model_path) else None
-        except Exception:
-            return None
+        self.create_subscription(
+            String, 
+            'recognized_text', 
+            self._handle_recognized_text, 
+            10
+        )
+        # Подписываемся на tts_control чтобы получать сигналы от TTS
+        # НЕ подписываемся на speech_control (избегаем самоподписки)
+        self.create_subscription(
+            Bool, 
+            'tts_control', 
+            self._handle_tts_control, 
+            10
+        )
 
     def _log_system_startup(self) -> None:
         """Логирование информации о запуске"""
-        self.get_logger().info("🎤 SpeechRecognitionNode запущен")
+        self.get_logger().info("🎤 RecognitionNode запущен")
         self.get_logger().info(f"   Состояние: {self.state_manager.state.name}")
         self.get_logger().info(f"   Таймауты: команда={self.config.NO_SPEECH_TIMEOUT}с, диалог={self.config.DIALOG_TIMEOUT}с")
-
-    # === АУДИО ОБРАБОТКА ===
-    
-    def _start_audio_capture(self) -> None:
-        """Запуск захвата аудио в отдельном потоке"""
-        self.audio_thread = threading.Thread(target=self._audio_capture_loop)
-        self.audio_thread.daemon = True
-        self.audio_thread.start()
-        self.get_logger().info("✓ Захват аудио запущен")
-
-    def _audio_capture_loop(self) -> None:
-        """Основной цикл захвата аудио"""
-        try:
-            with sd.RawInputStream(
-                samplerate=self.config.SAMPLE_RATE,
-                blocksize=self.config.BLOCK_SIZE,  
-                device=self.audio_device,
-                dtype='int16',
-                channels=self.config.CHANNELS,
-                callback=self._audio_callback
-            ):
-                self.shutdown_event.wait()
-        except Exception as e:
-            self.get_logger().error(f"Ошибка аудио потока: {e}")
-
-    def _audio_callback(self, indata, frames, time, status) -> None:
-        """Callback обработки аудио данных"""
-        if self.shutdown_event.is_set() or self.state_manager.state == RecognitionState.PAUSED:
-            return
-            
-        if status:
-            self.get_logger().warn(f"Аудио статус: {status}")
-        
-        try:
-            data = bytes(indata)
-            with self.recognition_lock:
-                if self.recognizer.AcceptWaveform(data):
-                    self._process_final_recognition_result()
-        except Exception as e:
-            self.get_logger().error(f"Ошибка аудио callback: {e}")
-
-    def _process_final_recognition_result(self) -> None:
-        """Обработка финального результата распознавания"""
-        try:
-            result = json.loads(self.recognizer.Result())
-            text = result.get('text', '').strip()
-            
-            if text:
-                self._handle_recognized_speech(text)
-        except json.JSONDecodeError as e:
-            self.get_logger().error(f"Ошибка JSON от Vosk: {e}")
-        except Exception as e:
-            self.get_logger().error(f"Ошибка обработки результата Vosk: {e}")
+        self.get_logger().info(f"   Подписка на топик: recognized_text")
 
     # === ОСНОВНАЯ ЛОГИКА ОБРАБОТКИ ===
+    
+    def _handle_recognized_text(self, msg: String) -> None:
+        """Обработчик входящего распознанного текста из топика"""
+        text = msg.data.strip()
+        if text:
+            self._handle_recognized_speech(text)
     
     def _handle_recognized_speech(self, text: str) -> None:
         """Главный диспетчер распознанной речи"""
         self.get_logger().debug(f"🎤 Распознано: '{text}'")
         
         if self.state_manager.state == RecognitionState.PAUSED:
+            self.get_logger().debug(f"🔇 Игнорирую (PAUSED): '{text}'")
             return  # Игнорируем в состоянии паузы
         
         # Маршрутизация по состояниям
@@ -485,7 +384,8 @@ class SpeechRecognitionNode(Node):
         msg.data = text
         self.ai_question_pub.publish(msg)
         
-        self.state_manager.pause()
+        # Отключаем распознавание, чтобы не накапливать буфер во время обработки AI
+        self._deactivate_recognition()
         self.get_logger().info(f"📤 Отправлено в AI: '{text}'")
 
     # === УПРАВЛЕНИЕ СОСТОЯНИЯМИ И ПЕРЕХОДАМИ ===
@@ -526,6 +426,11 @@ class SpeechRecognitionNode(Node):
             self._send_farewell_message()
         
         self.state_manager.end_dialog()
+        
+        # Восстанавливаем таймер напоминаний после завершения диалога
+        if self.state_manager.is_passive_listening():
+            self._start_reminder_timer()
+        
         self.get_logger().info("🔚 Диалог завершен")
 
     def _transition_to_dialog_if_needed(self) -> None:
@@ -539,12 +444,9 @@ class SpeechRecognitionNode(Node):
         self.state_manager.end_dialog()
         self.timer_manager.stop_timer('command_timeout')
         
-        # Сброс распознавателя
-        with self.recognition_lock:
-            try:
-                self.recognizer.Reset()
-            except Exception as e:
-                self.get_logger().error(f"Ошибка сброса распознавателя: {e}")
+        # Восстанавливаем таймер напоминаний
+        if self.state_manager.is_passive_listening():
+            self._start_reminder_timer()
         
         self.get_logger().debug("🔄 Возврат в режим прослушивания")
 
@@ -599,7 +501,9 @@ class SpeechRecognitionNode(Node):
         """Отправка напоминания пользователю"""
         try:
             if self.state_manager.is_passive_listening():
-                self.state_manager.pause()
+                # Отключаем распознавание перед напоминанием
+                # TTS сам включит его обратно после воспроизведения
+                self._deactivate_recognition()
                 
                 reminder_msg = String()
                 reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертер, Или робот, и задайте свой вопрос."
@@ -612,25 +516,32 @@ class SpeechRecognitionNode(Node):
                 
         except Exception as e:
             self.get_logger().error(f"Ошибка напоминания: {e}")
-            self.state_manager.resume()
             self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
 
     # === ВНЕШНЕЕ УПРАВЛЕНИЕ ===
     
-    def _handle_recognition_control(self, msg: Bool) -> None:
-        """Обработка внешнего управления распознаванием"""
+    def _handle_tts_control(self, msg: Bool) -> None:
+        """Обработка сигналов от TTS"""
         try:
             if msg.data:
                 self._activate_recognition()
             else:
                 self._deactivate_recognition()
         except Exception as e:
-            self.get_logger().error(f"Ошибка управления распознаванием: {e}")
+            self.get_logger().error(f"Ошибка обработки TTS control: {e}")
     
     def _activate_recognition(self) -> None:
         """Активация распознавания"""
-        self._reset_vosk_recognizer()
+        # Проверяем, не активны ли мы уже (избегаем лишних действий)
+        if self.state_manager.state != RecognitionState.PAUSED:
+            return
+        
         self.state_manager.resume()
+        
+        # Отправляем сигнал в speech_to_text_node для возобновления распознавания
+        msg = Bool()
+        msg.data = True
+        self.speech_control_pub.publish(msg)
         
         if self.state_manager.state == RecognitionState.DIALOG_MODE:
             self._reset_dialog_timer()
@@ -642,19 +553,19 @@ class SpeechRecognitionNode(Node):
     
     def _deactivate_recognition(self) -> None:
         """Деактивация распознавания"""
+        # Проверяем, не деактивированы ли мы уже (избегаем лишних действий)
+        if self.state_manager.state == RecognitionState.PAUSED:
+            return
+        
         self.state_manager.pause()
         self.timer_manager.stop_all_timers()
-        self._reset_vosk_recognizer()
+        
+        # Отправляем сигнал в speech_to_text_node для остановки распознавания
+        msg = Bool()
+        msg.data = False
+        self.speech_control_pub.publish(msg)
+        
         self.get_logger().info("⏸️ Распознавание деактивировано")
-
-    def _reset_vosk_recognizer(self) -> None:
-        """Сброс распознавателя Vosk"""
-        try:
-            with self.recognition_lock:
-                if hasattr(self, 'recognizer') and self.recognizer:
-                    self.recognizer.Reset()
-        except Exception as e:
-            self.get_logger().error(f"Ошибка сброса Vosk: {e}")
 
     # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
     
@@ -667,23 +578,11 @@ class SpeechRecognitionNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения {sound_name}: {e}")
 
-    def _cleanup_resources(self) -> None:
-        """Очистка ресурсов"""
-        with self.recognition_lock:
-            self.recognizer = None
-        
-        try:
-            sd.stop()
-        except Exception:
-            pass
-
     def shutdown(self) -> None:
         """Корректное завершение работы"""
         try:
             self.get_logger().info("🔄 Завершение работы...")
-            self.shutdown_event.set()
             self.timer_manager.stop_all_timers()
-            self._cleanup_resources()
             self.get_logger().info("✅ Завершение работы завершено")
         except Exception as e:
             self.get_logger().error(f"Ошибка завершения: {e}")
@@ -694,7 +593,7 @@ def main(args=None) -> None:
     node = None
     
     try:
-        node = SpeechRecognitionNode()
+        node = RecognitionNode()
         print("🎤 УЛУЧШЕННЫЙ РАСПОЗНАВАТЕЛЬ РЕЧИ")
         print("   Архитектура: CommandProcessor + StateManager + TimerManager")
         print("   Состояния: LISTENING → CAPTURING → DIALOG → PAUSED")
