@@ -19,7 +19,7 @@ from .tuning import Tuning
 # Константы
 RESPEAKER_VENDOR_ID = 0x2886
 RESPEAKER_PRODUCT_ID = 0x0018
-DOA_POLLING_INTERVAL = 5.0
+DOA_POLLING_INTERVAL = 7.0
 
 # DOA углы для команд головы
 DOA_CENTER_MIN = 10

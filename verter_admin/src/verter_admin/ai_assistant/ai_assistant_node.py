@@ -32,7 +32,7 @@ class AIAssistantNode(Node):
     def __init__(self):
         super().__init__('ai_assistant_node')
         
-        self.is_testing = False
+        self.is_testing = True
         self._setup_ros_interface()
         
         if self.is_testing:
@@ -62,7 +62,7 @@ class AIAssistantNode(Node):
     def _initialize_yandex_sdk(self):
         """Инициализация YandexGPT SDK и создание поискового индекса."""
         try:
-            self.sdk = YCloudML(folder_id="", auth="-")
+            self.sdk = YCloudML(folder_id="", auth="")
             self.mypath = self._get_dataset_path()
             
             files = self._upload_files()
@@ -133,7 +133,7 @@ class AIAssistantNode(Node):
     def _handle_test_mode(self, question: str):
         """Обработка тестового режима."""
         import time
-        time.sleep(1)
+        time.sleep(0.4)
         self._publish_response(question)
     
     def _handle_production_mode(self, question: str):

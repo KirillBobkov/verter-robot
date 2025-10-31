@@ -11,7 +11,6 @@ import sounddevice as sd
 import numpy as np
 import kaldi_native_fbank as knf
 import onnxruntime as ort
-import torch
 from ament_index_python.packages import get_package_share_directory
 from std_msgs.msg import String, Bool
 
@@ -24,13 +23,13 @@ class SpeechToTextConfig:
     TOKENS_NAME: str = 'tokens.txt'
     VAD_MODEL: str = 'silero_vad.onnx'
     SAMPLE_RATE: int = 16000
-    BLOCK_SIZE: int = 1600  # 100ms чанки - как в рабочем примере
+    BLOCK_SIZE: int = 1600  # 100ms чанки
     CHANNELS: int = 1
     VAD_THRESHOLD: float = 0.5
-    SILENCE_CHUNKS: int = 6  # 0.6 сек паузы для конца фразы (6 * 0.1s) - как в примере
-    PRE_BUFFER_CHUNKS: int = 5  # 0.5 сек предыстории (5 * 0.1s) - как в примере
-    NUM_THREADS: int = 2
-    AUDIO_LATENCY: float = 0.2  # 200ms latency для ALSA
+    SILENCE_CHUNKS: int = 4  # 0.4 сек паузы
+    PRE_BUFFER_CHUNKS: int = 5  # 0.5 сек предыстории
+    NUM_THREADS: int = 4  # 4 потока = все ядра Cortex-A72
+    AUDIO_LATENCY: float = 0.2
 
 
 class SpeechToTextNode(Node):
@@ -70,8 +69,9 @@ class SpeechToTextNode(Node):
         self.get_logger().info(f"   Sample rate: {self.config.SAMPLE_RATE}Hz")
         self.get_logger().info(f"   Block size: {self.config.BLOCK_SIZE} ({self.config.BLOCK_SIZE/self.config.SAMPLE_RATE*1000:.0f}ms)")
         self.get_logger().info(f"   VAD threshold: {self.config.VAD_THRESHOLD}")
-        self.get_logger().info(f"   Pause detection: {self.config.SILENCE_CHUNKS * self.config.BLOCK_SIZE / self.config.SAMPLE_RATE:.1f}s")
-        self.get_logger().info(f"   Audio latency: {self.config.AUDIO_LATENCY*1000:.0f}ms")
+        self.get_logger().info(f"   Pause trigger: {self.config.SILENCE_CHUNKS * self.config.BLOCK_SIZE / self.config.SAMPLE_RATE * 1000:.0f}ms ⚡")
+        self.get_logger().info(f"   ONNX threads: {self.config.NUM_THREADS}")
+        self.get_logger().info("   🔀 Асинхронное распознавание + timing logs")
     
     def _setup_ros_communication(self) -> None:
         """Настройка ROS2 коммуникации"""
@@ -129,26 +129,43 @@ class SpeechToTextNode(Node):
         if not all([asr_model_path, tokens_path, vad_model_path]):
             raise RuntimeError("Не найдены файлы моделей Sherpa-ONNX")
         
-        # Загрузка ASR модели
+        # Загрузка ASR модели с оптимизацией для RPi4
         self.get_logger().info("🔄 Загрузка ASR модели...")
         session_opts = ort.SessionOptions()
-        session_opts.inter_op_num_threads = self.config.NUM_THREADS
         session_opts.intra_op_num_threads = self.config.NUM_THREADS
+        session_opts.inter_op_num_threads = 1
+        session_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+        session_opts.enable_cpu_mem_arena = True
+        session_opts.enable_mem_pattern = True
+        session_opts.add_session_config_entry("session.intra_op.allow_spinning", "1")
+        session_opts.add_session_config_entry("session.inter_op.allow_spinning", "0")
+        
+        # CPU provider с оптимизациями для ARM
+        providers = [
+            ('CPUExecutionProvider', {
+                'arena_extend_strategy': 'kSameAsRequested',
+            })
+        ]
         
         self.asr_model = ort.InferenceSession(
             asr_model_path,
             sess_options=session_opts,
-            providers=["CPUExecutionProvider"],
+            providers=providers,
         )
-        self.get_logger().info(f"✓ ASR модель загружена: {asr_model_path}")
+        self.get_logger().info(f"✓ ASR модель загружена ({self.config.NUM_THREADS} потоков, extended opt)")
         
         # Загрузка VAD модели
         self.get_logger().info("🔄 Загрузка VAD модели...")
+        vad_opts = ort.SessionOptions()
+        vad_opts.intra_op_num_threads = 1
+        vad_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        
         self.vad_model = ort.InferenceSession(
             vad_model_path,
+            sess_options=vad_opts,
             providers=["CPUExecutionProvider"],
         )
-        self.get_logger().info(f"✓ VAD модель загружена: {vad_model_path}")
+        self.get_logger().info(f"✓ VAD модель загружена")
         
         # Загрузка токенов
         self.id2token = self._load_tokens(tokens_path)
@@ -284,8 +301,15 @@ class SpeechToTextNode(Node):
             self.silence_counter += 1
             
             if self.silence_counter >= self.config.SILENCE_CHUNKS:
-                # Конец фразы - распознаем
-                self._recognize_accumulated_audio()
+                # Конец фразы - запускаем распознавание АСИНХРОННО
+                # Копируем буфер чтобы не блокировать audio callback
+                audio_to_recognize = list(self.audio_buffer)
+                threading.Thread(
+                    target=self._recognize_accumulated_audio,
+                    args=(audio_to_recognize,),
+                    daemon=True
+                ).start()
+                
                 self.is_speaking = False
                 self.silence_counter = 0
                 self.audio_buffer = []
@@ -315,25 +339,37 @@ class SpeechToTextNode(Node):
         
         return float(prob)
     
-    def _recognize_accumulated_audio(self) -> None:
-        """Распознавание накопленного аудио"""
-        if not self.audio_buffer:
+    def _recognize_accumulated_audio(self, audio_buffer: list) -> None:
+        """Распознавание накопленного аудио (в отдельном потоке!)"""
+        if not audio_buffer:
             return
         
+        start_time = time.time()
         with self.recognition_lock:
             try:
                 # Объединяем все чанки
-                full_audio = np.concatenate(self.audio_buffer)
+                full_audio = np.concatenate(audio_buffer)
                 
                 # Извлекаем признаки
+                t1 = time.time()
                 fbank = knf.OnlineFbank(self.fbank_opts)
                 features = self._compute_features(full_audio, fbank)
+                feature_time = time.time() - t1
                 
                 # Распознавание через CTC модель
+                t2 = time.time()
                 text = self._recognize_ctc(features)
+                inference_time = time.time() - t2
+                
+                total_time = time.time() - start_time
                 
                 if text:
                     self._publish_recognized_text(text)
+                    self.get_logger().info(
+                        f"⏱️  Timing: feature={feature_time*1000:.0f}ms, "
+                        f"inference={inference_time*1000:.0f}ms, "
+                        f"total={total_time*1000:.0f}ms"
+                    )
             except Exception as e:
                 self.get_logger().error(f"Ошибка распознавания: {e}")
     
@@ -348,27 +384,26 @@ class SpeechToTextNode(Node):
     def _recognize_ctc(self, features: np.ndarray) -> str:
         """CTC распознавание"""
         # Преобразование: (T, C) -> (1, C, T)
-        x = torch.from_numpy(features).t().unsqueeze(0)
-        x_lens = torch.tensor([x.shape[-1]], dtype=torch.int64)
+        x = features.T[np.newaxis, :, :].astype(np.float32)
+        x_lens = np.array([x.shape[-1]], dtype=np.int64)
         
         # Inference
         log_probs = self.asr_model.run(
             [self.asr_model.get_outputs()[0].name],
             {
-                self.asr_model.get_inputs()[0].name: x.numpy(),
-                self.asr_model.get_inputs()[1].name: x_lens.numpy(),
+                self.asr_model.get_inputs()[0].name: x,
+                self.asr_model.get_inputs()[1].name: x_lens,
             },
         )[0]
         
-        # CTC декодирование (collapse repeats)
-        log_probs = torch.from_numpy(log_probs)[0]
-        ids = torch.argmax(log_probs, dim=1).tolist()
+        # CTC декодирование (collapse repeats) - pure numpy
+        ids = np.argmax(log_probs[0], axis=1)
         
         tokens = []
         prev = -1
         for i in ids:
             if i != self.blank_id and i != prev:
-                tokens.append(self.id2token.get(i, ""))
+                tokens.append(self.id2token.get(int(i), ""))
             prev = i
         
         return "".join(tokens).strip()
