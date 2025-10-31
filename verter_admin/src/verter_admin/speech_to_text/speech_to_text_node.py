@@ -65,13 +65,14 @@ class SpeechToTextNode(Node):
         self._load_models()
         self._start_audio_capture()
         
-        self.get_logger().info("🎤 SpeechToTextNode запущен (Sherpa-ONNX CTC)")
+        self.get_logger().info("🎤 SpeechToTextNode запущен (Sherpa-ONNX CTC - ОПТИМИЗИРОВАНО)")
         self.get_logger().info(f"   Sample rate: {self.config.SAMPLE_RATE}Hz")
         self.get_logger().info(f"   Block size: {self.config.BLOCK_SIZE} ({self.config.BLOCK_SIZE/self.config.SAMPLE_RATE*1000:.0f}ms)")
         self.get_logger().info(f"   VAD threshold: {self.config.VAD_THRESHOLD}")
-        self.get_logger().info(f"   Pause trigger: {self.config.SILENCE_CHUNKS * self.config.BLOCK_SIZE / self.config.SAMPLE_RATE * 1000:.0f}ms ⚡")
+        pause_ms = self.config.SILENCE_CHUNKS * self.config.BLOCK_SIZE / self.config.SAMPLE_RATE * 1000
+        self.get_logger().info(f"   Pause trigger: {pause_ms:.0f}ms ⚡")
         self.get_logger().info(f"   ONNX threads: {self.config.NUM_THREADS}")
-        self.get_logger().info("   🔀 Асинхронное распознавание + timing logs")
+        self.get_logger().info("   🔀 Асинхронное распознавание + оптимизации (pre-alloc, кэш)")
     
     def _setup_ros_communication(self) -> None:
         """Настройка ROS2 коммуникации"""
@@ -170,7 +171,13 @@ class SpeechToTextNode(Node):
         # Загрузка токенов
         self.id2token = self._load_tokens(tokens_path)
         self.blank_id = len(self.id2token) - 1
+        self.max_token_id = max(self.id2token.keys()) if self.id2token else self.blank_id
         self.get_logger().info(f"✓ Загружено токенов: {len(self.id2token)}")
+        
+        # КЭШ для input/output names (критично для производительности!)
+        self.asr_input_names = [inp.name for inp in self.asr_model.get_inputs()]
+        self.asr_output_names = [out.name for out in self.asr_model.get_outputs()]
+        self.get_logger().info("✓ Кэш input/output names создан")
         
         # Создание fbank экстрактора
         self.fbank_opts = self._create_fbank_options()
@@ -288,7 +295,7 @@ class SpeechToTextNode(Node):
         
         if is_speech:
             if not self.is_speaking:
-                # Начало речи
+               
                 self.is_speaking = True
                 self.audio_buffer = list(self.pre_buffer)
                 self.pre_buffer = []
@@ -374,36 +381,54 @@ class SpeechToTextNode(Node):
                 self.get_logger().error(f"Ошибка распознавания: {e}")
     
     def _compute_features(self, audio: np.ndarray, fbank: knf.OnlineFbank) -> np.ndarray:
-        """Извлечение fbank признаков"""
+        """Извлечение fbank признаков - ОПТИМИЗИРОВАНО с pre-allocation"""
         fbank.accept_waveform(self.config.SAMPLE_RATE, audio)
-        features = []
-        for i in range(fbank.num_frames_ready):
-            features.append(np.array(fbank.get_frame(i)))
-        return np.stack(features) if features else np.zeros((1, 64), dtype=np.float32)
+        num_frames = fbank.num_frames_ready
+        
+        if num_frames == 0:
+            return np.zeros((1, 64), dtype=np.float32)
+        
+        # PRE-ALLOCATE массив (вместо list.append) - критично для производительности!
+        features = np.empty((num_frames, 64), dtype=np.float32)
+        for i in range(num_frames):
+            features[i] = fbank.get_frame(i)  # Прямое присваивание без промежуточных массивов
+        
+        return features
     
     def _recognize_ctc(self, features: np.ndarray) -> str:
-        """CTC распознавание"""
-        # Преобразование: (T, C) -> (1, C, T)
-        x = features.T[np.newaxis, :, :].astype(np.float32)
+        """CTC распознавание - ОПТИМИЗИРОВАНО с кэшированными именами"""
+        # Оптимизированное преобразование: (T, 64) -> (1, 64, T)
+        # Используем expand_dims вместо newaxis (более явно и эффективно)
+        if features.ndim == 2:
+            x = np.expand_dims(features.T, axis=0).astype(np.float32)
+        else:
+            x = features.astype(np.float32)
+        
         x_lens = np.array([x.shape[-1]], dtype=np.int64)
         
-        # Inference
+        # Inference с КЭШИРОВАННЫМИ именами (критично для производительности!)
         log_probs = self.asr_model.run(
-            [self.asr_model.get_outputs()[0].name],
+            self.asr_output_names[:1],  # Используем кэш!
             {
-                self.asr_model.get_inputs()[0].name: x,
-                self.asr_model.get_inputs()[1].name: x_lens,
+                self.asr_input_names[0]: x,      # Используем кэш!
+                self.asr_input_names[1]: x_lens, # Используем кэш!
             },
         )[0]
         
         # CTC декодирование (collapse repeats) - pure numpy
         ids = np.argmax(log_probs[0], axis=1)
         
+        # Оптимизированное декодирование: фильтруем blank и повторы за один проход
         tokens = []
         prev = -1
         for i in ids:
+            # Проверка границ токена (защита от ошибок)
+            if i < 0 or i > self.max_token_id:
+                continue
             if i != self.blank_id and i != prev:
-                tokens.append(self.id2token.get(int(i), ""))
+                token = self.id2token.get(int(i), "")
+                if token:  # Пропускаем пустые токены
+                    tokens.append(token)
             prev = i
         
         return "".join(tokens).strip()
