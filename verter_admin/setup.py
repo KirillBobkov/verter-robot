@@ -69,7 +69,9 @@ def get_tts_model_files():
     
     for root, dirs, filenames in os.walk(tts_dir):
         for filename in filenames:
-            if filename.startswith('ru_') and (filename.endswith('.onnx') or filename.endswith('.json') or filename.endswith('.txt')):
+            # Включаем файлы Piper (.onnx, .json) и Silero (.pt)
+            if (filename.startswith('ru_') and (filename.endswith('.onnx') or filename.endswith('.json') or filename.endswith('.txt'))) or \
+               filename.endswith('.pt'):
                 src_path = os.path.join(root, filename)
                 # Убираем префикс 'src/verter_admin/text_to_speech/' из пути
                 rel_path = os.path.relpath(src_path, 'src/verter_admin/text_to_speech/')
@@ -156,6 +158,7 @@ setup(
             'recognition_node = verter_admin.recognition.recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',
+            'silero_tts_node = verter_admin.text_to_speech.silero_tts_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
             'chassis_node = verter_admin.chassis.chassis_node:main',
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
