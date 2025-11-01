@@ -9,10 +9,24 @@ def generate_launch_description():
     """
     return LaunchDescription([
         # Узел Speech-to-Text (низкоуровневый)
+        # Node(
+        #     package='verter_admin',
+        #     executable='speech_to_text_node',
+        #     name='speech_to_text_node',
+        #     output='screen'
+        # ),
+
+        # Node(
+        #     package='verter_admin',
+        #     executable='speech_to_text_transducer_node',
+        #     name='speech_to_text_transducer_node',
+        #     output='screen'
+        # ),
+
         Node(
             package='verter_admin',
-            executable='speech_to_text_node',
-            name='speech_to_text_node',
+            executable='speech_to_text_sherpa_node',
+            name='speech_to_text_sherpa_node',
             output='screen'
         ),
         

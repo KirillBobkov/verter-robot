@@ -18,6 +18,17 @@ def get_sherpa_model_files():
                     dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
                     model_files.append((dest_dir, [src_path]))
     
+    # Transducer модель
+    transducer_model_dir = 'src/verter_admin/speech_to_text/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19'
+    if os.path.isdir(transducer_model_dir):
+        for root, dirs, filenames in os.walk(transducer_model_dir):
+            for filename in filenames:
+                if filename in ['encoder.int8.onnx', 'decoder.onnx', 'joiner.onnx', 'tokens.txt']:
+                    src_path = os.path.join(root, filename)
+                    rel_path = os.path.relpath(src_path, 'src/verter_admin/speech_to_text/')
+                    dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
+                    model_files.append((dest_dir, [src_path]))
+    
     # VAD модель
     vad_model = 'src/verter_admin/speech_to_text/silero_vad.onnx'
     if os.path.exists(vad_model):
@@ -117,6 +128,7 @@ setup(
         'kaldi-native-fbank',
         'onnxruntime',
         'torch',
+        'sherpa-onnx',
     ], 
     zip_safe=True,
     maintainer='Имя Пользователя',
@@ -127,6 +139,8 @@ setup(
     entry_points={
         'console_scripts': [
             'speech_to_text_node = verter_admin.speech_to_text.speech_to_text_node:main',
+            'speech_to_text_transducer_node = verter_admin.speech_to_text.speech_to_text_transducer_node:main',
+            'speech_to_text_sherpa_node = verter_admin.speech_to_text.speech_to_text_sherpa_node:main',
             'recognition_node = verter_admin.recognition.recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',
