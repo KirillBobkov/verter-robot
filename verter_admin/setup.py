@@ -29,6 +29,17 @@ def get_sherpa_model_files():
                     dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
                     model_files.append((dest_dir, [src_path]))
     
+    # Parakeet TDT модель
+    parakeet_model_dir = 'src/verter_admin/speech_to_text/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8'
+    if os.path.isdir(parakeet_model_dir):
+        for root, dirs, filenames in os.walk(parakeet_model_dir):
+            for filename in filenames:
+                if filename in ['encoder.int8.onnx', 'decoder.int8.onnx', 'joiner.int8.onnx', 'tokens.txt']:
+                    src_path = os.path.join(root, filename)
+                    rel_path = os.path.relpath(src_path, 'src/verter_admin/speech_to_text/')
+                    dest_dir = os.path.join('share', 'verter_admin', os.path.dirname(rel_path))
+                    model_files.append((dest_dir, [src_path]))
+    
     # VAD модель
     vad_model = 'src/verter_admin/speech_to_text/silero_vad.onnx'
     if os.path.exists(vad_model):
@@ -141,6 +152,7 @@ setup(
             'speech_to_text_node = verter_admin.speech_to_text.speech_to_text_node:main',
             'speech_to_text_transducer_node = verter_admin.speech_to_text.speech_to_text_transducer_node:main',
             'speech_to_text_sherpa_node = verter_admin.speech_to_text.speech_to_text_sherpa_node:main',
+            'speech_to_text_parakeet_node = verter_admin.speech_to_text.speech_to_text_parakeet_node:main',
             'recognition_node = verter_admin.recognition.recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',
