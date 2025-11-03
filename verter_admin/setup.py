@@ -116,10 +116,7 @@ setup(
         (os.path.join('share', package_name, 'config', 'slam'), glob(os.path.join('src/verter_admin/config/slam', '*.yaml'))),
         # Включаем конфигурацию Explore Lite
         (os.path.join('share', package_name, 'config', 'explore'), glob(os.path.join('src/verter_admin/config/explore', '*.yaml'))),
-        # Включаем Arduino скетчи для distance_sensors
-        (os.path.join('share', package_name, 'distance_sensors'), [
-            'src/verter_admin/distance_sensors/sensors.ino',
-        ]),
+        # Arduino скетчи не включаем в сборку
         # Включаем dataset в пакет
         *get_dataset_files(),
         # Включаем модели Sherpa-ONNX в пакет

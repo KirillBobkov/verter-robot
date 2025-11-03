@@ -26,7 +26,7 @@ class SpeechToTextConfig:
     BLOCK_SIZE: int = 1600  # 100ms чанки
     CHANNELS: int = 1
     VAD_THRESHOLD: float = 0.5
-    SILENCE_CHUNKS: int = 4  # 0.4 сек паузы
+    SILENCE_CHUNKS: int = 6  # 0.6 сек паузы
     PRE_BUFFER_CHUNKS: int = 5  # 0.5 сек предыстории
     NUM_THREADS: int = 4  # 4 потока = все ядра Cortex-A72
     AUDIO_LATENCY: float = 0.2
@@ -295,7 +295,6 @@ class SpeechToTextNode(Node):
         
         if is_speech:
             if not self.is_speaking:
-               
                 self.is_speaking = True
                 self.audio_buffer = list(self.pre_buffer)
                 self.pre_buffer = []
@@ -308,9 +307,12 @@ class SpeechToTextNode(Node):
             self.silence_counter += 1
             
             if self.silence_counter >= self.config.SILENCE_CHUNKS:
-                # Конец фразы - запускаем распознавание АСИНХРОННО
-                # Копируем буфер чтобы не блокировать audio callback
-                audio_to_recognize = list(self.audio_buffer)
+                # Конец фразы — отрезаем накопленную тишину в конце перед распознаванием
+                chunks_to_drop = min(self.config.SILENCE_CHUNKS, len(self.audio_buffer))
+                trimmed_chunks = self.audio_buffer[:-chunks_to_drop] if chunks_to_drop > 0 else self.audio_buffer
+                
+                # Запускаем распознавание АСИНХРОННО (копируем буфер чтобы не блокировать callback)
+                audio_to_recognize = list(trimmed_chunks)
                 threading.Thread(
                     target=self._recognize_accumulated_audio,
                     args=(audio_to_recognize,),

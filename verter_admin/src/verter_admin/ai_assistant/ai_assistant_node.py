@@ -32,7 +32,7 @@ class AIAssistantNode(Node):
     def __init__(self):
         super().__init__('ai_assistant_node')
         
-        self.is_testing = False
+        self.is_testing = True
         self._setup_ros_interface()
         
         if self.is_testing:

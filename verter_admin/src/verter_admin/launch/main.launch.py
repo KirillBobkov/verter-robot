@@ -8,7 +8,7 @@ def generate_launch_description():
     Launch файл для запуска системы verter_admin.
     """
     return LaunchDescription([
-        # Узел Speech-to-Text (низкоуровневый)
+        # # Узел Speech-to-Text (низкоуровневый)
         Node(
             package='verter_admin',
             executable='speech_to_text_node',
