@@ -62,6 +62,7 @@ class SileroTTSNode(Node):
         self._busy_lock = threading.Lock()
         self._busy = False
         self._pending_text = None
+        self._current_process = None  # Для возможности прерывания
         
         self.get_logger().info(f"Silero TTS готов. Sample rate: {self.sample_rate}, speaker: {self.speaker}")
     
@@ -126,31 +127,15 @@ class SileroTTSNode(Node):
     
     def _synthesize_and_play(self, text):
         """Синтез речи и воспроизведение через aplay"""
+        process = None
         try:
             # СНАЧАЛА ОТКЛЮЧАЕМ МИКРОФОН
             self._deactivate_speech_recognition()
             
-            self.get_logger().info(f"Синтез текста: {text}...")
+            self.get_logger().info(f"Синтез текста: {text[:50]}..." if len(text) > 50 else f"Синтез текста: {text}")
             start_synth = time.time()
             
-            # Запускаем aplay ЗАРАНЕЕ (как в Piper) для уменьшения latency
-            process = subprocess.Popen(
-                [
-                    "aplay",
-                    "-D", self.audio_device,
-                    "-q",
-                    "-f", "S16_LE",
-                    "-r", str(self.sample_rate),
-                    "-c", "1",  # моно
-                    "--buffer-size=4096"
-                ],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                env=self.env
-            )
-            
-            # Синтез речи
+            # Синтез речи (блокирующий, но необходим для Silero)
             audio = self.model.apply_tts(
                 text=text.strip(),
                 speaker=self.speaker,
@@ -164,38 +149,52 @@ class SileroTTSNode(Node):
             synth_time = time.time() - start_synth
             self.get_logger().info(f"✓ Синтез выполнен за {synth_time:.2f} сек")
             
-            # Конвертация в int16
+            # Проверяем, не нужно ли прервать (новое сообщение в очереди)
+            with self._busy_lock:
+                if self._pending_text:
+                    self.get_logger().info("⏭ Пропускаю текущее сообщение, есть новое в очереди")
+                    return
+            
+            # Конвертация в int16 (оптимизированная)
             audio_np = audio.numpy()
             audio_int16 = (audio_np * 32767).astype(np.int16)
+            audio_bytes = audio_int16.tobytes()
             
-            # Буферизация для более эффективной передачи данных (как в Piper)
-            buffer = bytearray()
-            buffer_threshold = 2048  # 2KB буфер для быстрого старта воспроизведения
+            # Запускаем aplay
+            process = subprocess.Popen(
+                [
+                    "aplay",
+                    "-D", self.audio_device,
+                    "-q",
+                    "-f", "S16_LE",
+                    "-r", str(self.sample_rate),
+                    "-c", "1",  # моно
+                    "--buffer-size=8192"  # Увеличенный буфер для плавности
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                env=self.env
+            )
             
-            # Записываем данные пакетами
-            chunk_size = 2048  # Меньшие чанки для более плавной передачи
-            for i in range(0, len(audio_int16), chunk_size):
-                # Проверяем, что процесс еще жив (как в Piper)
-                if process.poll() is not None:
-                    break
-                
-                chunk = audio_int16[i:i + chunk_size]
-                buffer.extend(chunk.tobytes())
-                
-                # Отправляем данные пакетами, а не по одному chunk
-                if len(buffer) >= buffer_threshold:
-                    try:
-                        process.stdin.write(buffer)
-                        buffer.clear()
-                    except BrokenPipeError:
+            # Сохраняем ссылку для возможности прерывания
+            with self._busy_lock:
+                self._current_process = process
+            
+            # Передаем данные оптимальными чанками
+            chunk_size = 8192  # Большие чанки для эффективности
+            for i in range(0, len(audio_bytes), chunk_size):
+                # Проверяем, не нужно ли прервать
+                with self._busy_lock:
+                    if self._pending_text or process.poll() is not None:
                         break
-            
-            # Отправляем остатки буфера
-            if buffer:
+                
+                chunk = audio_bytes[i:i + chunk_size]
                 try:
-                    process.stdin.write(buffer)
+                    process.stdin.write(chunk)
+                    process.stdin.flush()  # Принудительная отправка для меньшей latency
                 except BrokenPipeError:
-                    pass
+                    break
             
             process.stdin.close()
             
@@ -210,6 +209,20 @@ class SileroTTSNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения: {e}")
         finally:
+            # Очищаем ссылку на процесс
+            with self._busy_lock:
+                self._current_process = None
+                # Прерываем процесс, если он еще работает и есть новое сообщение
+                if process and process.poll() is None and self._pending_text:
+                    try:
+                        process.terminate()
+                        process.wait(timeout=0.5)
+                    except (subprocess.TimeoutExpired, AttributeError):
+                        try:
+                            process.kill()
+                        except:
+                            pass
+            
             # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО С ЗАДЕРЖКОЙ (предотвращение эхо)
             time.sleep(0.1)
             self._activate_speech_recognition()
