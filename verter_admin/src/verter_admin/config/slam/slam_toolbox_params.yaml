@@ -28,19 +28,19 @@ slam_toolbox:
     throttle_scans: 1  # Process every N scans (1 = all scans)
 
     # TF Parameters
-    transform_publish_period: 0.02  # 50 Hz
+    transform_publish_period: 0.05  # 20 Hz (matching controller)
     tf_buffer_duration: 30.0
-    transform_timeout: 0.2
-    use_sim_time: false
+    transform_timeout: 0.5
+    use_sim_time: true
 
     # General Parameters
     stack_size_to_use: 40000000  # Program stack size to execute
 
     # Position Variance (uncertainty in position)
     # For odometry-based SLAM with differential drive
-    # Уменьшено для работы с ультразвуковыми датчиками (мало точек)
-    minimum_travel_distance: 0.05  # 5 см минимальное расстояние для обновления
-    minimum_travel_heading: 0.05   # ~2.9° минимальный поворот
+    # Уменьшено для более частого обновления карты в RViz
+    minimum_travel_distance: 0.01  # 1 см минимальное расстояние для обновления
+    minimum_travel_heading: 0.01   # ~0.57° минимальный поворот
 
     # Scan Matching Parameters
     scan_buffer_size: 10
@@ -76,7 +76,17 @@ slam_toolbox:
     minimum_distance_penalty: 0.5
     use_response_expansion: true
 
-    # Laser Scanner Parameters (HC-SR04 ultrasonic sensors)
-    # Matching the capabilities of the ultrasonic sensors
-    minimum_laser_range: 0.02  # 2 cm - minimum range of HC-SR04
-    maximum_laser_range: 4.0   # 4 m - maximum range of HC-SR04
+    # Laser Scanner Parameters (ToF Camera depth range)
+    # Matching the capabilities of the ToF camera in simulation
+    minimum_range: 0.1  # 10 cm - minimum range
+    maximum_range: 4.0   # 4 m - maximum range of ToF camera
+    minimum_laser_range: 0.1
+    maximum_laser_range: 4.0
+
+    # Solver plugin parameters
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None

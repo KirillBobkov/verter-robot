@@ -79,6 +79,8 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('src/verter_admin/launch', '*.launch.py'))),
         # Включаем URDF модели робота
         (os.path.join('share', package_name, 'urdf'), glob(os.path.join('src/verter_admin/urdf', '*.urdf'))),
+        # Включаем world файли для Gazebo
+        (os.path.join('share', package_name, 'worlds'), glob(os.path.join('src/verter_admin/worlds', '*.world'))),
         # Включаем конфигурацию Nav2
         (os.path.join('share', package_name, 'config', 'nav2'), glob(os.path.join('src/verter_admin/config/nav2', '*.yaml'))),
         # Включаем конфигурацию SLAM
@@ -118,7 +120,9 @@ setup(
             'odometry_node = verter_admin.odometry.odometry_node:main',
             'doa_node = verter_admin.doa.doa_node:main',
             'tof_camera_node = verter_admin.tof_camera.tof_camera_node:main',
-            'autonomous_explorer_node = verter_admin.autonomous_explorer.autonomous_explorer_node:main',
+            'teleop_keyboard = verter_admin.teleop.teleop_keyboard:main',
+            'pointcloud_to_laserscan = verter_admin.distance_sensors.pointcloud_to_laserscan_node:main',
+            'safety_monitor = verter_admin.distance_sensors.safety_monitor_node:main',
         ],
     },
 )
