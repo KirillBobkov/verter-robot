@@ -113,18 +113,18 @@ class TextToSpeechNode(Node):
             
             # Добавляем логирование для отладки
             
-            # Используем streaming API с оптимизированными параметрами
+            # Используем streaming API с оптимизированными параметрами для RPi4
             process = subprocess.Popen(
-                ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1", "--buffer-size=8192"],
+                ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1", "--buffer-size=4096"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,  # Захватываем stderr для отладки
                 env=self.env
             )
             
-            # Буферизация для более эффективной передачи данных
+            # Буферизация для более эффективной передачи данных (меньше latency)
             buffer = bytearray()
-            buffer_threshold = 4096  # 4KB буфер
+            buffer_threshold = 2048  # 2KB буфер для быстрого старта воспроизведения
             
             # Синтез речи с оптимизированной буферизацией
             for chunk in self.voice.synthesize(text.strip()):
@@ -163,7 +163,7 @@ class TextToSpeechNode(Node):
         finally:
             # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО С ЗАДЕРЖКОЙ (предотвращение эхо)
             import time
-            time.sleep(0.7)  # Задержка 2 секунды для затухания звука в колонках
+            time.sleep(0.1)  # Минимальная задержка для затухания звука
             self._activate_speech_recognition()
     
     

@@ -8,13 +8,34 @@ def generate_launch_description():
     Launch файл для запуска системы verter_admin.
     """
     return LaunchDescription([
-        # Узел Speech-to-Text (низкоуровневый)
+        # # Узел Speech-to-Text (низкоуровневый)
         Node(
             package='verter_admin',
             executable='speech_to_text_node',
             name='speech_to_text_node',
             output='screen'
         ),
+
+        # Node(
+        #     package='verter_admin',
+        #     executable='speech_to_text_transducer_node',
+        #     name='speech_to_text_transducer_node',
+        #     output='screen'
+        # ),
+
+        # Node(
+        #     package='verter_admin',
+        #     executable='speech_to_text_sherpa_node',
+        #     name='speech_to_text_sherpa_node',
+        #     output='screen'
+        # ),
+
+        # Node(
+        #     package='verter_admin',
+        #     executable='speech_to_text_parakeet_node',
+        #     name='speech_to_text_parakeet_node',
+        #     output='screen'
+        # ),
         
         # Узел обработки распознанной речи (высокоуровневый)
         Node(
@@ -32,11 +53,19 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # Узел синтеза речи
+        # Узел синтеза речи (Piper)
+        # Node(
+        #     package='verter_admin',
+        #     executable='text_to_speech_node',
+        #     name='text_to_speech_node',
+        #     output='screen'
+        # ),
+        
+        # Узел синтеза речи (Silero TTS)
         Node(
             package='verter_admin',
-            executable='text_to_speech_node',
-            name='text_to_speech_node',
+            executable='silero_tts_node',
+            name='silero_tts_node',
             output='screen'
         ),
         

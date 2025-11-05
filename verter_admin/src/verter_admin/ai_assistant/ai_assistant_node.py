@@ -27,12 +27,12 @@ class AIAssistantNode(Node):
         "zrobot": "Индекс содержит информацию о роботе",
     }
     
-    INSTRUCTION = "Ты — Вертер, робот-администратор, стоишь в больнице на 1 этаже. Ты можешь говорить на любые темы без ограничений. Ищи информацию в базе знаний. Ответ должен быть короче 200 символов. Избегай форматирования. Адаптируй свой ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах). Не форматируй текст ответа. Если не нашел информации в базе знаний - отвечай в свободном стиле без ограничений"
+    INSTRUCTION = "Ты — Вертер, робот-администратор, стоишь в больнице на 1 этаже. Ты можешь говорить на любые темы без ограничений. Ищи информацию в базе знаний. Ответ должен быть короче 200 символов. Избегай форматирования. Адаптируй свой ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах). Все цифры и числа озвучивай словами. Не форматируй текст ответа. Если не нашел информации в базе знаний - отвечай в свободном стиле без ограничений"
     
     def __init__(self):
         super().__init__('ai_assistant_node')
         
-        self.is_testing = False
+        self.is_testing = True
         self._setup_ros_interface()
         
         if self.is_testing:
@@ -72,12 +72,20 @@ class AIAssistantNode(Node):
             
             self.dialog_active = False
             self.current_thread = None
+            self.sdk_available = True
             
             self.get_logger().info("YandexGPT SDK инициализирован успешно")
             
         except Exception as e:
-            self.get_logger().error(f"Ошибка инициализации YandexGPT SDK: {e}")
-            raise
+            self.sdk_available = False
+            error_msg = str(e).lower()
+            
+            if "network" in error_msg or "unreachable" in error_msg or "failed to connect" in error_msg or "unavailable" in error_msg:
+                self.get_logger().error(f"Ошибка подключения к YandexGPT (проблемы с интернетом): {e}")
+                self._publish_response("Извините, проблемы с интернет-соединением. Проверьте подключение к сети.")
+            else:
+                self.get_logger().error(f"Ошибка инициализации YandexGPT SDK: {e}")
+                self._publish_response("Извините, я пока не могу отвечать на вопросы. Попробуйте позже.")
     
     def _upload_files(self):
         """Загрузка файлов в облако."""
@@ -133,26 +141,64 @@ class AIAssistantNode(Node):
     def _handle_test_mode(self, question: str):
         """Обработка тестового режима."""
         import time
-        time.sleep(1)
+        time.sleep(0.4)
         self._publish_response(question)
     
     def _handle_production_mode(self, question: str):
         """Обработка продакшн режима с YandexGPT."""
-        try:
-            thread_to_use = self.current_thread if self.dialog_active else self.main_thread
-            thread_to_use.write(question)
-            
-            run = self.assistant.run(thread_to_use)
-            result = run.wait()
-            
-            answer = self._validate_answer(result.text)
+        import threading
+        
+        # Проверка доступности SDK
+        if not hasattr(self, 'sdk_available') or not self.sdk_available:
+            self.get_logger().warning("SDK недоступен, отправка fallback ответа")
+            self._publish_response("Извините, сервис временно недоступен. Проверьте интернет-соединение.")
+            return
+        
+        timeout_occurred = threading.Event()
+        answer_received = threading.Event()
+        answer_text = [None]  # Используем список для изменения из другого потока
+        
+        def run_ai_request():
+            """Выполнение запроса к AI в отдельном потоке"""
+            try:
+                thread_to_use = self.current_thread if self.dialog_active else self.main_thread
+                thread_to_use.write(question)
+                
+                run = self.assistant.run(thread_to_use)
+                result = run.wait()
+                
+                if not timeout_occurred.is_set():
+                    answer_text[0] = self._validate_answer(result.text)
+                    answer_received.set()
+            except Exception as e:
+                self.get_logger().error(f"Ошибка обработки вопроса: {e}")
+                error_msg = str(e).lower()
+                
+                if not timeout_occurred.is_set():
+                    # Определяем тип ошибки для более точного сообщения
+                    if "network" in error_msg or "unreachable" in error_msg or "failed to connect" in error_msg or "unavailable" in error_msg:
+                        answer_text[0] = "Извините, проблемы с интернет-соединением. Повторите запрос позже."
+                    else:
+                        answer_text[0] = "Повторите, пожалуйста, запрос."
+                    answer_received.set()
+        
+        # Запускаем запрос в отдельном потоке
+        request_thread = threading.Thread(target=run_ai_request, daemon=True)
+        request_thread.start()
+        
+        # Ждем ответа с таймаутом 10 секунд
+        answer_received.wait(timeout=10.0)
+        
+        if answer_received.is_set():
+            # Ответ получен
+            answer = answer_text[0]
             self._publish_response(answer)
-            
             self.get_logger().info(f"Ответ получен ({len(answer)} символов)")
-            
-        except Exception as e:
-            self.get_logger().error(f"Ошибка обработки вопроса: {e}")
-            self._publish_response("Повторите пожалуйста запрос")
+        else:
+            # Таймаут - ответ не получен
+            timeout_occurred.set()
+            self.get_logger().warning("Таймаут ожидания ответа от AI (>10 сек)")
+            self._publish_response("Повторите, пожалуйста, запрос.")
     
     def _validate_answer(self, answer: str) -> str:
         """Валидация ответа от AI"""

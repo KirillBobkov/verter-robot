@@ -7,6 +7,7 @@ import time
 import subprocess
 import threading
 from typing import Optional, List
+import re
 
 
 class DistanceSensorsNode(Node):
@@ -23,6 +24,8 @@ class DistanceSensorsNode(Node):
         self.arduino_serial: Optional[serial.Serial] = None
         self.current_port = None
         self.sensor_data = [0.0] * self.NUM_SENSORS
+        self.accel_data = {'ax': 0, 'ay': 0, 'az': 0, 'gx': 0, 'gy': 0, 'gz': 0}
+        self.compass_heading = 999
         self.reading_thread = None
         self.stop_thread = False
         self.last_command = None  # Запоминаем последнюю отправленную команду
@@ -126,17 +129,67 @@ class DistanceSensorsNode(Node):
                 # Читаем данные с serial порта
                 if self.arduino_serial.in_waiting > 0:
                     line = self.arduino_serial.readline().decode('utf-8').strip()
-                    self._process_sensor_data(line)
+                    outputs = self._process_sensor_data(line)
+                    if outputs:
+                        self.get_logger().info(' | '.join(outputs))
                 
-                time.sleep(0.01)  # Короткая пауза чтобы не нагружать CPU
+                time.sleep(1)  # Короткая пауза чтобы не нагружать CPU
                 
             except Exception as e:
                 self.get_logger().error(f'Ошибка в цикле чтения датчиков: {e}')
                 time.sleep(1.0)
 
-    def _process_sensor_data(self, data_line: str):
-        """Обработка данных с датчиков."""
-        pass
+    def _process_sensor_data(self, data_line: str) -> list[str]:
+        """Парсер строки: возвращает отдельные строки для логов или пустой список.
+        Поддерживаемые форматы:
+          - _COMPASS:<deg> → ["COMPASS:<deg>"]
+          - DISTANCE:..._ACCELEROMETR:ax:ay:az:gx:gy:gz → ["DISTANCE:...", "ACCELEROMETR:ax:...:gz"]
+          - COMPASS:... (инфо-лог) и прочее → []
+        """
+        line = (data_line or '').strip()
+        if not line:
+            return []
+
+        # Отдельная строка компаса
+        if line.startswith('_COMPASS:'):
+            val = line[9:].strip()
+            if val.isdigit():
+                return [f'COMPASS:{val}']
+            return []
+
+        # Одноразовый инфо-лог от Arduino
+        if line.startswith('COMPASS:'):
+            return []
+
+        # Совмещённая строка DISTANCE + ACCELEROMETR
+        if not line.startswith('DISTANCE:'):
+            return []
+
+        parts = line.split('_ACCELEROMETR:', 1)
+        if len(parts) != 2:
+            return []
+
+        distance_part = parts[0][len('DISTANCE:'):]
+        accel_part = parts[1]
+
+        # Валидация distance: числа, разделённые ':'
+        if not distance_part or any(not seg.isdigit() for seg in distance_part.split(':')):
+            return []
+
+        # Валидация accel: 6 целых (м.б. со знаком)
+        accel_fields = accel_part.split(':')
+        if len(accel_fields) != 6:
+            return []
+        try:
+            ax, ay, az, gx, gy, gz = (int(accel_fields[0]), int(accel_fields[1]), int(accel_fields[2]),
+                                      int(accel_fields[3]), int(accel_fields[4]), int(accel_fields[5]))
+        except ValueError:
+            return []
+
+        return [
+            f'DISTANCE:{distance_part}',
+            f'ACCELEROMETR:{ax}:{ay}:{az}:{gx}:{gy}:{gz}',
+        ]
 
     def _send_command(self, command: str):
         """Отправка команды."""
