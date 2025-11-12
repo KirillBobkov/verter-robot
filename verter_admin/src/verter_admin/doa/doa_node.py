@@ -6,12 +6,15 @@ DOA Node - отдельная нода для обработки Direction of Ar
 
 import threading
 import time
-from typing import Optional
+import subprocess
+from typing import Optional, List
 
 import rclpy
 from rclpy.node import Node
 import usb.core
 import usb.util
+import serial
+import serial.tools.list_ports
 from std_msgs.msg import String, Bool
 
 from .tuning import Tuning
@@ -20,6 +23,12 @@ from .tuning import Tuning
 RESPEAKER_VENDOR_ID = 0x2886
 RESPEAKER_PRODUCT_ID = 0x0018
 DOA_POLLING_INTERVAL = 7.0
+
+# Константы для Arduino подключения
+ARDUINO_DEVPATH = "1.3"  # devpath для Arduino головы
+BAUD_RATE = 9600
+CONNECTION_TIMEOUT = 2.0
+SERIAL_TIMEOUT = 0.1
 
 # DOA углы для команд головы
 DOA_CENTER_MIN = 10
@@ -47,8 +56,18 @@ class DOANode(Node):
         self.last_eye_command: Optional[str] = None
         self.doa_enabled = False
         
+        # Arduino подключение
+        self.arduino_serial: Optional[serial.Serial] = None
+        self.current_port = None
+        
         # Настройка ROS2 коммуникации
         self._setup_ros_communication()
+        
+        # Подключение к Arduino
+        if self._connect_to_arduino():
+            self.get_logger().info("✓ Arduino для головы подключен")
+        else:
+            self.get_logger().warn("⚠️ Arduino для головы не подключен")
         
         # Инициализация DOA
         self._setup_doa()
@@ -59,9 +78,15 @@ class DOANode(Node):
         self.get_logger().info("🎯 DOA Node запущен")
 
     def _setup_ros_communication(self):
-        """Настройка ROS2 publishers и subscribers"""
-        # Publisher для команд головы
-        self.command_publisher = self.create_publisher(String, 'verter_commands', 10)
+        """Настройка ROS2 subscribers"""
+        # Subscriber для команд головы из других нод
+        self.create_subscription(
+            String,
+            'head_commands',
+            self._handle_head_command,
+            10
+        )
+        self.get_logger().info('Подписчик для head_commands создан')
         
         # Subscriber для управления активностью DOA
         self.create_subscription(
@@ -70,6 +95,105 @@ class DOANode(Node):
             self._handle_doa_control,
             10
         )
+
+    def _find_arduino_port(self) -> List[str]:
+        """Автоматический поиск портов Arduino по devpath."""
+        available_ports = []
+        
+        self.get_logger().info(f'Поиск устройства с devpath={ARDUINO_DEVPATH} для головы')
+        ports = serial.tools.list_ports.comports()
+        
+        for port in ports:
+            self.get_logger().info(f'Проверяю порт: {port.device}')
+            
+            # Проверяем devpath с помощью udevadm
+            try:
+                result = subprocess.run(
+                    ['udevadm', 'info', '-a', '-n', port.device], 
+                    capture_output=True, 
+                    text=True
+                )
+                
+                if f'devpath=="{ARDUINO_DEVPATH}"' in result.stdout or f'ATTRS{{devpath}}=="{ARDUINO_DEVPATH}"' in result.stdout:
+                    self.get_logger().info(f'Найдено устройство с devpath={ARDUINO_DEVPATH} на порту {port.device}')
+                    available_ports.append(port.device)
+                else:
+                    self.get_logger().info(f'Порт {port.device} не соответствует devpath={ARDUINO_DEVPATH}')
+            except Exception as e:
+                self.get_logger().error(f'Ошибка при проверке devpath для {port.device}: {e}')
+        
+        if not available_ports:
+            self.get_logger().warn(f'Не найдено устройств с devpath={ARDUINO_DEVPATH}')
+        
+        return available_ports
+
+    def _connect_to_arduino(self) -> bool:
+        """Установка соединения с Arduino для головы."""
+        available_ports = self._find_arduino_port()
+        
+        if not available_ports:
+            self.get_logger().error(f'Не найдено устройств с devpath={ARDUINO_DEVPATH} для головы')
+            return False
+        
+        # Берем первый найденный порт
+        port = available_ports[0]
+        self.get_logger().info(f'Подключаюсь к порту {port} для головы (devpath={ARDUINO_DEVPATH})')
+        
+        try:
+            self.arduino_serial = serial.Serial(
+                port, 
+                BAUD_RATE, 
+                timeout=SERIAL_TIMEOUT
+            )
+            self.current_port = port
+            
+            time.sleep(CONNECTION_TIMEOUT)
+            self.get_logger().info(f'Успешно подключено к Arduino головы на порту {port} (devpath={ARDUINO_DEVPATH})')
+            return True
+        except serial.SerialException as e:
+            self.get_logger().error(f'Не удалось подключиться к Arduino головы на порту {port}: {e}')
+            return False
+
+    def _is_arduino_connected(self) -> bool:
+        """Проверка подключения Arduino."""
+        return self.arduino_serial and self.arduino_serial.is_open
+
+    def _send_to_arduino(self, command: str):
+        """Отправка команды на Arduino."""
+        if not self._is_arduino_connected():
+            self.get_logger().warn('Arduino для головы не подключен')
+            return
+            
+        try:
+            self.arduino_serial.write(f"{command}\n".encode('utf-8'))
+            self.get_logger().debug(f'Команда отправлена на Arduino: "{command}"')
+        except serial.SerialException as e:
+            self.get_logger().error(f'Ошибка отправки на Arduino: {e}')
+            # Попытка переподключения
+            self._reconnect_arduino()
+        except Exception as e:
+            self.get_logger().error(f'Неожиданная ошибка отправки на Arduino: {e}')
+
+    def _reconnect_arduino(self):
+        """Переподключение к Arduino."""
+        self.get_logger().info('Попытка переподключения к Arduino головы...')
+        self._close_arduino_connection()
+        
+        if self._connect_to_arduino():
+            self.get_logger().info('Успешно переподключен к Arduino головы')
+        else:
+            self.get_logger().warn('Не удалось переподключиться к Arduino головы')
+
+    def _close_arduino_connection(self):
+        """Закрытие соединения с Arduino."""
+        if self.arduino_serial and self.arduino_serial.is_open:
+            self.arduino_serial.close()
+
+    def _handle_head_command(self, msg: String):
+        """Обработчик команд головы из топика head_commands."""
+        command = msg.data
+        self.get_logger().info(f'Получена команда головы: "{command}"')
+        self._send_to_arduino(command)
 
     def _setup_doa(self):
         """Инициализация DOA"""
@@ -129,9 +253,8 @@ class DOANode(Node):
                 return
             self.last_eye_command = command
 
-            msg = String()
-            msg.data = command
-            self.command_publisher.publish(msg)
+            # Отправляем команду напрямую на Arduino
+            self._send_to_arduino(command)
             self.get_logger().debug(f"🎯 DOA команда отправлена: {command} (угол: {doa_angle}°)")
             
         except Exception as e:
@@ -161,6 +284,9 @@ class DOANode(Node):
 
     def _cleanup_resources(self):
         """Безопасная очистка всех ресурсов при завершении"""
+        # Закрываем Arduino соединение
+        self._close_arduino_connection()
+        
         # Освобождаем USB ресурсы
         if hasattr(self, 'doa_dev') and self.doa_dev:
             try:
@@ -196,6 +322,8 @@ def main(args=None):
         print("🎯 DOA NODE: Direction of Arrival для управления головой")
         print("   Команды: HEAD:CENTER, HEAD:LEFT, HEAD:RIGHT")
         print("   Управление через топик: doa_active")
+        print("   Команды головы через топик: head_commands")
+        print(f"   Arduino подключение: devpath={ARDUINO_DEVPATH}")
         rclpy.spin(node)
     except KeyboardInterrupt:
         print("\n🔄 Завершение DOA ноды по Ctrl+C...")
