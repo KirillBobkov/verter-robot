@@ -17,8 +17,11 @@ const int echoPin6 = 13;
 const int trigPin7 = 14;  
 const int echoPin7 = 15;  
 
-int16_t ax_offset = 0, ay_offset = 0, az_offset = 0;
-int16_t gx_offset = 0, gy_offset = 0, gz_offset = 0;
+// ===== КАЛИБРОВКА ГИРОСКОПА =====
+// Значения калибровки гироскопа
+const int16_t CAL_GX_OFFSET = 77;
+const int16_t CAL_GY_OFFSET = 243;
+const int16_t CAL_GZ_OFFSET = -36;
 
 // ===== Компас (HMC5883L/QMC5883L) =====
 static const uint8_t HMC5883L_ADDR = 0x1E;
@@ -187,28 +190,8 @@ void setup() {
   writeRegister(0x1B, 0x00);  // GYRO_CONFIG: ±250°/s
   writeRegister(0x1C, 0x00);  // ACCEL_CONFIG: ±2g
   
-  Serial.println("MPU-6050 инициализирован! Калибровка...");
-  
-  // Калибровка
-  long ax_sum = 0, ay_sum = 0, az_sum = 0;
-  long gx_sum = 0, gy_sum = 0, gz_sum = 0;
-  
-  for (int i = 0; i < 1000; i++) {
-    int16_t ax, ay, az, gx, gy, gz;
-    readMotion6(&ax, &ay, &az, &gx, &gy, &gz);
-    ax_sum += ax; ay_sum += ay; az_sum += az;
-    gx_sum += gx; gy_sum += gy; gz_sum += gz;
-    delay(2);
-  }
-  
-  ax_offset = ax_sum / 1000;
-  ay_offset = ay_sum / 1000;
-  az_offset = az_sum / 1000 - 16384;
-  gx_offset = gx_sum / 1000;
-  gy_offset = gy_sum / 1000;
-  gz_offset = gz_sum / 1000;
-  
-  Serial.println("Калибровка завершена!");
+  // Используем значения калибровки гироскопа
+  Serial.println("MPU-6050 инициализирован!");
 
   // Компас
   compassSetup();
@@ -289,15 +272,45 @@ void loop() {
   int16_t ax, ay, az, gx, gy, gz;
   readMotion6(&ax, &ay, &az, &gx, &gy, &gz);
   
-  // Применяем калибровку
-  ax -= ax_offset;
-  ay -= ay_offset;
-  az -= az_offset;
-  gx -= gx_offset;
-  gy -= gy_offset;
-  gz -= gz_offset;
+  // Применяем калибровку только для гироскопа
+  gx -= CAL_GX_OFFSET;
+  gy -= CAL_GY_OFFSET;
+  gz -= CAL_GZ_OFFSET;
+  
+  // ========== ВЫЧИСЛЕНИЕ УГЛОВ И УГЛОВЫХ СКОРОСТЕЙ ==========
+  
+  // Вычисляем углы наклона из акселерометра (в градусах) по всем трем осям
+  // Используем подход из примера dualarms.ino: ограничение и acos
+  
+  // Ограничиваем значения до ±1g (как в примере)
+  ax = constrain(ax, -16384, 16384);
+  ay = constrain(ay, -16384, 16384);
+  az = constrain(az, -16384, 16384);
+  
+  // Переводим в единицы g
+  float ax_g = ax / 16384.0;
+  float ay_g = ay / 16384.0;
+  float az_g = az / 16384.0;
+  
+  // Вычисляем углы наклона (используем правильные формулы с комбинацией осей)
+  float angle_x, angle_y;
+  
+  // Roll (крен) - вращение вокруг оси X: используем ay и az
+  angle_x = atan2(ay_g, az_g) * 180.0 / PI;
+  
+  // Pitch (тангаж) - вращение вокруг оси Y: используем ax и проекцию на плоскость YZ
+  float yz_magnitude = sqrt(ay_g * ay_g + az_g * az_g);
+  angle_y = atan2(-ax_g, yz_magnitude) * 180.0 / PI;
+  
+  // Yaw (рыскание) - из акселерометра не вычисляется, определяется компасом
+  
+  // Переводим гироскоп в градусы/сек
+  // Масштаб: 131 = 1°/s при диапазоне ±250°/s
+  float gx_dps = (float)gx / 131.0;
+  float gy_dps = (float)gy / 131.0;
+  float gz_dps = (float)gz / 131.0;
 
-  // ========== ВЫВОД В ФОРМАТЕ DISTANCE:..._ACCELEROMETR:..._ ==========
+  // ========== ВЫВОД В ФОРМАТЕ DISTANCE:...;ANGLES:angle_x:angle_y;GYRO:gx:gy:gz;COMPAS:... ==========
   
   Serial.print("DISTANCE:");
   
@@ -356,18 +369,21 @@ void loop() {
     Serial.print((int)distance7);
   }
   
-  // Акселерометр
-  Serial.print("_ACCELEROMETR:");
-  Serial.print(ax); Serial.print(":");
-  Serial.print(ay); Serial.print(":");
-  Serial.print(az); Serial.print(":");
-  Serial.print(gx); Serial.print(":");
-  Serial.print(gy); Serial.print(":");
-  Serial.println(gz);
+  // Углы наклона (angle_x - roll/крен, angle_y - pitch/тангаж) в градусах
+  // Yaw (рыскание) определяется компасом
+  Serial.print(";ANGLES:");
+  Serial.print((int)angle_x); Serial.print(":");
+  Serial.print((int)angle_y);
+
+  // Угловые скорости (gx, gy, gz) в градусах/сек
+  Serial.print(";GYRO:");
+  Serial.print((int)gx_dps); Serial.print(":");
+  Serial.print((int)gy_dps); Serial.print(":");
+  Serial.print((int)gz_dps);
 
   // Компас
   float heading = readCompassHeadingDeg();
-  Serial.print("_COMPASS:");
+  Serial.print(";COMPAS:");
   if (heading < 0) Serial.println("999");
   else Serial.println((int)heading);
 

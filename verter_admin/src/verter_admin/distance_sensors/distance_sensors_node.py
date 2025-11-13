@@ -142,53 +142,70 @@ class DistanceSensorsNode(Node):
     def _process_sensor_data(self, data_line: str) -> list[str]:
         """Парсер строки: возвращает отдельные строки для логов или пустой список.
         Поддерживаемые форматы:
-          - _COMPASS:<deg> → ["COMPASS:<deg>"]
-          - DISTANCE:..._ACCELEROMETR:ax:ay:az:gx:gy:gz → ["DISTANCE:...", "ACCELEROMETR:ax:...:gz"]
+          - DISTANCE:...;ANGLES:angle_x:angle_y;GYRO:gx:gy:gz;COMPAS:deg → ["DISTANCE:...", "ANGLES:angle_x:angle_y", "GYRO:gx:gy:gz", "COMPAS:deg"]
           - COMPASS:... (инфо-лог) и прочее → []
         """
         line = (data_line or '').strip()
         if not line:
             return []
 
-        # Отдельная строка компаса
-        if line.startswith('_COMPASS:'):
-            val = line[9:].strip()
-            if val.isdigit():
-                return [f'COMPASS:{val}']
-            return []
-
         # Одноразовый инфо-лог от Arduino
         if line.startswith('COMPASS:'):
             return []
 
-        # Совмещённая строка DISTANCE + ACCELEROMETR
+        # Совмещённая строка DISTANCE;ANGLES;GYRO;COMPAS
         if not line.startswith('DISTANCE:'):
             return []
 
-        parts = line.split('_ACCELEROMETR:', 1)
-        if len(parts) != 2:
+        # Разделяем по точкам с запятой
+        parts = line.split(';')
+        if len(parts) != 4:
             return []
 
+        # DISTANCE часть
+        if not parts[0].startswith('DISTANCE:'):
+            return []
         distance_part = parts[0][len('DISTANCE:'):]
-        accel_part = parts[1]
-
-        # Валидация distance: числа, разделённые ':'
         if not distance_part or any(not seg.isdigit() for seg in distance_part.split(':')):
             return []
 
-        # Валидация accel: 6 целых (м.б. со знаком)
-        accel_fields = accel_part.split(':')
-        if len(accel_fields) != 6:
+        # ANGLES часть (2 значения: angle_x:angle_y в градусах)
+        # Yaw (рыскание) определяется компасом
+        if not parts[1].startswith('ANGLES:'):
+            return []
+        angles_part = parts[1][len('ANGLES:'):]
+        angles_fields = angles_part.split(':')
+        if len(angles_fields) != 2:
             return []
         try:
-            ax, ay, az, gx, gy, gz = (int(accel_fields[0]), int(accel_fields[1]), int(accel_fields[2]),
-                                      int(accel_fields[3]), int(accel_fields[4]), int(accel_fields[5]))
+            angle_x, angle_y = int(angles_fields[0]), int(angles_fields[1])
         except ValueError:
+            return []
+
+        # GYRO часть (3 значения: gx:gy:gz в градусах/сек)
+        if not parts[2].startswith('GYRO:'):
+            return []
+        gyro_part = parts[2][len('GYRO:'):]
+        gyro_fields = gyro_part.split(':')
+        if len(gyro_fields) != 3:
+            return []
+        try:
+            gx, gy, gz = int(gyro_fields[0]), int(gyro_fields[1]), int(gyro_fields[2])
+        except ValueError:
+            return []
+
+        # COMPAS часть
+        if not parts[3].startswith('COMPAS:'):
+            return []
+        compass_val = parts[3][len('COMPAS:'):].strip()
+        if not compass_val.isdigit():
             return []
 
         return [
             f'DISTANCE:{distance_part}',
-            f'ACCELEROMETR:{ax}:{ay}:{az}:{gx}:{gy}:{gz}',
+            f'ANGLES:{angle_x}:{angle_y}',
+            f'GYRO:{gx}:{gy}:{gz}',
+            f'COMPAS:{compass_val}',
         ]
 
     def _send_command(self, command: str):
