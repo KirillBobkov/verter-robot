@@ -1,13 +1,11 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
 import serial
 import serial.tools.list_ports
 import time
 import subprocess
 import threading
 from typing import Optional, List
-import re
 
 
 class DistanceSensorsNode(Node):
@@ -15,22 +13,13 @@ class DistanceSensorsNode(Node):
     BAUD_RATE = 9600
     CONNECTION_TIMEOUT = 2.0
     SERIAL_TIMEOUT = 0.1
-    CRITICAL_DISTANCE = 50.0  # 30 см
-    NUM_SENSORS = 7
     
     def __init__(self):
         super().__init__('distance_sensors_node')
         
         self.arduino_serial: Optional[serial.Serial] = None
-        self.current_port = None
-        self.sensor_data = [0.0] * self.NUM_SENSORS
-        self.accel_data = {'ax': 0, 'ay': 0, 'az': 0, 'gx': 0, 'gy': 0, 'gz': 0}
-        self.compass_heading = 999
         self.reading_thread = None
         self.stop_thread = False
-        self.last_command = None  # Запоминаем последнюю отправленную команду
-        
-        self._setup_publisher()
         
         if self._connect_to_arduino():
             self.get_logger().info('Distance Sensors нода инициализирована и готова к работе')
@@ -38,12 +27,6 @@ class DistanceSensorsNode(Node):
         else:
             self.get_logger().warn('Arduino Mega не подключен при инициализации')
 
-    def _setup_publisher(self):
-        """Настройка издателя для команд."""
-        self.command_publisher = self.create_publisher(
-            String, 'verter_commands', 10
-        )
-        self.get_logger().info('Издатель для verter_commands создан')
 
     def _find_arduino_mega_port(self) -> List[str]:
         """Автоматический поиск портов Arduino Mega по devpath."""
@@ -95,7 +78,6 @@ class DistanceSensorsNode(Node):
                 self.BAUD_RATE, 
                 timeout=self.SERIAL_TIMEOUT
             )
-            self.current_port = port
             
             time.sleep(self.CONNECTION_TIMEOUT)
             self.get_logger().info(f'Успешно подключено к Arduino Mega на порту {port} (devpath=1.4)')
@@ -207,17 +189,6 @@ class DistanceSensorsNode(Node):
             f'GYRO:{gx}:{gy}:{gz}',
             f'COMPAS:{compass_val}',
         ]
-
-    def _send_command(self, command: str):
-        """Отправка команды."""
-        try:
-            msg = String()
-            msg.data = command
-            self.command_publisher.publish(msg)
-            self.last_command = command
-            self.get_logger().info(f'Отправлена команда: {command}')
-        except Exception as e:
-            self.get_logger().error(f'Ошибка отправки команды {command}: {e}')
 
     def _reconnect_arduino(self):
         """Переподключение к Arduino Mega."""

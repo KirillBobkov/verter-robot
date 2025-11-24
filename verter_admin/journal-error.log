@@ -1,1 +1,1 @@
-Terminated
+/home/verter/verter-robot/verter_admin/start_verter_admin.sh: line 78:  2324 Killed                  ros2 launch verter_admin main.launch.py

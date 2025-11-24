@@ -141,6 +141,9 @@ source install/setup.bash
 # Настройка окружения
 source /opt/ros/humble/setup.bash
 source install/setup.bash
+colcon build --packages-select verter_admin
+ros2 launch verter_admin main.launch.py
+
 
 # Запуск системы
 ros2 launch verter_admin main.launch.py
