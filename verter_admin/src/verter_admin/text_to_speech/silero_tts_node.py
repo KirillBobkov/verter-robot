@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Bool
 from ament_index_python.packages import get_package_share_directory
+import sounddevice as sd
 
 try:
     import torch
@@ -27,6 +28,9 @@ class SileroTTSNode(Node):
         if not TORCH_AVAILABLE:
             self.get_logger().error("torch не установлен. Установите: pip install torch torchaudio")
             raise ImportError("torch не найден")
+            
+        # Оптимизация для CPU (Jetson/RPi)
+        torch.set_num_threads(4)
         
         # Путь к локальной модели (в той же директории что и нода)
         try:
@@ -49,7 +53,9 @@ class SileroTTSNode(Node):
         self.put_stress_homo = True
         self.put_yo_homo = True
         
-        self.audio_device = "pulse"
+        self.declare_parameter('audio_device', 'pulse')
+        self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
+        
         self._setup_environment()
         self._initialize_tts()
         
@@ -126,8 +132,7 @@ class SileroTTSNode(Node):
                 self._busy = False
     
     def _synthesize_and_play(self, text):
-        """Синтез речи и воспроизведение через aplay"""
-        process = None
+        """Синтез речи и воспроизведение через sounddevice (pysound)"""
         try:
             # СНАЧАЛА ОТКЛЮЧАЕМ МИКРОФОН
             self._deactivate_speech_recognition()
@@ -135,16 +140,17 @@ class SileroTTSNode(Node):
             self.get_logger().info(f"Синтез текста: {text[:50]}..." if len(text) > 50 else f"Синтез текста: {text}")
             start_synth = time.time()
             
-            # Синтез речи (блокирующий, но необходим для Silero)
-            audio = self.model.apply_tts(
-                text=text.strip(),
-                speaker=self.speaker,
-                sample_rate=self.sample_rate,
-                put_accent=self.put_accent,
-                put_yo=self.put_yo,
-                put_stress_homo=self.put_stress_homo,
-                put_yo_homo=self.put_yo_homo
-            )
+            # Оптимизация: torch.inference_mode() ускоряет и снижает потребление памяти
+            with torch.inference_mode():
+                audio = self.model.apply_tts(
+                    text=text.strip(),
+                    speaker=self.speaker,
+                    sample_rate=self.sample_rate,
+                    put_accent=self.put_accent,
+                    put_yo=self.put_yo,
+                    put_stress_homo=self.put_stress_homo,
+                    put_yo_homo=self.put_yo_homo
+                )
             
             synth_time = time.time() - start_synth
             self.get_logger().info(f"✓ Синтез выполнен за {synth_time:.2f} сек")
@@ -155,73 +161,45 @@ class SileroTTSNode(Node):
                     self.get_logger().info("⏭ Пропускаю текущее сообщение, есть новое в очереди")
                     return
             
-            # Конвертация в int16 (оптимизированная)
             audio_np = audio.numpy()
-            audio_int16 = (audio_np * 32767).astype(np.int16)
-            audio_bytes = audio_int16.tobytes()
+
+            # FIX: Добавляем тишину в начало (0.25с), чтобы не глотало первый слог
+            # Это дает время аудиосистеме/усилителю выйти из спящего режима
+            padding = np.zeros(int(self.sample_rate * 0.25), dtype=np.float32)
+            audio_np = np.concatenate((padding, audio_np))
             
-            # Запускаем aplay
-            process = subprocess.Popen(
-                [
-                    "aplay",
-                    "-D", self.audio_device,
-                    "-q",
-                    "-f", "S16_LE",
-                    "-r", str(self.sample_rate),
-                    "-c", "1",  # моно
-                    "--buffer-size=8192"  # Увеличенный буфер для плавности
-                ],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                env=self.env
-            )
-            
-            # Сохраняем ссылку для возможности прерывания
-            with self._busy_lock:
-                self._current_process = process
-            
-            # Передаем данные оптимальными чанками
-            chunk_size = 8192  # Большие чанки для эффективности
-            for i in range(0, len(audio_bytes), chunk_size):
-                # Проверяем, не нужно ли прервать
-                with self._busy_lock:
-                    if self._pending_text or process.poll() is not None:
-                        break
-                
-                chunk = audio_bytes[i:i + chunk_size]
+            # Выбор устройства вывода
+            device = None
+            if self.audio_device and self.audio_device not in ['pulse', 'default']:
                 try:
-                    process.stdin.write(chunk)
-                    process.stdin.flush()  # Принудительная отправка для меньшей latency
-                except BrokenPipeError:
-                    break
-            
-            process.stdin.close()
-            
-            # Ждем завершения
-            return_code = process.wait()
-            if return_code != 0:
-                stderr_output = process.stderr.read().decode() if process.stderr else "no stderr"
-                self.get_logger().error(f"aplay завершился с кодом {return_code}, stderr: {stderr_output}")
-            else:
+                    device = int(self.audio_device)
+                except ValueError:
+                    device = self.audio_device
+
+            # Воспроизведение через sounddevice (Direct stream)
+            try:
+                with sd.OutputStream(samplerate=self.sample_rate, device=device, channels=1, dtype='float32') as stream:
+                    chunk_size = 8192
+                    for i in range(0, len(audio_np), chunk_size):
+                        # Проверяем прерывание
+                        with self._busy_lock:
+                            if self._pending_text:
+                                break
+                        
+                        # Блокирующая запись чанка
+                        stream.write(audio_np[i:i + chunk_size])
+                        
                 self.get_logger().info("✓ Аудио воспроизведено успешно")
+                
+            except Exception as e:
+                self.get_logger().error(f"Ошибка sounddevice: {e}")
             
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения: {e}")
         finally:
-            # Очищаем ссылку на процесс
+            # Очищаем ссылку на процесс (для совместимости)
             with self._busy_lock:
                 self._current_process = None
-                # Прерываем процесс, если он еще работает и есть новое сообщение
-                if process and process.poll() is None and self._pending_text:
-                    try:
-                        process.terminate()
-                        process.wait(timeout=0.5)
-                    except (subprocess.TimeoutExpired, AttributeError):
-                        try:
-                            process.kill()
-                        except:
-                            pass
             
             # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО С ЗАДЕРЖКОЙ (предотвращение эхо)
             time.sleep(0.1)
