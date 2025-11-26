@@ -299,6 +299,25 @@
     <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
   </joint>
 
+  <!-- RPLiDAR A1M8 -->
+  <!-- Positioned at top-center of robot -->
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.035" length="0.04"/>
+      </geometry>
+      <material name="black"/>
+    </visual>
+  </link>
+
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <!-- Position: top-center of robot, height ~55cm from ground -->
+    <origin xyz="0.0 0 0.450" rpy="0 0 0"/>
+  </joint>
+
   <!-- Base Footprint -->
   <link name="base_footprint"/>
 

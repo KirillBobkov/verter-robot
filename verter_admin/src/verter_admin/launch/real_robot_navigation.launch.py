@@ -34,10 +34,27 @@ def generate_launch_description():
     rviz_config = os.path.join(pkg_verter_admin, '..', '..', '..', '..', 'lidar_navigation.rviz')
     slam_params_file = os.path.join(pkg_verter_admin, 'config', 'slam', 'slam_toolbox_params.yaml')
     nav2_params_file = os.path.join(pkg_verter_admin, 'config', 'nav2', 'nav2_params.yaml')
+    urdf_file = os.path.join(pkg_verter_admin, 'urdf', 'verter_robot_minimal.urdf')
+
+    # Read URDF file
+    with open(urdf_file, 'r') as f:
+        robot_description = f.read()
 
     # Launch arguments
     use_sim_time = LaunchConfiguration('use_sim_time', default='false')  # Real robot!
     serial_port = LaunchConfiguration('serial_port', default='/dev/ttyUSB0')
+
+    # Robot State Publisher - publishes TF transforms from URDF
+    robot_state_publisher = Node(
+        package='robot_state_publisher',
+        executable='robot_state_publisher',
+        name='robot_state_publisher',
+        output='screen',
+        parameters=[{
+            'robot_description': robot_description,
+            'use_sim_time': False
+        }]
+    )
 
     # RPLiDAR A1M8 Node
     # NOTE: Requires rplidar_ros package installed on the robot
@@ -127,6 +144,7 @@ def generate_launch_description():
             default_value='/dev/ttyUSB0',
             description='Serial port for RPLiDAR'
         ),
+        robot_state_publisher,
         rplidar_node,
         distance_sensors,
         range_to_laserscan,
