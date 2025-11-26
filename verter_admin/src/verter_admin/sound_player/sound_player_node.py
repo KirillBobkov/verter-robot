@@ -12,11 +12,9 @@ class SoundPlayerNode(Node):
     def __init__(self):
         super().__init__('sound_player_node')
         
-        # Аудиоустройство для воспроизведения
-        if "WSL_DISTRO_NAME" in os.environ:
-            self.audio_device = "pulse"  # WSL - используем PulseAudio
-        else:
-            self.audio_device = "pulse"  # Используем PulseAudio
+        # Объявляем параметр для аудиоустройства (по умолчанию pulse)
+        self.declare_parameter('audio_device', 'pulse')
+        self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
         
         # Процессы воспроизведения для остановки
         self.current_ffmpeg = None
@@ -32,7 +30,6 @@ class SoundPlayerNode(Node):
             self.sound_command_callback,
             10
         )
-        
         
         # Получение пути к папке со звуковыми файлами
         self._setup_sound_directory()
@@ -110,10 +107,11 @@ class SoundPlayerNode(Node):
                 self.current_ffmpeg = None  # ffmpeg не нужен
                 
             else:
-                # Конвертация mp3/ogg через ffmpeg
+                # Конвертация mp3/ogg через ffmpeg с принудительным ресемплингом
                 self.current_ffmpeg = subprocess.Popen(
                     [
                         'ffmpeg', '-i', sound_path,
+                        '-ar', '22050', '-ac', '1',  # Приводим к формату, который ждет aplay
                         '-f', 'wav', 'pipe:1'
                     ],
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL

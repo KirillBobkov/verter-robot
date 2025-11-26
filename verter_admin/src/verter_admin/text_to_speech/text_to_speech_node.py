@@ -38,7 +38,9 @@ class TextToSpeechNode(Node):
             self.get_logger().error(f"Файл модели не найден: {self.model_path}")
             raise FileNotFoundError("Модель Piper не найдена")
         
-        self.audio_device = "pulse"
+        self.declare_parameter('audio_device', 'pulse')
+        self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
+        
         self._setup_environment()
         self._initialize_tts()
         
@@ -112,10 +114,11 @@ class TextToSpeechNode(Node):
             self._deactivate_speech_recognition()
             
             # Добавляем логирование для отладки
+            sample_rate = str(self.voice.config.sample_rate)
             
-            # Используем streaming API с оптимизированными параметрами для RPi4
+            # Используем streaming API с частотой из модели
             process = subprocess.Popen(
-                ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", "22050", "-c", "1", "--buffer-size=4096"],
+                ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=4096"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,  # Захватываем stderr для отладки
