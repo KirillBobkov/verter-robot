@@ -23,6 +23,10 @@ slam_toolbox:
     use_map_saver: true
     mode: mapping  # Options: mapping, localization
 
+    # Map saving parameters
+    map_file_name: /tmp/slam_toolbox_map  # Default save location
+    map_start_pose: [0.0, 0.0, 0.0]  # x, y, yaw
+
     # Debugging
     debug_logging: false
     throttle_scans: 1  # Process every N scans (1 = all scans)
@@ -38,14 +42,14 @@ slam_toolbox:
 
     # Position Variance (uncertainty in position)
     # For odometry-based SLAM with differential drive
-    # Уменьшено для более частого обновления карты в RViz
-    minimum_travel_distance: 0.01  # 1 см минимальное расстояние для обновления
-    minimum_travel_heading: 0.01   # ~0.57° минимальный поворот
+    # Default values: process scans less frequently to reduce accumulation of errors
+    minimum_travel_distance: 0.2
+    minimum_travel_heading: 0.05
 
     # Scan Matching Parameters
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
-    link_match_minimum_response_fine: 0.1
+    link_match_minimum_response_fine: 0.1  # Default: 0.1 (was 0.3 - too strict!)
     link_scan_maximum_distance: 1.5
     loop_search_maximum_distance: 3.0
     do_loop_closing: true
@@ -65,8 +69,10 @@ slam_toolbox:
     loop_search_space_smear_deviation: 0.03
 
     # Scan Matcher Parameters
-    distance_variance_penalty: 0.5
-    angle_variance_penalty: 1.0
+    # Controls how much to penalize deviations in distance/angle matching
+    # Lower values = trust scan matching more; Higher = trust odometry more
+    distance_variance_penalty: 0.3  # Default: 0.3 (was 0.5)
+    angle_variance_penalty: 1.0     # Default: 1.0 (keep as is)
 
     # Fine Search Parameters
     fine_search_angle_offset: 0.00349
@@ -76,17 +82,20 @@ slam_toolbox:
     minimum_distance_penalty: 0.5
     use_response_expansion: true
 
-    # Laser Scanner Parameters (ToF Camera depth range)
-    # Matching the capabilities of the ToF camera in simulation
-    minimum_range: 0.1  # 10 cm - minimum range
-    maximum_range: 4.0   # 4 m - maximum range of ToF camera
-    minimum_laser_range: 0.1
-    maximum_laser_range: 4.0
+    # Laser Scanner Parameters (RPLiDAR A1M8)
+    # Specs: 180° FOV, 0.15-12m range, 5.5 Hz, 360 samples
+    # Mounted at 80cm height on front of robot
+    minimum_time_interval: 0.01  # Minimum time between scans (5.5Hz = ~180ms)
+    max_laser_range: 12.0        # RPLiDAR A1M8 maximum range
+    minimum_range: 0.15          # RPLiDAR A1M8 minimum range
+    range_threshold: 11.0        # Use up to 11m for mapping (留1m余量)
 
     # Solver plugin parameters
+    # Optimized for Jetson Orin Nano (6-core CPU)
     solver_plugin: solver_plugins::CeresSolver
-    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY  # Parallel solver, uses all cores
     ceres_preconditioner: SCHUR_JACOBI
     ceres_trust_strategy: LEVENBERG_MARQUARDT
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
+    num_threads: 6  # Use all 6 Cortex-A78AE cores on Jetson Orin Nano

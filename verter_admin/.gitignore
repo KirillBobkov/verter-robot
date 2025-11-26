@@ -1,0 +1,52 @@
+# ROS2 / Colcon build artifacts
+build/
+install/
+log/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+journal.log
+journal-error.log
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*~
+
+# ROS specific
+*.autosave
+
+# Models and large files (uncomment if needed)
+# *.onnx
+# *.pt
+# *.pth
+# *.bin

@@ -40,12 +40,12 @@
     </collision>
 
     <inertial>
-      <origin xyz="0 0 0.150" rpy="0 0 0"/>
+      <origin xyz="0.120 0 -0.05" rpy="0 0 0"/>
       <mass value="12.0"/>
       <inertia
-        ixx="0.2" ixy="0.0" ixz="0.0"
-        iyy="0.2" iyz="0.0"
-        izz="0.3"/>
+        ixx="0.25" ixy="0.0" ixz="0.0"
+        iyy="0.25" iyz="0.0"
+        izz="0.35"/>
     </inertial>
   </link>
 
@@ -68,11 +68,11 @@
 
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="2.0"/>
+      <mass value="0.8"/>
       <inertia
-        ixx="0.01" ixy="0.0" ixz="0.0"
-        iyy="0.01" iyz="0.0"
-        izz="0.01"/>
+        ixx="0.005" ixy="0.0" ixz="0.0"
+        iyy="0.005" iyz="0.0"
+        izz="0.005"/>
     </inertial>
   </link>
 
@@ -81,7 +81,7 @@
     <child link="wheel_left"/>
     <origin xyz="0.120 0.178 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <dynamics damping="0.2" friction="0.1"/>
+    <dynamics damping="0.1" friction="0.05"/>
   </joint>
 
   <!-- Right Wheel -->
@@ -103,11 +103,11 @@
 
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="2.0"/>
+      <mass value="0.8"/>
       <inertia
-        ixx="0.01" ixy="0.0" ixz="0.0"
-        iyy="0.01" iyz="0.0"
-        izz="0.01"/>
+        ixx="0.005" ixy="0.0" ixz="0.0"
+        iyy="0.005" iyz="0.0"
+        izz="0.005"/>
     </inertial>
   </link>
 
@@ -116,7 +116,7 @@
     <child link="wheel_right"/>
     <origin xyz="0.120 -0.178 0" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
-    <dynamics damping="0.2" friction="0.1"/>
+    <dynamics damping="0.1" friction="0.05"/>
   </joint>
 
   <!-- Caster Wheel (Back) -->
@@ -285,27 +285,30 @@
     <origin xyz="0.180 -0.280 0.048" rpy="0 0 -1.3265"/>
   </joint>
 
-  <!-- ToF Camera (Arducam US981) -->
-  <!-- Розміщена над корпусом для кращого огляду -->
-  <link name="camera_tof">
+  <!-- RPLiDAR A1M8 -->
+  <!-- 2D Lidar on front of robot at 80cm height -->
+  <!-- Specs: 360° capable, using 180° FOV (front hemisphere) -->
+  <!-- Range: 0.15m - 12m, Frequency: 5.5Hz -->
+  <link name="lidar_link">
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.03 0.06 0.02"/>
+        <!-- RPLiDAR A1M8: diameter 76mm, height 40mm -->
+        <cylinder radius="0.038" length="0.04"/>
       </geometry>
-      <material name="gray"/>
+      <material name="black"/>
     </visual>
 
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <box size="0.03 0.06 0.02"/>
+        <cylinder radius="0.038" length="0.04"/>
       </geometry>
     </collision>
 
     <inertial>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <mass value="0.02"/>
+      <mass value="0.190"/>  <!-- 190g -->
       <inertia
         ixx="0.00001" ixy="0.0" ixz="0.0"
         iyy="0.00001" iyz="0.0"
@@ -313,20 +316,50 @@
     </inertial>
   </link>
 
-  <joint name="camera_tof_joint" type="fixed">
+  <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="camera_tof"/>
-    <!-- Камера впереди робота на уровне корпуса для лучшего обзора -->
-    <origin xyz="0.400 0 0.300" rpy="0 0 0"/>
+    <child link="lidar_link"/>
+    <!-- Lidar mounted on front of robot
+         X: 0.28m forward (front edge)
+         Y: 0.0m (center)
+         Z: 0.70m above base_link = 0.80m above ground (base_footprint)
+         Note: base_link is 0.1m above ground -->
+    <origin xyz="0.28 0 0.70" rpy="0 0 0"/>
   </joint>
 
-  <!-- ToF Camera Optical Frame -->
-  <link name="camera_tof_optical"/>
+  <!-- IMU (MPU-6050 simulation) -->
+  <!-- Simulates the real MPU-6050 accelerometer + gyroscope + magnetometer -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.02 0.02 0.01"/>
+      </geometry>
+      <material name="gray"/>
+    </visual>
 
-  <joint name="camera_tof_optical_joint" type="fixed">
-    <parent link="camera_tof"/>
-    <child link="camera_tof_optical"/>
-    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708"/>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.02 0.02 0.01"/>
+      </geometry>
+    </collision>
+
+    <inertial>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <mass value="0.001"/>
+      <inertia
+        ixx="0.000001" ixy="0.0" ixz="0.0"
+        iyy="0.000001" iyz="0.0"
+        izz="0.000001"/>
+    </inertial>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <!-- IMU positioned at center of robot, slightly above base_link -->
+    <origin xyz="0 0 0.05" rpy="0 0 0"/>
   </joint>
 
   <!-- Base Footprint -->
@@ -355,8 +388,8 @@
       <wheel_diameter>0.2</wheel_diameter>
 
       <!-- Limits -->
-      <max_wheel_torque>20</max_wheel_torque>
-      <max_wheel_acceleration>1.0</max_wheel_acceleration>
+      <max_wheel_torque>50</max_wheel_torque>
+      <max_wheel_acceleration>2.0</max_wheel_acceleration>
 
       <!-- Input -->
       <command_topic>cmd_vel</command_topic>
@@ -364,7 +397,7 @@
       <!-- Output -->
       <publish_odom>true</publish_odom>
       <publish_odom_tf>true</publish_odom_tf>
-      <publish_wheel_tf>false</publish_wheel_tf>
+      <publish_wheel_tf>true</publish_wheel_tf>
 
       <odometry_topic>odom</odometry_topic>
       <odometry_frame>odom</odometry_frame>
@@ -379,8 +412,8 @@
 
   <gazebo reference="wheel_left">
     <material>Gazebo/Black</material>
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
+    <mu1>2.5</mu1>
+    <mu2>2.5</mu2>
     <kp>1000000.0</kp>
     <kd>100.0</kd>
     <minDepth>0.001</minDepth>
@@ -389,8 +422,8 @@
 
   <gazebo reference="wheel_right">
     <material>Gazebo/Black</material>
-    <mu1>1.0</mu1>
-    <mu2>1.0</mu2>
+    <mu1>2.5</mu1>
+    <mu2>2.5</mu2>
     <kp>1000000.0</kp>
     <kd>100.0</kd>
     <minDepth>0.001</minDepth>
@@ -436,9 +469,8 @@
           <namespace>/verter</namespace>
           <remapping>~/out:=distance_sensors/front_center</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sensor_front_center</frame_name>
-        <radiation_type>infrared</radiation_type>
       </plugin>
     </sensor>
   </gazebo>
@@ -468,9 +500,8 @@
           <namespace>/verter</namespace>
           <remapping>~/out:=distance_sensors/front_left_inner</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sensor_front_left_inner</frame_name>
-        <radiation_type>infrared</radiation_type>
       </plugin>
     </sensor>
   </gazebo>
@@ -500,9 +531,8 @@
           <namespace>/verter</namespace>
           <remapping>~/out:=distance_sensors/front_left_outer</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sensor_front_left_outer</frame_name>
-        <radiation_type>infrared</radiation_type>
       </plugin>
     </sensor>
   </gazebo>
@@ -532,9 +562,8 @@
           <namespace>/verter</namespace>
           <remapping>~/out:=distance_sensors/front_right_inner</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sensor_front_right_inner</frame_name>
-        <radiation_type>infrared</radiation_type>
       </plugin>
     </sensor>
   </gazebo>
@@ -564,9 +593,8 @@
           <namespace>/verter</namespace>
           <remapping>~/out:=distance_sensors/front_right_outer</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sensor_front_right_outer</frame_name>
-        <radiation_type>infrared</radiation_type>
       </plugin>
     </sensor>
   </gazebo>
@@ -596,9 +624,8 @@
           <namespace>/verter</namespace>
           <remapping>~/out:=distance_sensors/left</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sensor_left</frame_name>
-        <radiation_type>infrared</radiation_type>
       </plugin>
     </sensor>
   </gazebo>
@@ -628,44 +655,82 @@
           <namespace>/verter</namespace>
           <remapping>~/out:=distance_sensors/right</remapping>
         </ros>
-        <output_type>sensor_msgs/Range</output_type>
+        <output_type>sensor_msgs/LaserScan</output_type>
         <frame_name>sensor_right</frame_name>
-        <radiation_type>infrared</radiation_type>
       </plugin>
     </sensor>
   </gazebo>
 
-  <!-- Depth Camera Plugin (ToF Camera simulation) -->
-  <!-- Simplified configuration to avoid macOS segfault -->
-  <gazebo reference="camera_tof">
-    <sensor type="depth" name="camera_tof">
-      <always_on>true</always_on>
-      <update_rate>5.0</update_rate>
-      <camera>
-        <horizontal_fov>2.0944</horizontal_fov>
-        <image>
-          <width>240</width>
-          <height>180</height>
-          <format>R8G8B8</format>
-        </image>
-        <clip>
-          <near>0.05</near>
-          <far>4.0</far>
-        </clip>
-      </camera>
-      <plugin name="camera_tof_controller" filename="libgazebo_ros_camera.so">
+  <!-- RPLiDAR A1M8 Plugin -->
+  <!-- 2D Laser Scanner simulating RPLiDAR A1M8 with 120° FOV -->
+  <gazebo reference="lidar_link">
+    <sensor type="ray" name="rplidar_a1m8">
+      <pose>0 0 0 0 0 0</pose>
+      <visualize>true</visualize>
+      <update_rate>5.5</update_rate>  <!-- RPLiDAR A1M8: 5.5 Hz typical -->
+      <ray>
+        <scan>
+          <horizontal>
+            <!-- 240 samples for smooth scan, using 120° FOV -->
+            <samples>240</samples>
+            <resolution>1</resolution>
+            <!-- 120° FOV: from -60° to +60° (front sector) -->
+            <min_angle>-1.0472</min_angle>  <!-- -π/3 = -60° -->
+            <max_angle>1.0472</max_angle>   <!-- +π/3 = +60° -->
+          </horizontal>
+        </scan>
+        <range>
+          <!-- RPLiDAR A1M8 specifications -->
+          <min>0.15</min>  <!-- 15cm minimum range -->
+          <max>12.0</max>  <!-- 12m maximum range -->
+          <resolution>0.01</resolution>  <!-- 1cm resolution -->
+        </range>
+        <noise>
+          <!-- Add realistic noise for simulation -->
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>  <!-- 1cm standard deviation -->
+        </noise>
+      </ray>
+      <plugin name="gazebo_ros_lidar" filename="libgazebo_ros_ray_sensor.so">
         <ros>
           <namespace>/verter</namespace>
-          <remapping>camera_tof/image_raw:=camera_tof/image_raw</remapping>
-          <remapping>camera_tof/camera_info:=camera_tof/camera_info</remapping>
-          <remapping>camera_tof/depth/image_raw:=camera_tof/depth/image_raw</remapping>
-          <remapping>camera_tof/depth/camera_info:=camera_tof/depth/camera_info</remapping>
-          <remapping>camera_tof/points:=camera_tof/points</remapping>
+          <remapping>~/out:=scan</remapping>
         </ros>
-        <camera_name>camera_tof</camera_name>
-        <frame_name>camera_tof_optical</frame_name>
-        <min_depth>0.05</min_depth>
-        <max_depth>4.0</max_depth>
+        <output_type>sensor_msgs/LaserScan</output_type>
+        <frame_name>lidar_link</frame_name>
+      </plugin>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU Sensor Plugin (MPU-6050 + Magnetometer simulation) -->
+  <!-- Publishes /imu/data (orientation, angular velocity, linear acceleration) -->
+  <gazebo reference="imu_link">
+    <gravity>true</gravity>
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>  <!-- 100 Hz - typical for MPU-6050 -->
+      <visualize>true</visualize>
+
+      <plugin filename="libgazebo_ros_imu_sensor.so" name="imu_plugin">
+        <ros>
+          <namespace>/verter</namespace>
+          <remapping>~/out:=imu/data</remapping>
+        </ros>
+
+        <!-- Frame name for the IMU -->
+        <initial_orientation_as_reference>false</initial_orientation_as_reference>
+        <frame_name>imu_link</frame_name>
+
+        <!-- Noise parameters (based on MPU-6050 datasheet) -->
+        <!-- Angular velocity noise (gyroscope) -->
+        <angular_velocity_stdev>0.0002</angular_velocity_stdev>
+
+        <!-- Linear acceleration noise (accelerometer) -->
+        <linear_acceleration_stdev>0.017</linear_acceleration_stdev>
+
+        <!-- Orientation noise (magnetometer/compass) -->
+        <orientation_stdev>0.01</orientation_stdev>
       </plugin>
     </sensor>
   </gazebo>

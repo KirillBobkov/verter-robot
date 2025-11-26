@@ -1,5 +1,7 @@
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import String
+from sensor_msgs.msg import Range
 import serial
 import serial.tools.list_ports
 import time
@@ -27,6 +29,25 @@ class DistanceSensorsNode(Node):
         else:
             self.get_logger().warn('Arduino Mega не подключен при инициализации')
 
+    def _setup_publisher(self):
+        """Настройка издателей для команд и Range сообщений."""
+        # Publisher для команд
+        self.command_publisher = self.create_publisher(
+            String, 'verter_commands', 10
+        )
+        self.get_logger().info('Издатель для verter_commands создан')
+
+        # Publishers для Range сообщений (7 HC-SR04 датчиков)
+        self.range_publishers = {
+            'front_center': self.create_publisher(Range, '/verter/distance_sensors/front_center', 10),
+            'front_left_inner': self.create_publisher(Range, '/verter/distance_sensors/front_left_inner', 10),
+            'front_left_outer': self.create_publisher(Range, '/verter/distance_sensors/front_left_outer', 10),
+            'front_right_inner': self.create_publisher(Range, '/verter/distance_sensors/front_right_inner', 10),
+            'front_right_outer': self.create_publisher(Range, '/verter/distance_sensors/front_right_outer', 10),
+            'left': self.create_publisher(Range, '/verter/distance_sensors/left', 10),
+            'right': self.create_publisher(Range, '/verter/distance_sensors/right', 10),
+        }
+        self.get_logger().info('Range publishers созданы для 7 ультразвуковых датчиков')
 
     def _find_arduino_mega_port(self) -> List[str]:
         """Автоматический поиск портов Arduino Mega по devpath."""

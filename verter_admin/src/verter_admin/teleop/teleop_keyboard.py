@@ -28,8 +28,8 @@ class TeleopKeyboard(Node):
         super().__init__('teleop_keyboard')
 
         # Параметры скорости
-        self.declare_parameter('linear_speed', 0.5)  # м/с
-        self.declare_parameter('angular_speed', 1.0)  # рад/с
+        self.declare_parameter('linear_speed', 0.3)  # м/с
+        self.declare_parameter('angular_speed', 0.3)  # рад/с
         self.declare_parameter('speed_step', 0.1)  # шаг изменения скорости
 
         self.linear_speed = self.get_parameter('linear_speed').value

@@ -116,6 +116,8 @@ setup(
         (os.path.join('share', package_name, 'config', 'nav2'), glob(os.path.join('src/verter_admin/config/nav2', '*.yaml'))),
         # Включаем конфигурацию SLAM
         (os.path.join('share', package_name, 'config', 'slam'), glob(os.path.join('src/verter_admin/config/slam', '*.yaml'))),
+        # Включаем конфигурацию Robot Localization (EKF)
+        (os.path.join('share', package_name, 'config', 'robot_localization'), glob(os.path.join('src/verter_admin/config/robot_localization', '*.yaml'))),
         # Включаем конфигурацию Explore Lite
         (os.path.join('share', package_name, 'config', 'explore'), glob(os.path.join('src/verter_admin/config/explore', '*.yaml'))),
         # Arduino скетчи не включаем в сборку
@@ -162,12 +164,12 @@ setup(
             'chassis_node = verter_admin.chassis.chassis_node:main',
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
             'ultrasonic_to_laserscan_node = verter_admin.distance_sensors.ultrasonic_to_laserscan_node:main',
+            'range_to_laserscan = verter_admin.distance_sensors.range_to_laserscan:main',
+            'laserscan_merger = verter_admin.distance_sensors.laserscan_merger:main',
             'odometry_node = verter_admin.odometry.odometry_node:main',
             'doa_node = verter_admin.doa.doa_node:main',
-            'tof_camera_node = verter_admin.tof_camera.tof_camera_node:main',
             'teleop_keyboard = verter_admin.teleop.teleop_keyboard:main',
-            'pointcloud_to_laserscan = verter_admin.distance_sensors.pointcloud_to_laserscan_node:main',
-            'safety_monitor = verter_admin.distance_sensors.safety_monitor_node:main',
+            'waypoint_navigator = verter_admin.waypoints.waypoint_navigator:main',
         ],
     },
 )
