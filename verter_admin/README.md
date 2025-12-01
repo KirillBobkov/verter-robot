@@ -342,3 +342,40 @@ source /opt/ros/humble/setup.bash 2>/dev/null || true
 source install/local_setup.bash 2>/dev/null || true
 python3 src/verter_admin/tof_camera/tof_camera_node.py
 
+
+
+АВТОЗАПУСК:
+
+# 1. Создать директорию для пользовательских сервисов (если не существует)
+mkdir -p ~/.config/systemd/user
+
+# 2. Скопировать файл сервиса
+cp /home/verter/verter-robot/verter_admin/verter-admin.service ~/.config/systemd/user/verter-admin.service
+
+# 3. Убедиться, что скрипты имеют права на выполнение
+chmod +x /home/verter/verter-robot/verter_admin/start_verter_admin.sh
+chmod +x /home/verter/verter-robot/verter_admin/stop_verter_admin.sh
+
+# 4. Перезагрузить конфигурацию systemd
+systemctl --user daemon-reload
+
+# 5. Включить автозапуск сервиса
+systemctl --user enable verter-admin.service
+
+# 6. Запустить сервис (опционально, если нужно запустить сразу)
+systemctl --user start verter-admin.service
+
+# 7. Проверить статус
+systemctl --user status verter-admin.service
+
+
+
+### Проверка после установки:
+
+
+# Посмотреть логи
+journalctl --user -u verter-admin.service -f
+
+# Или логи из файлов
+tail -f /home/verter/verter-robot/verter_admin/journal.log
+tail -f /home/verter/verter-robot/verter_admin/journal-error.log
