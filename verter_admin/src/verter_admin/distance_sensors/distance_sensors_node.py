@@ -1,13 +1,16 @@
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
-from sensor_msgs.msg import Range
-import serial
-import serial.tools.list_ports
-import time
+import math
 import subprocess
 import threading
-from typing import Optional, List
+import time
+from typing import Dict, List, Optional
+
+import rclpy
+from rclpy.node import Node
+from sensor_msgs.msg import Imu, Range
+from std_msgs.msg import String
+
+import serial
+import serial.tools.list_ports
 
 
 class DistanceSensorsNode(Node):
@@ -15,6 +18,49 @@ class DistanceSensorsNode(Node):
     BAUD_RATE = 9600
     CONNECTION_TIMEOUT = 2.0
     SERIAL_TIMEOUT = 0.1
+    MIN_RANGE = 0.02  # 2 см
+    MAX_RANGE = 4.5   # 4.5 м (с запасом от ~4 м HC-SR04)
+    FIELD_OF_VIEW = math.radians(30.0)  # ~30°
+    INVALID_DISTANCE_VALUE = 999
+    SENSOR_ORDER = [
+        'front_center',
+        'front_left_inner',
+        'front_left_outer',
+        'front_right_inner',
+        'front_right_outer',
+        'left',
+        'right',
+    ]
+    SENSOR_FRAMES = {
+        'front_center': 'sensor_front_center',
+        'front_left_inner': 'sensor_front_left_inner',
+        'front_left_outer': 'sensor_front_left_outer',
+        'front_right_inner': 'sensor_front_right_inner',
+        'front_right_outer': 'sensor_front_right_outer',
+        'left': 'sensor_left',
+        'right': 'sensor_right',
+    }
+    IMU_FRAME_ID = 'imu_link'
+    IMU_ORIENTATION_COVARIANCE = [
+        0.05, 0.0, 0.0,
+        0.0, 0.05, 0.0,
+        0.0, 0.0, 0.2,
+    ]
+    IMU_ORIENTATION_UNKNOWN = [
+        -1.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+    ]
+    IMU_ANGULAR_VELOCITY_COVARIANCE = [
+        0.02, 0.0, 0.0,
+        0.0, 0.02, 0.0,
+        0.0, 0.0, 0.05,
+    ]
+    IMU_LINEAR_ACCELERATION_COVARIANCE = [
+        -1.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0,
+    ]
     
     def __init__(self):
         super().__init__('distance_sensors_node')
@@ -22,7 +68,11 @@ class DistanceSensorsNode(Node):
         self.arduino_serial: Optional[serial.Serial] = None
         self.reading_thread = None
         self.stop_thread = False
+        self._last_valid_yaw: Optional[float] = None
         
+        self._setup_publisher()
+        self.imu_publisher = self.create_publisher(Imu, '/verter/imu/data', 10)
+
         if self._connect_to_arduino():
             self.get_logger().info('Distance Sensors нода инициализирована и готова к работе')
             self._start_sensor_reading()
@@ -131,10 +181,12 @@ class DistanceSensorsNode(Node):
                 
                 # Читаем данные с serial порта
                 if self.arduino_serial.in_waiting > 0:
-                    line = self.arduino_serial.readline().decode('utf-8').strip()
-                    outputs = self._process_sensor_data(line)
-                    if outputs:
-                        self.get_logger().info(' | '.join(outputs))
+                    raw_line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
+                    packet = self._parse_sensor_data(raw_line)
+                    if packet:
+                        self._publish_range_messages(packet['distances'])
+                        self._publish_imu(packet)
+                        self.get_logger().debug(' | '.join(packet['log_parts']))
                 
                 time.sleep(1)  # Короткая пауза чтобы не нагружать CPU
                 
@@ -142,74 +194,197 @@ class DistanceSensorsNode(Node):
                 self.get_logger().error(f'Ошибка в цикле чтения датчиков: {e}')
                 time.sleep(1.0)
 
-    def _process_sensor_data(self, data_line: str) -> list[str]:
-        """Парсер строки: возвращает отдельные строки для логов или пустой список.
-        Поддерживаемые форматы:
-          - DISTANCE:...;ANGLES:angle_x:angle_y;GYRO:gx:gy:gz;COMPAS:deg → ["DISTANCE:...", "ANGLES:angle_x:angle_y", "GYRO:gx:gy:gz", "COMPAS:deg"]
-          - COMPASS:... (инфо-лог) и прочее → []
-        """
+    def _parse_sensor_data(self, data_line: str) -> Optional[Dict[str, object]]:
+        """Парсер строки с Arduino, возвращает структуру данных или None."""
         line = (data_line or '').strip()
         if not line:
-            return []
+            return None
 
         # Одноразовый инфо-лог от Arduino
         if line.startswith('COMPASS:'):
-            return []
+            return None
 
-        # Совмещённая строка DISTANCE;ANGLES;GYRO;COMPAS
         if not line.startswith('DISTANCE:'):
-            return []
+            return None
 
-        # Разделяем по точкам с запятой
         parts = line.split(';')
         if len(parts) != 4:
-            return []
+            return None
 
-        # DISTANCE часть
-        if not parts[0].startswith('DISTANCE:'):
-            return []
-        distance_part = parts[0][len('DISTANCE:'):]
-        if not distance_part or any(not seg.isdigit() for seg in distance_part.split(':')):
-            return []
+        distances = self._parse_distances(parts[0])
+        if distances is None:
+            return None
 
-        # ANGLES часть (2 значения: angle_x:angle_y в градусах)
-        # Yaw (рыскание) определяется компасом
-        if not parts[1].startswith('ANGLES:'):
-            return []
-        angles_part = parts[1][len('ANGLES:'):]
-        angles_fields = angles_part.split(':')
-        if len(angles_fields) != 2:
-            return []
+        angles = self._parse_angles(parts[1])
+        if angles is None:
+            return None
+
+        gyro = self._parse_gyro(parts[2])
+        if gyro is None:
+            return None
+
+        yaw = self._parse_compass(parts[3])
+
+        return {
+            'distances': distances,
+            'roll': math.radians(angles[0]),
+            'pitch': math.radians(angles[1]),
+            'gyro': tuple(math.radians(g) for g in gyro),
+            'yaw': yaw,
+            'log_parts': [
+                parts[0],
+                parts[1],
+                parts[2],
+                parts[3],
+            ],
+        }
+
+    def _parse_distances(self, distance_segment: str) -> Optional[Dict[str, Optional[float]]]:
+        if not distance_segment.startswith('DISTANCE:'):
+            return None
+
+        distance_values = distance_segment[len('DISTANCE:'):].split(':')
+        if len(distance_values) != len(self.SENSOR_ORDER):
+            return None
+
+        parsed: Dict[str, Optional[float]] = {}
+        for sensor_name, raw_value in zip(self.SENSOR_ORDER, distance_values):
+            raw_value = raw_value.strip()
+            try:
+                centimeters = int(raw_value)
+            except ValueError:
+                return None
+
+            if centimeters <= 0 or centimeters >= self.INVALID_DISTANCE_VALUE:
+                parsed[sensor_name] = None
+                continue
+
+            meters = centimeters / 100.0
+            parsed[sensor_name] = meters
+
+        return parsed
+
+    @staticmethod
+    def _parse_angles(angle_segment: str) -> Optional[tuple[int, int]]:
+        if not angle_segment.startswith('ANGLES:'):
+            return None
+
+        fields = angle_segment[len('ANGLES:'):].split(':')
+        if len(fields) != 2:
+            return None
+
         try:
-            angle_x, angle_y = int(angles_fields[0]), int(angles_fields[1])
+            return int(fields[0]), int(fields[1])
         except ValueError:
-            return []
+            return None
 
-        # GYRO часть (3 значения: gx:gy:gz в градусах/сек)
-        if not parts[2].startswith('GYRO:'):
-            return []
-        gyro_part = parts[2][len('GYRO:'):]
-        gyro_fields = gyro_part.split(':')
-        if len(gyro_fields) != 3:
-            return []
+    @staticmethod
+    def _parse_gyro(gyro_segment: str) -> Optional[tuple[int, int, int]]:
+        if not gyro_segment.startswith('GYRO:'):
+            return None
+
+        fields = gyro_segment[len('GYRO:'):].split(':')
+        if len(fields) != 3:
+            return None
+
         try:
-            gx, gy, gz = int(gyro_fields[0]), int(gyro_fields[1]), int(gyro_fields[2])
+            return int(fields[0]), int(fields[1]), int(fields[2])
         except ValueError:
-            return []
+            return None
 
-        # COMPAS часть
-        if not parts[3].startswith('COMPAS:'):
-            return []
-        compass_val = parts[3][len('COMPAS:'):].strip()
-        if not compass_val.isdigit():
-            return []
+    def _parse_compass(self, compass_segment: str) -> Optional[float]:
+        if not compass_segment.startswith('COMPAS:'):
+            return None
 
-        return [
-            f'DISTANCE:{distance_part}',
-            f'ANGLES:{angle_x}:{angle_y}',
-            f'GYRO:{gx}:{gy}:{gz}',
-            f'COMPAS:{compass_val}',
-        ]
+        value = compass_segment[len('COMPAS:'):].strip()
+        try:
+            heading_deg = int(value)
+        except ValueError:
+            return None
+
+        if heading_deg >= self.INVALID_DISTANCE_VALUE or heading_deg < 0:
+            return None
+
+        yaw_rad = math.radians(heading_deg)
+        # Нормализуем в диапазон [-pi, pi]
+        return (yaw_rad + math.pi) % (2 * math.pi) - math.pi
+
+    def _publish_range_messages(self, distances: Dict[str, Optional[float]]):
+        now = self.get_clock().now().to_msg()
+        for sensor_name, publisher in self.range_publishers.items():
+            if publisher is None:
+                continue
+
+            msg = Range()
+            msg.header.stamp = now
+            msg.header.frame_id = self.SENSOR_FRAMES.get(sensor_name, 'base_link')
+            msg.radiation_type = Range.ULTRASOUND
+            msg.field_of_view = self.FIELD_OF_VIEW
+            msg.min_range = self.MIN_RANGE
+            msg.max_range = self.MAX_RANGE
+
+            value = distances.get(sensor_name)
+            if value is None or value < self.MIN_RANGE or value > self.MAX_RANGE:
+                msg.range = float('inf')
+            else:
+                msg.range = value
+
+            publisher.publish(msg)
+
+    def _publish_imu(self, packet: Dict[str, object]):
+        if self.imu_publisher is None:
+            return
+
+        now = self.get_clock().now().to_msg()
+        imu_msg = Imu()
+        imu_msg.header.stamp = now
+        imu_msg.header.frame_id = self.IMU_FRAME_ID
+
+        yaw = packet['yaw']
+        if yaw is not None:
+            self._last_valid_yaw = yaw
+        else:
+            yaw = self._last_valid_yaw
+
+        if yaw is not None:
+            qx, qy, qz, qw = self._euler_to_quaternion(packet['roll'], packet['pitch'], yaw)
+            imu_msg.orientation.x = qx
+            imu_msg.orientation.y = qy
+            imu_msg.orientation.z = qz
+            imu_msg.orientation.w = qw
+            imu_msg.orientation_covariance = list(self.IMU_ORIENTATION_COVARIANCE)
+        else:
+            imu_msg.orientation_covariance = list(self.IMU_ORIENTATION_UNKNOWN)
+
+        gx, gy, gz = packet['gyro']
+        imu_msg.angular_velocity.x = gx
+        imu_msg.angular_velocity.y = gy
+        imu_msg.angular_velocity.z = gz
+        imu_msg.angular_velocity_covariance = list(self.IMU_ANGULAR_VELOCITY_COVARIANCE)
+
+        imu_msg.linear_acceleration.x = 0.0
+        imu_msg.linear_acceleration.y = 0.0
+        imu_msg.linear_acceleration.z = 0.0
+        imu_msg.linear_acceleration_covariance = list(self.IMU_LINEAR_ACCELERATION_COVARIANCE)
+
+        self.imu_publisher.publish(imu_msg)
+
+    @staticmethod
+    def _euler_to_quaternion(roll: float, pitch: float, yaw: float) -> tuple[float, float, float, float]:
+        """Преобразование углов Эйлера в кватернион."""
+        cy = math.cos(yaw * 0.5)
+        sy = math.sin(yaw * 0.5)
+        cp = math.cos(pitch * 0.5)
+        sp = math.sin(pitch * 0.5)
+        cr = math.cos(roll * 0.5)
+        sr = math.sin(roll * 0.5)
+
+        qw = cr * cp * cy + sr * cp * sy
+        qx = sr * cp * cy - cr * sp * sy
+        qy = cr * sp * cy + sr * cp * sy
+        qz = cr * cp * sy - sr * sp * cy
+
+        return qx, qy, qz, qw
 
     def _reconnect_arduino(self):
         """Переподключение к Arduino Mega."""
