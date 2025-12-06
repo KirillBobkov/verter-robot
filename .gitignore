@@ -1,3 +1,12 @@
 build/
 install/
 log/
+tts_tests/
+
+**/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/
+**/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/
+**/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/
+**/v5_ru.pt
+
+verter_admin/journal.log
+verter_admin/journal-error.log

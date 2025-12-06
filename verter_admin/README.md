@@ -204,44 +204,7 @@ ros2 run verter_admin arduino_node
 
 ## Системный сервис
 
-### Установка как системный сервис
-
-```bash
-# Копирование сервисного файла
-sudo cp verter-admin.service /etc/systemd/system/
-
-# Перезагрузка systemd
-sudo systemctl daemon-reload
-
-# Включение автозапуска
-sudo systemctl enable verter-admin
-
-# Запуск сервиса
-sudo systemctl start verter-admin
-```
-
-### Управление сервисом
-
-```bash
-Перезагрузить systemd: 
-sudo systemctl daemon-reload
-
-Запустить сервис: 
-
-
-systemctl --user daemon-reload
-systemctl --user status verter-admin --no-pager
-systemctl --user restart verter-admin
-systemctl --user stop verter-admin
-systemctl --user enable verter-admin.service
-systemctl --user start verter-admin.service
-
-journalctl --user -u verter-admin.service -f
-
-запускать в папке verter-admin
-sudo cp verter-admin.service /etc/systemd/system/
-
-```
+Для настройки автозапуска и управления сервисом Verter Admin см. [services/README.md](services/README.md)
 
 ## Отладка и диагностика
 
@@ -329,6 +292,11 @@ verter_admin/
 │   ├── sound_player/         # Воспроизведение звуков
 │   ├── speech_recognition/   # Распознавание речи (Vosk)
 │   └── text_to_speech_node/  # Синтез речи (Piper/Silero)
+├── services/                 # Systemd сервисы и скрипты управления
+│   ├── verter-admin.service  # Systemd unit файл
+│   ├── start_verter_admin.sh # Скрипт запуска
+│   ├── stop_verter_admin.sh  # Скрипт остановки
+│   └── README.md            # Документация по сервисам
 ├── package.xml               # ROS2 пакет
 ├── setup.py                 # Конфигурация сборки
 └── README.md                # Документация
@@ -342,40 +310,5 @@ source /opt/ros/humble/setup.bash 2>/dev/null || true
 source install/local_setup.bash 2>/dev/null || true
 python3 src/verter_admin/tof_camera/tof_camera_node.py
 
-
-
-АВТОЗАПУСК:
-
-# 1. Создать директорию для пользовательских сервисов (если не существует)
-mkdir -p ~/.config/systemd/user
-
-# 2. Скопировать файл сервиса
-cp /home/verter/verter-robot/verter_admin/verter-admin.service ~/.config/systemd/user/verter-admin.service
-
-# 3. Убедиться, что скрипты имеют права на выполнение
-chmod +x /home/verter/verter-robot/verter_admin/start_verter_admin.sh
-chmod +x /home/verter/verter-robot/verter_admin/stop_verter_admin.sh
-
-# 4. Перезагрузить конфигурацию systemd
-systemctl --user daemon-reload
-
-# 5. Включить автозапуск сервиса
-systemctl --user enable verter-admin.service
-
-# 6. Запустить сервис (опционально, если нужно запустить сразу)
-systemctl --user start verter-admin.service
-
-# 7. Проверить статус
-systemctl --user status verter-admin.service
-
-
-
-### Проверка после установки:
-
-
-# Посмотреть логи
-journalctl --user -u verter-admin.service -f
-
-# Или логи из файлов
-tail -f /home/verter/verter-robot/verter_admin/journal.log
-tail -f /home/verter/verter-robot/verter_admin/journal-error.log
+# воспроизведение
+aplay -D default /usr/share/sounds/alsa/Front_Center.wav

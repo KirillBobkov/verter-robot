@@ -37,6 +37,7 @@ class AIAssistantNode(Node):
         
         if self.is_testing:
             self.get_logger().info("AI Assistant Node запущен в ТЕСТОВОМ режиме")
+            self._publish_response("Готов к работе в тестовом режиме")
         else:
             self._initialize_yandex_sdk()
             self.get_logger().info("AI Assistant Node инициализирован успешно")
