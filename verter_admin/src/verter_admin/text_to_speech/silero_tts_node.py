@@ -53,7 +53,7 @@ class SileroTTSNode(Node):
         self.put_stress_homo = True
         self.put_yo_homo = True
         
-        self.declare_parameter('audio_device', 'default')
+        self.declare_parameter('audio_device', 'pulse')
         self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
         
         self._setup_environment()

@@ -13,7 +13,7 @@ class SoundPlayerNode(Node):
         super().__init__('sound_player_node')
         
         # Объявляем параметр для аудиоустройства (по умолчанию default)
-        self.declare_parameter('audio_device', 'default')
+        self.declare_parameter('audio_device', 'pulse')
         self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
         
         # Процессы воспроизведения для остановки

@@ -29,17 +29,17 @@ class SpeechToTextConfig:
     BLOCK_SIZE: int = 512  # 32ms - нативный размер для Silero VAD
     CHANNELS: int = 1
     
-    VAD_THRESHOLD: float = 0.5
-    SILENCE_DURATION: float = 0.6  # Секунд тишины для конца фразы
+    VAD_THRESHOLD: float = 0.7
+    SILENCE_DURATION: float = 0.7  # Секунд тишины для конца фразы
     PRE_BUFFER_DURATION: float = 0.5  # Секунд предыстории
     
-    NUM_THREADS: int = 6
-    AUDIO_LATENCY: float = 0.2
-    USE_CUDA: bool = True
+    NUM_THREADS: int = 4
+    AUDIO_LATENCY: float = 0.0
+    USE_CUDA: bool = False
 
 
 # Константы
-VAD_INPUT_SIZE = 512
+VAD_INPUT_SIZE = SpeechToTextConfig.BLOCK_SIZE
 FBANK_FEATURE_SIZE = 64
 VAD_STATE_SIZE = 64
 
@@ -270,8 +270,9 @@ class SpeechToTextNode(Node):
             self.pre_buffer.append(flat)
 
     def _vad_predict(self, chunk: np.ndarray) -> float:
-        if len(chunk) != VAD_INPUT_SIZE:
-            chunk = np.pad(chunk, (0, max(0, VAD_INPUT_SIZE - len(chunk))))[:VAD_INPUT_SIZE]
+        target = self.config.BLOCK_SIZE
+        if len(chunk) != target:
+            chunk = np.pad(chunk, (0, max(0, target - len(chunk))))[:target]
             
         inputs = {
             'x': chunk.reshape(1, -1),
