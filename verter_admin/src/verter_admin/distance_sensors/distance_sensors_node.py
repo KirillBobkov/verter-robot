@@ -104,7 +104,7 @@ class DistanceSensorsNode(Node):
         available_ports = []
         
         # Ищем устройство с конкретным devpath для Arduino Mega
-        self.get_logger().info('Поиск устройства с devpath=2.4 для Arduino Mega')
+        self.get_logger().info('Поиск устройства с devpath=1.2 для Arduino Mega')
         ports = serial.tools.list_ports.comports()
         
         for port in ports:
@@ -118,16 +118,16 @@ class DistanceSensorsNode(Node):
                     text=True
                 )
                 
-                if "devpath==\"2.4\"" in result.stdout or "ATTRS{devpath}==\"2.4\"" in result.stdout:
-                    self.get_logger().info(f'Найдено устройство с devpath=2.4 на порту {port.device}')
+                if "devpath==\"1.2\"" in result.stdout or "ATTRS{devpath}==\"1.2\"" in result.stdout:
+                    self.get_logger().info(f'Найдено устройство с devpath=1.2 на порту {port.device}')
                     available_ports.append(port.device)
                 else:
-                    self.get_logger().info(f'Порт {port.device} не соответствует devpath=2.4')
+                    self.get_logger().info(f'Порт {port.device} не соответствует devpath=1.2')
             except Exception as e:
                 self.get_logger().error(f'Ошибка при проверке devpath для {port.device}: {e}')
         
         if not available_ports:
-            self.get_logger().warn('Не найдено устройств с devpath=2.4')
+            self.get_logger().warn('Не найдено устройств с devpath=1.2')
         
         return available_ports
 
@@ -136,12 +136,12 @@ class DistanceSensorsNode(Node):
         available_ports = self._find_arduino_mega_port()
         
         if not available_ports:
-            self.get_logger().error('Не найдено устройств с devpath=2.4 для Arduino Mega')
+            self.get_logger().error('Не найдено устройств с devpath=1.2 для Arduino Mega')
             return False
         
         # Берем первый найденный порт
         port = available_ports[0]
-        self.get_logger().info(f'Подключаюсь к порту {port} для Arduino Mega (devpath=2.4)')
+        self.get_logger().info(f'Подключаюсь к порту {port} для Arduino Mega (devpath=1.2)')
         
         try:
             self.arduino_serial = serial.Serial(
@@ -151,7 +151,7 @@ class DistanceSensorsNode(Node):
             )
             
             time.sleep(self.CONNECTION_TIMEOUT)
-            self.get_logger().info(f'Успешно подключено к Arduino Mega на порту {port} (devpath=2.4)')
+            self.get_logger().info(f'Успешно подключено к Arduino Mega на порту {port} (devpath=1.2)')
             return True
         except serial.SerialException as e:
             self.get_logger().error(f'Не удалось подключиться к Arduino Mega на порту {port}: {e}')

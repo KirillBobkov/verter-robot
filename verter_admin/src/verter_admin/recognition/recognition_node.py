@@ -53,17 +53,27 @@ class CommandProcessor:
             'конец', 'достаточно'
         }
         
+        # Параметры движения по умолчанию
+        self.default_distance = 0.5  # метры
+        self.default_pwm = 98
+        self.turn_distance = 0.25  # метры для поворота
+        
         self.chassis_commands: Dict[str, str] = {
-            'назад': 'CHASSIS:BACK', 
+            # Стоп - остановка обоих колёс
             'стоп': 'CHASSIS:STOP', 
             'остановись': 'CHASSIS:STOP',
-            'влево': 'CHASSIS:LEFT',
-            'налево': 'CHASSIS:LEFT',
-            'вправо': 'CHASSIS:RIGHT',
-            'направо': 'CHASSIS:RIGHT',
-            'вперед': 'CHASSIS:FRONT',
-            'прямо': 'CHASSIS:FRONT',
-            'вперёд': 'CHASSIS:FRONT',
+            # Вперёд - оба колеса ASK (вперёд)
+            'вперед': f'CHASSIS:LEFT:ASK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.default_distance}:{self.default_pwm}',
+            'прямо': f'CHASSIS:LEFT:ASK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.default_distance}:{self.default_pwm}',
+            'вперёд': f'CHASSIS:LEFT:ASK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.default_distance}:{self.default_pwm}',
+            # Назад - оба колеса DESK (назад)
+            'назад': f'CHASSIS:LEFT:DESK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:DESK:{self.default_distance}:{self.default_pwm}',
+            # Влево - правое вперёд, левое назад (поворот на месте)
+            'влево': f'CHASSIS:LEFT:DESK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.turn_distance}:{self.default_pwm}',
+            'налево': f'CHASSIS:LEFT:DESK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.turn_distance}:{self.default_pwm}',
+            # Вправо - левое вперёд, правое назад (поворот на месте)
+            'вправо': f'CHASSIS:LEFT:ASK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:DESK:{self.turn_distance}:{self.default_pwm}',
+            'направо': f'CHASSIS:LEFT:ASK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:DESK:{self.turn_distance}:{self.default_pwm}',
         }
         
         # Компиляция regex паттернов

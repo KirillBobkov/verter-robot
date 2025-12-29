@@ -12,16 +12,13 @@ class SoundPlayerNode(Node):
     def __init__(self):
         super().__init__('sound_player_node')
         
-        # Объявляем параметр для аудиоустройства (по умолчанию pulse)
+        # Объявляем параметр для аудиоустройства (по умолчанию default)
         self.declare_parameter('audio_device', 'pulse')
         self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
         
         # Процессы воспроизведения для остановки
         self.current_ffmpeg = None
         self.current_aplay = None
-        
-        # Счетчик для чередования шуток
-        self.joke_counter = 0
         
         # Создание подписчика на топик play
         self.subscription = self.create_subscription(
@@ -192,18 +189,6 @@ class SoundPlayerNode(Node):
                 
         except Exception as e:
             self.get_logger().error(f"Ошибка ожидания завершения: {e}")
-
-
-    def _play_joke(self):
-        """Воспроизведение шуток с чередованием"""
-        # Увеличиваем счетчик и сбрасываем после 3
-        self.joke_counter = (self.joke_counter % 3) + 1
-        
-        # Выбираем файл
-        joke_filename = f'joke{self.joke_counter}.mp3'
-        
-        self.get_logger().info(f"Воспроизводится шутка {self.joke_counter}")
-        self._play_sound(joke_filename)
 
     def shutdown(self):
         """Завершение работы узла"""

@@ -51,7 +51,7 @@ class ChassisNode(Node):
         available_ports = []
         
         # Ищем устройство с конкретным devpath для рук
-        self.get_logger().info('Поиск устройства с devpath=2.3 для Chassis')
+        self.get_logger().info('Поиск устройства с devpath=1.1 для Chassis')
         ports = serial.tools.list_ports.comports()
         
         for port in ports:
@@ -65,16 +65,16 @@ class ChassisNode(Node):
                     text=True
                 )
                 
-                if "devpath==\"2.3\"" in result.stdout or "ATTRS{devpath}==\"2.3\"" in result.stdout:
-                    self.get_logger().info(f'Найдено устройство с devpath=2.3 на порту {port.device}')
+                if "devpath==\"1.1\"" in result.stdout or "ATTRS{devpath}==\"1.1\"" in result.stdout:
+                    self.get_logger().info(f'Найдено устройство с devpath=1.1 на порту {port.device}')
                     available_ports.append(port.device)
                 else:
-                    self.get_logger().info(f'Порт {port.device} не соответствует devpath=2.3')
+                    self.get_logger().info(f'Порт {port.device} не соответствует devpath=1.1')
             except Exception as e:
                 self.get_logger().error(f'Ошибка при проверке devpath для {port.device}: {e}')
         
         if not available_ports:
-            self.get_logger().warn('Не найдено устройств с devpath=2.3')
+            self.get_logger().warn('Не найдено устройств с devpath=1.1')
         
         return available_ports
 
@@ -83,12 +83,12 @@ class ChassisNode(Node):
         available_ports = self._find_arduino_port()
         
         if not available_ports:
-            self.get_logger().error('Не найдено устройств с devpath=2.3 для Chassis')
+            self.get_logger().error('Не найдено устройств с devpath=1.1 для Chassis')
             return False
         
         # Берем первый найденный порт
         port = available_ports[0]
-        self.get_logger().info(f'Подключаюсь к порту {port} для Chassis (devpath=2.3)')
+        self.get_logger().info(f'Подключаюсь к порту {port} для Chassis (devpath=1.1)')
         
         try:
             self.arduino_serial = serial.Serial(
@@ -99,7 +99,7 @@ class ChassisNode(Node):
             self.current_port = port
             
             time.sleep(self.CONNECTION_TIMEOUT)
-            self.get_logger().info(f'Успешно подключено к Chassis на порту {port} (devpath=2.3)')
+            self.get_logger().info(f'Успешно подключено к Chassis на порту {port} (devpath=1.1)')
             return True
         except serial.SerialException as e:
             self.get_logger().error(f'Не удалось подключиться к Chassis на порту {port}: {e}')

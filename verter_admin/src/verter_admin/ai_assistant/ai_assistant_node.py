@@ -2,6 +2,7 @@
 
 import pathlib
 import os
+import signal
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -37,6 +38,7 @@ class AIAssistantNode(Node):
         
         if self.is_testing:
             self.get_logger().info("AI Assistant Node запущен в ТЕСТОВОМ режиме")
+            self._publish_response("Готов к работе в тестовом режиме")
         else:
             self._initialize_yandex_sdk()
             self.get_logger().info("AI Assistant Node инициализирован успешно")
@@ -281,9 +283,14 @@ def main(args=None):
     except Exception as e:
         print(f"Ошибка: {e}")
     finally:
+        # Игнорируем новые Ctrl+C во время корректного завершения, чтобы не прерывать destroy_node()
+        signal.signal(signal.SIGINT, signal.SIG_IGN)
         if node:
-            node.shutdown()
-            node.destroy_node()
+            try:
+                node.shutdown()
+                node.destroy_node()
+            except Exception as e:
+                print(f"Ошибка при завершении: {e}")
         if rclpy.ok():
             rclpy.shutdown()
 

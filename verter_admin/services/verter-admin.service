@@ -1,0 +1,22 @@
+[Unit]
+Description=Verter Admin (User Session)
+After=graphical-session.target sound.target network.target
+Wants=graphical-session.target sound.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/verter-robot
+ExecStart=/home/verter/verter-robot/verter_admin/services/start_verter_admin.sh
+ExecStop=/home/verter/verter-robot/verter_admin/services/stop_verter_admin.sh
+StandardOutput=file:/home/verter/verter-robot/verter_admin/journal.log
+StandardError=file:/home/verter/verter-robot/verter_admin/journal-error.log
+Restart=always
+RestartSec=5
+
+# Настройки остановки
+TimeoutStopSec=10
+KillMode=mixed
+
+[Install]
+WantedBy=default.target
+

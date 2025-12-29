@@ -141,7 +141,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'serial_port',
-            default_value='/dev/ttyUSB0',
+            default_value='/dev/ttyUSB3',
             description='Serial port for RPLiDAR'
         ),
         robot_state_publisher,

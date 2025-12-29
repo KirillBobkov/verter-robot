@@ -300,13 +300,20 @@ class SpeechToTextSherpaNode(Node):
             stream = self.recognizer.create_stream()
             stream.accept_waveform(self.config.SAMPLE_RATE, full_audio)
             self.recognizer.decode_stream(stream)
-            text = stream.result.text
+            raw_text = stream.result.text
             
             dur = time.time() - t1
             
-            if text:
+            # 2. ФИЛЬТР: Очистка и проверка
+            text = raw_text.strip()
+            
+            # Игнорируем пустоту и слишком короткие "плевки" (менее 2 символов)
+            if text and len(text) >= 2:
                 self._publish_text(text)
-                self.get_logger().info(f"⏱️  Inference: {dur*1000:.0f}ms")
+                self.get_logger().info(f"⏱️  Inference: {dur*1000:.0f}ms | Text len: {len(text)}")
+            else:
+                if raw_text:
+                    self.get_logger().debug(f"Отфильтрован мусор: '{raw_text}'")
                 
         except Exception as e:
             self.get_logger().error(f"Ошибка распознавания: {e}")
