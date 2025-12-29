@@ -8,7 +8,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    # RPLiDAR Node with explicit parameters
+    # RPLiDAR Node with minimal parameters (removing scan_mode)
     rplidar_node = Node(
         package='rplidar_ros',
         executable='rplidar_node',
@@ -16,10 +16,7 @@ def generate_launch_description():
         parameters=[{
             'serial_port': '/dev/ttyUSB0',
             'frame_id': 'lidar_link',
-            'scan_mode': 'Standard',
             'serial_baudrate': 115200,
-            'inverted': False,
-            'angle_compensate': True,
         }],
         output='screen'
     )
