@@ -312,3 +312,7 @@ python3 src/verter_admin/tof_camera/tof_camera_node.py
 
 # воспроизведение
 aplay -D default /usr/share/sounds/alsa/Front_Center.wav
+
+
+чиназес сюда
+<img width="452" height="254" alt="image" src="https://github.com/user-attachments/assets/63d33128-2b4a-4812-8213-d55b6474b88c" />
