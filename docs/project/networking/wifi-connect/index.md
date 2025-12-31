@@ -373,3 +373,5 @@ sudo /home/verter/verter-robot/wifi-connect/wifi-connect \
 - [Официальный start.sh пример](https://github.com/balena-os/wifi-connect/blob/master/scripts/start.sh)
 - [Документация по аргументам](https://github.com/balena-os/wifi-connect/blob/master/docs/command-line-arguments.md)
 - [NetworkManager](https://networkmanager.dev/)
+
+

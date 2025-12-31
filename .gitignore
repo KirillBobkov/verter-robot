@@ -2,6 +2,8 @@ build/
 install/
 log/
 tts_tests/
+site/
+.mkdocs/
 
 **/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/
 **/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/

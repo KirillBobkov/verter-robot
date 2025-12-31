@@ -1,6 +1,6 @@
 # Управление сервисами Verter Admin
 
-Эта папка содержит файлы для настройки и управления systemd сервисом Verter Admin.
+Эта страница — копия `verter_admin/services/README.md`, перенесённая в MkDocs.
 
 ## Файлы
 
@@ -271,4 +271,5 @@ sudo loginctl enable-linger verter
 # Проверить статус
 loginctl show-user verter | grep Linger
 ```
+
 

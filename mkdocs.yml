@@ -1,0 +1,81 @@
+site_name: Verter Robot Docs
+site_description: Документация по проекту verter-robot
+
+theme:
+  name: material
+  language: ru
+  features:
+    - navigation.instant
+    - navigation.sections
+    - navigation.tracking
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.details
+
+plugins:
+  - search
+
+nav:
+  - Главная: index.md
+  - Кодовая документация:
+      - Обзор: code/index.md
+      - Verter Admin:
+          - Overview: code/verter_admin/index.md
+          - Ноды: code/verter_admin/nodes/index.md
+          - API: code/verter_admin/api/index.md
+      - Demo пакет `verter`:
+          - Overview: code/demo/index.md
+  - Проектная документация:
+      - Обзор: project/index.md
+      - Verter Admin:
+          - Обзор: project/verter_admin/index.md
+          - FAQ: project/verter_admin/FAQ.md
+          - Getting Started:
+              - Overview: project/verter_admin/getting_started/index.md
+              - Предпосылки: project/verter_admin/getting_started/prerequisites.md
+              - Сборка и установка: project/verter_admin/getting_started/install.md
+              - Первый запуск: project/verter_admin/getting_started/run.md
+          - Планирование:
+              - Overview: project/verter_admin/planning/index.md
+              - Цель проекта: project/verter_admin/planning/PROJECT_GOAL.md
+              - План разработки: project/verter_admin/planning/DEVELOPMENT_PLAN.md
+              - Summary Phase 1: project/verter_admin/planning/PHASE1_SUMMARY.md
+              - Clean-up summary: project/verter_admin/planning/CLEANUP_SUMMARY.md
+              - Оптимизация: project/verter_admin/planning/OPTIMIZATION_NOTES.md
+          - Навигация:
+              - Overview: project/verter_admin/navigation/index.md
+              - Lidar height analysis: project/verter_admin/navigation/LIDAR_HEIGHT_ANALYSIS.md
+              - Автономное картирование: project/verter_admin/navigation/AUTONOMOUS_MAPPING.md
+              - Карты (SLAM): project/verter_admin/navigation/MAPS_GUIDE.md
+              - Waypoints: project/verter_admin/navigation/WAYPOINTS_GUIDE.md
+          - Эксплуатация:
+              - Overview: project/verter_admin/operations/index.md
+              - Systemd сервис: project/verter_admin/operations/services.md
+              - Диагностика: project/verter_admin/operations/diagnostics.md
+          - Reference:
+              - ROS2 интерфейсы (топики): project/verter_admin/reference/topics.md
+          - Guides:
+              - Голосовое управление: project/verter_admin/guides/voice.md
+          - Dev notes:
+              - Overview: project/verter_admin/dev/index.md
+              - Odometry: project/verter_admin/dev/odometry.md
+              - Speech pipeline test cases: project/verter_admin/dev/speech_pipeline_test_cases.md
+              - Legacy:
+                  - Vosk speech recognition test cases: project/verter_admin/dev/legacy/vosk_speech_recognition_test_cases.md
+              - URDF change log: project/verter_admin/dev/urdf_changes_log.md
+              - URDF parameters to measure: project/verter_admin/dev/urdf_parameters_to_measure.md
+      - Сеть и подключение:
+          - Overview: project/networking/index.md
+          - WiFi на Raspberry Pi (nmcli): project/networking/raspberry_pi_wifi.md
+          - WiFi Connect:
+              - Обзор: project/networking/wifi-connect/index.md
+              - Решенные проблемы: project/networking/wifi-connect/PROBLEMS-SOLVED.md
+  - Аппаратная часть:
+      - Overview: hardware/index.md
+
+

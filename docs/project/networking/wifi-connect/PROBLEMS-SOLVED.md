@@ -57,3 +57,5 @@ ps aux | grep wifi-connect          # Процессы
 15-20s → iwgetid check
 60s   → NetworkManager полностью готов (worst case)
 ```
+
+
