@@ -23,59 +23,59 @@ plugins:
 nav:
   - Главная: index.md
   - Кодовая документация:
-      - Обзор: code/index.md
-      - Verter Admin:
-          - Overview: code/verter_admin/index.md
-          - Ноды: code/verter_admin/nodes/index.md
-          - API: code/verter_admin/api/index.md
-      - Demo пакет `verter`:
-          - Overview: code/demo/index.md
+      - Обзор: code/verter_admin.md
+      - Ноды:
+          - speech_to_text_* (STT): code/nodes/speech_to_text_node.md
+          - recognition_node: code/nodes/recognition_node.md
+          - ai_assistant_node: code/nodes/ai_assistant_node.md
+          - text_to_speech_node: code/nodes/text_to_speech_node.md
+          - silero_tts_node: code/nodes/silero_tts_node.md
+          - sound_player_node: code/nodes/sound_player_node.md
+          - chassis_node: code/nodes/chassis_node.md
+          - distance_sensors_node: code/nodes/distance_sensors.md
+          - doa_node: code/nodes/doa_node.md
+          - odometry_node: code/nodes/odometry_node.md
+          - teleop_keyboard: code/nodes/teleop_keyboard.md
+          - waypoint_navigator: code/nodes/waypoint_navigator.md
+      - API:
+          - Интерфейсы и топики: code/api.md
+          - Топики (справка): code/api/topics.md
+      - Инженерия и план:
+          - План разработки: code/engineering/DEVELOPMENT_PLAN.md
+          - Итоги фазы 1: code/engineering/PHASE1_SUMMARY.md
+          - Итоги чистки/рефакторинга: code/engineering/CLEANUP_SUMMARY.md
+          - Оптимизация: code/engineering/OPTIMIZATION_NOTES.md
+      - Заметки разработки:
+          - Odometry: code/dev/odometry.md
+          - Тест-кейсы голосового пайплайна: code/dev/speech_pipeline_test_cases.md
+          - Журнал изменений URDF: code/dev/urdf_changes_log.md
+          - Параметры URDF к замеру: code/dev/urdf_parameters_to_measure.md
+          - Архив:
+              - Тест-кейсы распознавания (Vosk, legacy): code/dev/legacy/vosk_speech_recognition_test_cases.md
   - Проектная документация:
-      - Обзор: project/index.md
-      - Verter Admin:
-          - Обзор: project/verter_admin/index.md
-          - FAQ: project/verter_admin/FAQ.md
-          - Getting Started:
-              - Overview: project/verter_admin/getting_started/index.md
-              - Предпосылки: project/verter_admin/getting_started/prerequisites.md
-              - Сборка и установка: project/verter_admin/getting_started/install.md
-              - Первый запуск: project/verter_admin/getting_started/run.md
-          - Планирование:
-              - Overview: project/verter_admin/planning/index.md
-              - Цель проекта: project/verter_admin/planning/PROJECT_GOAL.md
-              - План разработки: project/verter_admin/planning/DEVELOPMENT_PLAN.md
-              - Summary Phase 1: project/verter_admin/planning/PHASE1_SUMMARY.md
-              - Clean-up summary: project/verter_admin/planning/CLEANUP_SUMMARY.md
-              - Оптимизация: project/verter_admin/planning/OPTIMIZATION_NOTES.md
-          - Навигация:
-              - Overview: project/verter_admin/navigation/index.md
-              - Lidar height analysis: project/verter_admin/navigation/LIDAR_HEIGHT_ANALYSIS.md
-              - Автономное картирование: project/verter_admin/navigation/AUTONOMOUS_MAPPING.md
-              - Карты (SLAM): project/verter_admin/navigation/MAPS_GUIDE.md
-              - Waypoints: project/verter_admin/navigation/WAYPOINTS_GUIDE.md
-          - Эксплуатация:
-              - Overview: project/verter_admin/operations/index.md
-              - Systemd сервис: project/verter_admin/operations/services.md
-              - Диагностика: project/verter_admin/operations/diagnostics.md
-          - Reference:
-              - ROS2 интерфейсы (топики): project/verter_admin/reference/topics.md
-          - Guides:
-              - Голосовое управление: project/verter_admin/guides/voice.md
-          - Dev notes:
-              - Overview: project/verter_admin/dev/index.md
-              - Odometry: project/verter_admin/dev/odometry.md
-              - Speech pipeline test cases: project/verter_admin/dev/speech_pipeline_test_cases.md
-              - Legacy:
-                  - Vosk speech recognition test cases: project/verter_admin/dev/legacy/vosk_speech_recognition_test_cases.md
-              - URDF change log: project/verter_admin/dev/urdf_changes_log.md
-              - URDF parameters to measure: project/verter_admin/dev/urdf_parameters_to_measure.md
+      - Обзор: project/verter_admin.md
+      - Цель проекта: project/PROJECT_GOAL.md
+      - FAQ: project/FAQ.md
+      - Установка и запуск:
+          - Предпосылки: project/getting_started/prerequisites.md
+          - Сборка и установка: project/getting_started/install.md
+          - Первый запуск: project/getting_started/run.md
+      - Руководство оператора:
+          - Голосовое управление: project/guides/voice.md
+          - Навигация и карты:
+              - Автономное картирование: project/navigation/AUTONOMOUS_MAPPING.md
+              - Карты (SLAM): project/navigation/MAPS_GUIDE.md
+              - Waypoints: project/navigation/WAYPOINTS_GUIDE.md
+              - Высота лидара (обоснование): project/navigation/LIDAR_HEIGHT_ANALYSIS.md
+      - Эксплуатация:
+          - Systemd-сервис: project/operations/services.md
+          - Диагностика: project/operations/diagnostics.md
       - Сеть и подключение:
-          - Overview: project/networking/index.md
           - WiFi на Raspberry Pi (nmcli): project/networking/raspberry_pi_wifi.md
           - WiFi Connect:
               - Обзор: project/networking/wifi-connect/index.md
               - Решенные проблемы: project/networking/wifi-connect/PROBLEMS-SOLVED.md
   - Аппаратная часть:
-      - Overview: hardware/index.md
+      - Обзор: hardware.md
 
 

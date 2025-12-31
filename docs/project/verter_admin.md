@@ -85,13 +85,14 @@ Verter Admin — это набор ROS2 нод, которые вместе да
 
 Если нужно понять “как это работает по коду” (топики, пайплайн, узкие места) — см.:
 
-- [Verter Admin — код (простыми словами)](../../code/verter_admin/index.md)
+- [Verter Admin — код (простыми словами)](../code/verter_admin.md)
 
 ## Как начать
 
-- [Getting Started](getting_started/index.md)
+- [Предпосылки](getting_started/prerequisites.md)
+- [Сборка и установка](getting_started/install.md)
+- [Первый запуск](getting_started/run.md)
 - [Голосовое управление](guides/voice.md)
-- [ROS2 интерфейсы (топики)](reference/topics.md)
 - [Диагностика](operations/diagnostics.md)
 
 ## Системный сервис

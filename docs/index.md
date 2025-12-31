@@ -2,7 +2,7 @@
 
 ## Разделы
 
-- [Кодовая документация](code/index.md)
-- [Проектная документация](project/index.md)
-- [Аппаратная часть](hardware/index.md)
+- [Кодовая документация](code/verter_admin.md)
+- [Проектная документация](project/verter_admin.md)
+- [Аппаратная часть](hardware.md)
 
