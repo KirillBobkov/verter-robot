@@ -138,7 +138,7 @@ setup(
         'yandex-cloud-ml-sdk',
         'silero-tts',
         'pyserial',
-        'opencv-python',
+        'opencv-python<4.9',  # Совместимо с numpy<2.0
         'kaldi-native-fbank',
         'onnxruntime',
         'torch',
