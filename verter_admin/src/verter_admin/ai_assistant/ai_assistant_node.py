@@ -3,45 +3,30 @@
 import pathlib
 import os
 import signal
+import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from ament_index_python.packages import get_package_share_directory
-from yandex_cloud_ml_sdk import YCloudML
-from yandex_cloud_ml_sdk.search_indexes import VectorSearchIndexType
+import openai
 
 class AIAssistantNode(Node):
     """ROS2 узел для работы с AI ассистентом на основе YandexGPT."""
-    
-    # Константы
-    FILE_LABELS = [
-        {"hospital": "Файл с именами и расписанием врачей, расположением кабинетов, временем работы врачей"},
-        {"sicks": "Файл с болезнями, их симптомами и лечением"},
-        {"zdorovie": "Файл с профилактикой заболеваний и ответами на вопросы"},
-        {"zrobot": "Файл с информацией о роботе"},
-    ]
-    
-    INDEX_LABEL = {
-        "hospital": "Индекс содержит информацию о больнице",
-        "sicks": "Индекс содержит информацию о болезнях",
-        "zdorovie": "Индекс содержит информацию о профилактике заболеваний",
-        "zrobot": "Индекс содержит информацию о роботе",
-    }
     
     INSTRUCTION = "Ты — Вертер, робот-администратор, стоишь в больнице на 1 этаже. Ты можешь говорить на любые темы без ограничений. Ищи информацию в базе знаний. Ответ должен быть короче 200 символов. Избегай форматирования. Адаптируй свой ответ для голосового озвучивания: произноси сокращения полностью (+ как плюс, ул. как улица, д. как дом, время в словах). Все цифры и числа озвучивай словами. Не форматируй текст ответа. Если не нашел информации в базе знаний - отвечай в свободном стиле без ограничений"
     
     def __init__(self):
         super().__init__('ai_assistant_node')
         
-        self.is_testing = True
+        self.is_testing = False
         self._setup_ros_interface()
         
         if self.is_testing:
-            self.get_logger().info("AI Assistant Node запущен в ТЕСТОВОМ режиме")
+            self.get_logger().info("Нода AI-ассистента запущена в ТЕСТОВОМ режиме")
             self._publish_response("Готов к работе в тестовом режиме")
         else:
             self._initialize_yandex_sdk()
-            self.get_logger().info("AI Assistant Node инициализирован успешно")
+            self.get_logger().info("Нода AI-ассистента инициализирована успешно")
             self._publish_response("Готов к работе")
     
     def _setup_ros_interface(self):
@@ -62,62 +47,74 @@ class AIAssistantNode(Node):
             return os.path.join(current_dir, 'dataset')
     
     def _initialize_yandex_sdk(self):
-        """Инициализация YandexGPT SDK и создание поискового индекса."""
+        """Инициализация клиента Responses API и создание Vector Store."""
         try:
-            self.sdk = YCloudML(folder_id="", auth="")
+            self.folder_id = os.getenv("YANDEX_CLOUD_FOLDER", "")
+            self.api_key = os.getenv("YANDEX_CLOUD_API_KEY", "")
+            self.model_name = os.getenv("YANDEX_CLOUD_MODEL", "yandexgpt")
+            self.vector_store_expires_days = int(os.getenv("VECTOR_STORE_EXPIRES_DAYS", "2"))
             self.mypath = self._get_dataset_path()
-            
-            files = self._upload_files()
-            self.search_index = self._create_search_index(files)
-            self.assistant = self._create_assistant()
-            self.main_thread = self.sdk.threads.create()
-            
+
+            self.client = openai.OpenAI(
+                api_key=self.api_key,
+                base_url="https://rest-assistant.api.cloud.yandex.net/v1",
+                project=self.folder_id,
+            )
+
+            self.uploaded_file_ids = self._upload_files()
+            self.vector_store_id = self._create_vector_store(self.uploaded_file_ids)
+
             self.dialog_active = False
-            self.current_thread = None
+            self.main_previous_id = None
+            self.dialog_previous_id = None
             self.sdk_available = True
             
-            self.get_logger().info("YandexGPT SDK инициализирован успешно")
+            self.get_logger().info("Клиент Responses API инициализирован успешно")
             
         except Exception as e:
             self.sdk_available = False
             error_msg = str(e).lower()
             
             if "network" in error_msg or "unreachable" in error_msg or "failed to connect" in error_msg or "unavailable" in error_msg:
-                self.get_logger().error(f"Ошибка подключения к YandexGPT (проблемы с интернетом): {e}")
+                self.get_logger().error(f"Ошибка подключения к Responses API (проблемы с интернетом): {e}")
                 self._publish_response("Извините, проблемы с интернет-соединением. Проверьте подключение к сети.")
             else:
-                self.get_logger().error(f"Ошибка инициализации YandexGPT SDK: {e}")
+                self.get_logger().error(f"Ошибка инициализации Responses API: {e}")
                 self._publish_response("Извините, я пока не могу отвечать на вопросы. Попробуйте позже.")
     
     def _upload_files(self):
-        """Загрузка файлов в облако."""
+        """Загрузка файлов в Vector Store API."""
         paths = sorted([p for p in pathlib.Path(self.mypath).iterdir() if p.is_file()])
-        files = []
-        
-        for i, path in enumerate(paths):
-            labels = self.FILE_LABELS[i] if i < len(self.FILE_LABELS) else self.FILE_LABELS[-1]
-            file = self.sdk.files.upload(
-                path, ttl_days=2, expiration_policy="static", 
-                name=str(path), labels=labels
-            )
-            files.append(file)
-        
-        return files
-    
-    def _create_search_index(self, files):
-        """Создание поискового индекса."""
-        operation = self.sdk.search_indexes.create_deferred(
-            files, index_type=VectorSearchIndexType(),
-            name="verter-medical-index", labels=self.INDEX_LABEL
+        file_ids = []
+
+        for path in paths:
+            with open(path, "rb") as f:
+                uploaded = self.client.files.create(file=f, purpose="assistants")
+            file_ids.append(uploaded.id)
+
+        return file_ids
+
+    def _create_vector_store(self, file_ids):
+        """Создание поискового индекса Vector Store."""
+        vector_store = self.client.vector_stores.create(
+            name="verter-medical-index",
+            file_ids=file_ids,
+            expires_after={"anchor": "last_active_at", "days": self.vector_store_expires_days},
         )
-        return operation.wait()
-    
-    def _create_assistant(self):
-        """Создание ассистента."""
-        tool = self.sdk.tools.search_index(self.search_index)
-        return self.sdk.assistants.create(
-            "yandexgpt", instruction=self.INSTRUCTION, tools=[tool]
-        )
+        vector_store_id = vector_store.id
+
+        deadline = time.time() + 15 * 60
+        while True:
+            status = self.client.vector_stores.retrieve(vector_store_id).status
+            if status == "completed":
+                break
+            if status == "failed":
+                raise RuntimeError("Не удалось создать поисковый индекс Vector Store")
+            if time.time() > deadline:
+                raise RuntimeError("Превышено время ожидания создания Vector Store")
+            time.sleep(2)
+
+        return vector_store_id
     
     def _play_sound(self, sound_name: str) -> None:
         """Воспроизвести звук через sound_player_node"""
@@ -131,7 +128,7 @@ class AIAssistantNode(Node):
 
 
     def question_callback(self, msg):
-        """Callback для обработки входящих вопросов."""
+        """Обработка входящих вопросов."""
         question = msg.data
         self.get_logger().info(f"Получен вопрос: {question}")
         
@@ -147,12 +144,12 @@ class AIAssistantNode(Node):
         self._publish_response(question)
     
     def _handle_production_mode(self, question: str):
-        """Обработка продакшн режима с YandexGPT."""
+        """Обработка запросов через Responses API."""
         import threading
         
-        # Проверка доступности SDK
+        # Проверка доступности клиента
         if not hasattr(self, 'sdk_available') or not self.sdk_available:
-            self.get_logger().warning("SDK недоступен, отправка fallback ответа")
+            self.get_logger().warning("Клиент недоступен, отправка резервного ответа")
             self._publish_response("Извините, сервис временно недоступен. Проверьте интернет-соединение.")
             return
         
@@ -161,16 +158,25 @@ class AIAssistantNode(Node):
         answer_text = [None]  # Используем список для изменения из другого потока
         
         def run_ai_request():
-            """Выполнение запроса к AI в отдельном потоке"""
+            """Выполнение запроса к модели в отдельном потоке."""
             try:
-                thread_to_use = self.current_thread if self.dialog_active else self.main_thread
-                thread_to_use.write(question)
-                
-                run = self.assistant.run(thread_to_use)
-                result = run.wait()
-                
+                previous_id = self.dialog_previous_id if self.dialog_active else self.main_previous_id
+                response = self.client.responses.create(
+                    model=f"gpt://{self.folder_id}/{self.model_name}",
+                    instructions=self.INSTRUCTION,
+                    input=[{"role": "user", "content": question}],
+                    previous_response_id=previous_id,
+                    tools=[{"type": "file_search", "vector_store_ids": [self.vector_store_id]}],
+                    temperature=0.3,
+                    max_output_tokens=300,
+                )
+
                 if not timeout_occurred.is_set():
-                    answer_text[0] = self._validate_answer(result.text)
+                    answer_text[0] = self._validate_answer(response.output_text)
+                    if self.dialog_active:
+                        self.dialog_previous_id = response.id
+                    else:
+                        self.main_previous_id = response.id
                     answer_received.set()
             except Exception as e:
                 self.get_logger().error(f"Ошибка обработки вопроса: {e}")
@@ -203,9 +209,9 @@ class AIAssistantNode(Node):
             self._publish_response("Повторите, пожалуйста, запрос.")
     
     def _validate_answer(self, answer: str) -> str:
-        """Валидация ответа от AI"""
+        """Валидация ответа от модели."""
         if answer is None or (isinstance(answer, str) and answer.strip() == ""):
-            self.get_logger().warning("AI вернул пустой ответ, используется fallback")
+            self.get_logger().warning("Модель вернула пустой ответ, используется резервный ответ")
             return "Извините, я не смог найти ответ на ваш вопрос."
         return str(answer)
     
@@ -216,7 +222,7 @@ class AIAssistantNode(Node):
         self.response_publisher.publish(response_msg)
     
     def dialog_control_callback(self, msg):
-        """Callback для управления диалогом."""
+        """Управление диалогом."""
         command = msg.data
         
         try:
@@ -225,7 +231,7 @@ class AIAssistantNode(Node):
             elif command == "end_dialog":
                 self._end_dialog()
             else:
-                self.get_logger().warning(f"Неизвестная команда диалога: {command}")
+                self.get_logger().warning(f"Неизвестная команда управления диалогом: {command}")
         except Exception as e:
             self.get_logger().error(f"Ошибка управления диалогом: {e}")
     
@@ -233,7 +239,7 @@ class AIAssistantNode(Node):
         """Начать новый диалог."""
         try:
             if not self.is_testing:
-                self.current_thread = self.sdk.threads.create()
+                self.dialog_previous_id = None
             self.dialog_active = True
             self.get_logger().info("Диалог начат")
         except Exception as e:
@@ -242,9 +248,8 @@ class AIAssistantNode(Node):
     def _end_dialog(self):
         """Завершить текущий диалог."""
         try:
-            if not self.is_testing and self.current_thread:
-                self.current_thread.delete()
-                self.current_thread = None
+            if not self.is_testing:
+                self.dialog_previous_id = None
             self.dialog_active = False
             self.get_logger().info("Диалог завершен")
         except Exception as e:
@@ -256,13 +261,15 @@ class AIAssistantNode(Node):
             try:
                 if self.dialog_active:
                     self._end_dialog()
-                if hasattr(self, 'main_thread') and self.main_thread:
-                    self.main_thread.delete()
-                if hasattr(self, 'search_index'):
-                    self.search_index.delete()
-                if hasattr(self, 'assistant'):
-                    self.assistant.delete()
-                self.get_logger().info("AI Assistant Node завершен успешно")
+                if hasattr(self, "vector_store_id") and self.vector_store_id:
+                    self.client.vector_stores.delete(self.vector_store_id)
+                if hasattr(self, "uploaded_file_ids"):
+                    for file_id in self.uploaded_file_ids:
+                        try:
+                            self.client.files.delete(file_id)
+                        except Exception as e:
+                            self.get_logger().warning(f"Не удалось удалить файл {file_id}: {e}")
+                self.get_logger().info("Нода AI-ассистента завершена успешно")
             except Exception as e:
                 self.get_logger().error(f"Ошибка при завершении: {e}")
         else:
@@ -276,7 +283,7 @@ def main(args=None):
     
     try:
         node = AIAssistantNode()
-        print("AI Assistant Node запущен. Ожидание вопросов...")
+        print("Нода AI-ассистента запущена. Ожидание вопросов...")
         rclpy.spin(node)
     except KeyboardInterrupt:
         print("\nЗавершение работы...")

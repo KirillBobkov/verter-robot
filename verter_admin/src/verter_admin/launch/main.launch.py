@@ -54,20 +54,20 @@ def generate_launch_description():
         ),
         
         # Узел синтеза речи (Piper)
-        # Node(
-        #     package='verter_admin',
-        #     executable='text_to_speech_node',
-        #     name='text_to_speech_node',
-        #     output='screen'
-        # ),
-        
-        # Узел синтеза речи (Silero TTS)
         Node(
             package='verter_admin',
-            executable='silero_tts_node',
-            name='silero_tts_node',
+            executable='text_to_speech_node',
+            name='text_to_speech_node',
             output='screen'
         ),
+        
+        # Узел синтеза речи (Silero TTS)
+        # Node(
+        #     package='verter_admin',
+        #     executable='silero_tts_node',
+        #     name='silero_tts_node',
+        #     output='screen'
+        # ),
         
         # Узел воспроизведения звуков
         Node(
