@@ -24,10 +24,17 @@ ODOMETRY NODE - Нода одометрии для мобильного робо
 
 КАК ЭТО РАБОТАЕТ?
 ------------------
-1. Робот получает команды скорости (например: "двигайся 0.2 м/с вперед")
-2. Мы ИНТЕГРИРУЕМ эту скорость по времени:
-   новая_позиция = старая_позиция + скорость * время
-3. Публикуем результат в ROS2 топики
+ОСНОВНОЙ РЕЖИМ (энкодерная одометрия - closed-loop):
+1. Получаем данные с энкодеров колёс (шаги AS5600)
+2. Вычисляем пройденное расстояние каждым колесом
+3. Рассчитываем позицию (x, y, theta) по формулам дифференциального привода
+4. Рассчитываем актуальную скорость (vx, vth) из изменения позиции за время
+5. Публикуем результат в ROS2 топики
+
+РЕЗЕРВНЫЙ РЕЖИМ (cmd_vel одометрия - open-loop):
+1. Если энкодеры не доступны, используем команды скорости
+2. ИНТЕГРИРУЕМ скорость по времени: позиция = позиция + скорость * dt
+3. Скорость берётся из команд (не из реальных измерений)
 
 
 ВАЖНЫЕ КОНЦЕПЦИИ ROS2:
@@ -83,6 +90,7 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, TransformStamped, Quaternion
 from nav_msgs.msg import Odometry
+from std_msgs.msg import Int64MultiArray
 from tf2_ros import TransformBroadcaster
 import math
 import time
@@ -95,6 +103,17 @@ class OdometryNode(Node):
     Наследуется от Node - базового класса для всех ROS2 нод.
     Аналогия из Java: похоже на extends Thread или extends HttpServlet
     """
+
+    # ============================================================================
+    # КОНСТАНТЫ РОБОТА ДЛЯ ЭНКОДЕРНОЙ ОДОМЕТРИИ
+    # ============================================================================
+    WHEEL_CIRCUMFERENCE = 0.63  # м - длина окружности колеса
+    GEAR_RATIO = 4.0007         # передаточное число редуктора
+    ENCODER_RESOLUTION = 4096   # разрешение энкодера AS5600 (шагов на оборот)
+    WHEEL_BASE = 0.356          # м - расстояние между колёсами (из URDF: 0.178 * 2)
+
+    # Метров на один шаг энкодера
+    METERS_PER_STEP = WHEEL_CIRCUMFERENCE / (ENCODER_RESOLUTION * GEAR_RATIO)
 
     def __init__(self):
         """
@@ -209,9 +228,30 @@ class OdometryNode(Node):
         # Флаг для отслеживания активности движения
         self.is_moving = False
 
+        # ============================================================================
+        # СОСТОЯНИЕ ЭНКОДЕРНОЙ ОДОМЕТРИИ
+        # ============================================================================
+        self.last_left_steps = None
+        self.last_right_steps = None
+        self.encoder_initialized = False
+        self.odometry_source = 'cmd_vel'  # 'cmd_vel' или 'encoder'
+        self.last_encoder_time = time.time()
+        self.last_encoder_callback_time = None  # Для расчёта скорости из энкодеров
+        self.encoder_timeout = 1.0  # секунды - таймаут для fallback на cmd_vel
+
+        # ============================================================================
+        # ПОДПИСКА НА ДАННЫЕ ЭНКОДЕРОВ
+        # ============================================================================
+        self.encoder_subscriber = self.create_subscription(
+            Int64MultiArray, '/wheel_encoders',
+            self.encoder_callback, 10
+        )
+        self.get_logger().info('Подписчик создан для топика /wheel_encoders')
+
         self.get_logger().info('='*80)
         self.get_logger().info('Нода одометрии успешно инициализирована!')
         self.get_logger().info('Начальная позиция: x=0.0, y=0.0, theta=0.0')
+        self.get_logger().info(f'Ожидание данных энкодеров (fallback на cmd_vel)')
         self.get_logger().info('='*80)
 
 
@@ -222,6 +262,9 @@ class OdometryNode(Node):
         Эта функция вызывается автоматически каждый раз, когда приходит новое
         сообщение в топик /cmd_vel (например, от Nav2).
 
+        ВАЖНО: Скорость обновляется только если используется cmd_vel одометрия.
+        При энкодерной одометрии скорость рассчитывается из данных энкодеров.
+
         Аналогия из Java: Метод onMessage() в JMS MessageListener
 
         Args:
@@ -230,33 +273,135 @@ class OdometryNode(Node):
                 msg.linear.y  - скорость влево/вправо (обычно 0 для дифф. привода)
                 msg.angular.z - скорость поворота (рад/с)
         """
-        # Извлекаем линейную скорость (вперед/назад)
-        # Ограничиваем максимальной скоростью для безопасности
-        linear_x = max(min(msg.linear.x, self.max_linear_velocity),
-                       -self.max_linear_velocity)
+        # Обновляем скорость только если используем cmd_vel одометрию (fallback)
+        # При энкодерной одометрии скорость рассчитывается в encoder_callback
+        if self.odometry_source != 'encoder':
+            # Извлекаем линейную скорость (вперед/назад)
+            # Ограничиваем максимальной скоростью для безопасности
+            linear_x = max(min(msg.linear.x, self.max_linear_velocity),
+                           -self.max_linear_velocity)
 
-        # Извлекаем угловую скорость (поворот)
-        # Ограничиваем максимальной угловой скоростью
-        angular_z = max(min(msg.angular.z, self.max_angular_velocity),
-                        -self.max_angular_velocity)
+            # Извлекаем угловую скорость (поворот)
+            # Ограничиваем максимальной угловой скоростью
+            angular_z = max(min(msg.angular.z, self.max_angular_velocity),
+                            -self.max_angular_velocity)
 
-        # Применяем коэффициенты масштабирования (для калибровки)
-        self.vx = linear_x * self.linear_scale
-        self.vth = angular_z * self.angular_scale
+            # Применяем коэффициенты масштабирования (для калибровки)
+            self.vx = linear_x * self.linear_scale
+            self.vth = angular_z * self.angular_scale
 
-        # Для differential drive (дифференциальный привод) робота
-        # боковая скорость всегда 0
-        self.vy = 0.0
+            # Для differential drive (дифференциальный привод) робота
+            # боковая скорость всегда 0
+            self.vy = 0.0
 
         # Логируем полученные команды (для отладки)
-        if abs(self.vx) > 0.01 or abs(self.vth) > 0.01:
+        cmd_vx = msg.linear.x
+        cmd_vth = msg.angular.z
+        if abs(cmd_vx) > 0.01 or abs(cmd_vth) > 0.01:
             if not self.is_moving:
-                self.get_logger().info(f'Начало движения: vx={self.vx:.3f} м/с, vth={self.vth:.3f} рад/с')
+                self.get_logger().info(f'Начало движения: cmd_vx={cmd_vx:.3f} м/с, cmd_vth={cmd_vth:.3f} рад/с')
                 self.is_moving = True
         else:
             if self.is_moving:
                 self.get_logger().info('Остановка')
                 self.is_moving = False
+
+
+    def encoder_callback(self, msg):
+        """
+        Callback-функция для обработки данных энкодеров из топика /wheel_encoders.
+
+        Эта функция вызывается каждый раз, когда приходят данные с энкодеров.
+        Расчёт одометрии (позиция И скорость) на основе реальных данных с колёс (closed-loop).
+
+        Args:
+            msg (Int64MultiArray): Сообщение с данными энкодеров
+                msg.data[0] - шаги левого колеса (totalSteps)
+                msg.data[1] - шаги правого колеса (totalSteps)
+                msg.data[2] - временная метка Arduino (millis)
+        """
+        if len(msg.data) != 3:
+            return
+
+        left_steps = msg.data[0]
+        right_steps = msg.data[1]
+        # timestamp_ms = msg.data[2]  # Можно использовать для синхронизации
+
+        # Получаем текущее время для расчёта скорости
+        current_callback_time = time.time()
+
+        # Обновляем время последнего получения данных энкодеров
+        self.last_encoder_time = current_callback_time
+
+        # Инициализация при первом получении данных
+        if not self.encoder_initialized:
+            self.last_left_steps = left_steps
+            self.last_right_steps = right_steps
+            self.last_encoder_callback_time = current_callback_time
+            self.encoder_initialized = True
+            if self.odometry_source != 'encoder':
+                self.odometry_source = 'encoder'
+                self.get_logger().info('Переключение на энкодерную одометрию (closed-loop)')
+            return
+
+        # Вычисляем дельты шагов
+        delta_left = left_steps - self.last_left_steps
+        delta_right = right_steps - self.last_right_steps
+
+        # Вычисляем dt для расчёта скорости
+        dt = current_callback_time - self.last_encoder_callback_time
+
+        # Защита от деления на ноль и слишком большого dt
+        if dt <= 0 or dt > 1.0:
+            self.last_left_steps = left_steps
+            self.last_right_steps = right_steps
+            self.last_encoder_callback_time = current_callback_time
+            return
+
+        # Если нет изменений - робот стоит, обнуляем скорость
+        if delta_left == 0 and delta_right == 0:
+            self.vx = 0.0
+            self.vth = 0.0
+            self.vy = 0.0
+            self.last_encoder_callback_time = current_callback_time
+            return
+
+        # Переводим шаги в метры
+        dist_left = delta_left * self.METERS_PER_STEP
+        dist_right = delta_right * self.METERS_PER_STEP
+
+        # Дифференциальный привод: формулы для расчёта движения
+        delta_distance = (dist_left + dist_right) / 2.0
+        delta_theta = (dist_right - dist_left) / self.WHEEL_BASE
+
+        # ============================================================================
+        # РАСЧЁТ АКТУАЛЬНОЙ СКОРОСТИ ИЗ ЭНКОДЕРОВ
+        # ============================================================================
+        # Линейная скорость = пройденное расстояние / время
+        self.vx = delta_distance / dt
+
+        # Угловая скорость = изменение угла / время
+        self.vth = delta_theta / dt
+
+        # Боковая скорость всегда 0 для дифференциального привода
+        self.vy = 0.0
+
+        # ============================================================================
+        # ОБНОВЛЕНИЕ ПОЗИЦИИ
+        # ============================================================================
+        # Используем средний угол для более точного расчёта
+        avg_theta = self.theta + delta_theta / 2.0
+        self.x += delta_distance * math.cos(avg_theta)
+        self.y += delta_distance * math.sin(avg_theta)
+        self.theta += delta_theta
+
+        # Нормализуем угол в диапазон [-π, π]
+        self.theta = math.atan2(math.sin(self.theta), math.cos(self.theta))
+
+        # Сохраняем текущие значения для следующей итерации
+        self.last_left_steps = left_steps
+        self.last_right_steps = right_steps
+        self.last_encoder_callback_time = current_callback_time
 
 
     def update_odometry_callback(self):
@@ -266,13 +411,23 @@ class OdometryNode(Node):
         Вызывается 50 раз в секунду (каждые 0.02 сек).
 
         ЧТО ЗДЕСЬ ПРОИСХОДИТ:
-        1. Вычисляем сколько времени прошло с последнего обновления (dt)
-        2. ИНТЕГРИРУЕМ скорость: новая позиция = старая + скорость * время
-        3. Публикуем обновленную одометрию в топик /odom
-        4. Публикуем TF трансформацию odom -> base_link
+        1. Проверяем источник одометрии (encoder или cmd_vel)
+        2. Если encoder - позиция уже обновлена в encoder_callback
+        3. Если cmd_vel - вычисляем позицию из команд скорости (fallback)
+        4. Публикуем одометрию в топик /odom
+        5. Публикуем TF трансформацию odom -> base_link
 
         Аналогия: Как run() метод в Thread или метод в @Scheduled аннотации Spring
         """
+        # ============================================================================
+        # ШАГ 0: ПРОВЕРКА ИСТОЧНИКА ОДОМЕТРИИ
+        # ============================================================================
+        # Проверяем таймаут энкодеров для fallback на cmd_vel
+        if self.odometry_source == 'encoder':
+            if time.time() - self.last_encoder_time > self.encoder_timeout:
+                self.odometry_source = 'cmd_vel'
+                self.get_logger().warn('Таймаут данных энкодеров - переключение на cmd_vel (open-loop)')
+
         # ============================================================================
         # ШАГ 1: ВЫЧИСЛЕНИЕ ВРЕМЕННОГО ИНТЕРВАЛА (dt)
         # ============================================================================
@@ -289,47 +444,49 @@ class OdometryNode(Node):
             dt = 0.02  # Устанавливаем стандартное значение
 
         # ============================================================================
-        # ШАГ 2: ВЫЧИСЛЕНИЕ ИЗМЕНЕНИЯ ПОЗИЦИИ (ИНТЕГРИРОВАНИЕ)
+        # ШАГ 2: ВЫЧИСЛЕНИЕ ИЗМЕНЕНИЯ ПОЗИЦИИ (только для cmd_vel fallback)
         # ============================================================================
-        # Формулы одометрии для дифференциального привода:
-        #
-        # Если робот поворачивает (vth != 0):
-        #   - Робот движется по дуге окружности
-        #   - Используем формулы для движения по окружности
-        #
-        # Если робот не поворачивает (vth == 0):
-        #   - Робот движется прямо
-        #   - Простая линейная интерполяция
+        # Если используется энкодерная одометрия, позиция уже обновлена в encoder_callback
+        if self.odometry_source == 'cmd_vel':
+            # Формулы одометрии для дифференциального привода:
+            #
+            # Если робот поворачивает (vth != 0):
+            #   - Робот движется по дуге окружности
+            #   - Используем формулы для движения по окружности
+            #
+            # Если робот не поворачивает (vth == 0):
+            #   - Робот движется прямо
+            #   - Простая линейная интерполяция
 
-        # Вычисляем изменение угла (delta_theta)
-        delta_theta = self.vth * dt
+            # Вычисляем изменение угла (delta_theta)
+            delta_theta = self.vth * dt
 
-        # Вычисляем изменение позиции (delta_x, delta_y)
-        # Используем текущий угол робота для перевода в глобальные координаты
-        if abs(self.vth) < 1e-6:  # Практически нет поворота
-            # Прямолинейное движение
-            delta_x = self.vx * dt * math.cos(self.theta)
-            delta_y = self.vx * dt * math.sin(self.theta)
-        else:
-            # Движение по дуге
-            # Радиус поворота
-            radius = self.vx / self.vth
+            # Вычисляем изменение позиции (delta_x, delta_y)
+            # Используем текущий угол робота для перевода в глобальные координаты
+            if abs(self.vth) < 1e-6:  # Практически нет поворота
+                # Прямолинейное движение
+                delta_x = self.vx * dt * math.cos(self.theta)
+                delta_y = self.vx * dt * math.sin(self.theta)
+            else:
+                # Движение по дуге
+                # Радиус поворота
+                radius = self.vx / self.vth
 
-            # Изменение позиции при движении по дуге
-            delta_x = radius * (math.sin(self.theta + delta_theta) - math.sin(self.theta))
-            delta_y = -radius * (math.cos(self.theta + delta_theta) - math.cos(self.theta))
+                # Изменение позиции при движении по дуге
+                delta_x = radius * (math.sin(self.theta + delta_theta) - math.sin(self.theta))
+                delta_y = -radius * (math.cos(self.theta + delta_theta) - math.cos(self.theta))
 
-        # ============================================================================
-        # ШАГ 3: ОБНОВЛЕНИЕ СОСТОЯНИЯ РОБОТА
-        # ============================================================================
-        # Обновляем позицию
-        self.x += delta_x
-        self.y += delta_y
-        self.theta += delta_theta
+            # ============================================================================
+            # ШАГ 3: ОБНОВЛЕНИЕ СОСТОЯНИЯ РОБОТА (только для cmd_vel)
+            # ============================================================================
+            # Обновляем позицию
+            self.x += delta_x
+            self.y += delta_y
+            self.theta += delta_theta
 
-        # Нормализуем угол в диапазон [-π, π]
-        # Аналогия: как нормализация угла 370° -> 10°
-        self.theta = math.atan2(math.sin(self.theta), math.cos(self.theta))
+            # Нормализуем угол в диапазон [-π, π]
+            # Аналогия: как нормализация угла 370° -> 10°
+            self.theta = math.atan2(math.sin(self.theta), math.cos(self.theta))
 
         # Сохраняем текущее время для следующей итерации
         self.last_time = self.current_time
@@ -428,8 +585,9 @@ class OdometryNode(Node):
         # Периодически логируем позицию (каждую секунду)
         if hasattr(self, '_last_log_time'):
             if self.current_time - self._last_log_time > 1.0:
+                source_label = '[ENC]' if self.odometry_source == 'encoder' else '[CMD]'
                 self.get_logger().info(
-                    f'Позиция: x={self.x:.3f}м, y={self.y:.3f}м, θ={math.degrees(self.theta):.1f}° | '
+                    f'{source_label} Позиция: x={self.x:.3f}м, y={self.y:.3f}м, θ={math.degrees(self.theta):.1f}° | '
                     f'Скорость: {self.vx:.2f}м/с, {math.degrees(self.vth):.1f}°/с'
                 )
                 self._last_log_time = self.current_time

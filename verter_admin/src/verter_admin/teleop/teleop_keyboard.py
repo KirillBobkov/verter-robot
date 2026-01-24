@@ -36,8 +36,9 @@ class TeleopKeyboard(Node):
         self.angular_speed = self.get_parameter('angular_speed').value
         self.speed_step = self.get_parameter('speed_step').value
 
-        # Publisher для cmd_vel
-        self.cmd_vel_pub = self.create_publisher(Twist, 'cmd_vel', 10)
+        # Publisher для cmd_vel (через twist_mux)
+        # Публикуем в /teleop_keyboard/cmd_vel, twist_mux перенаправит в /cmd_vel
+        self.cmd_vel_pub = self.create_publisher(Twist, '/teleop_keyboard/cmd_vel', 10)
 
         # Текущая команда движения
         self.twist = Twist()

@@ -120,6 +120,10 @@ setup(
         (os.path.join('share', package_name, 'config', 'robot_localization'), glob(os.path.join('src/verter_admin/config/robot_localization', '*.yaml'))),
         # Включаем конфигурацию Explore Lite
         (os.path.join('share', package_name, 'config', 'explore'), glob(os.path.join('src/verter_admin/config/explore', '*.yaml'))),
+        # Включаем конфигурацию Twist Mux
+        (os.path.join('share', package_name, 'config', 'twist_mux'), glob(os.path.join('src/verter_admin/config/twist_mux', '*.yaml'))),
+        # Включаем конфигурацию Laser Filters
+        (os.path.join('share', package_name, 'config', 'laser_filters'), glob(os.path.join('src/verter_admin/config/laser_filters', '*.yaml'))),
         # Arduino скетчи не включаем в сборку
         # Включаем dataset в пакет
         *get_dataset_files(),

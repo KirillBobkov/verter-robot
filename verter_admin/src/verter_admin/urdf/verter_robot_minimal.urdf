@@ -314,17 +314,20 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <!-- Position: top-center of robot, height ~55cm from ground -->
-    <origin xyz="0.0 0 0.450" rpy="0 0 0"/>
+    <!-- Position: front of robot, height ~55cm from ground -->
+    <!-- Lidar mounted ~25cm forward from center, sees front 180° (back 180° blocked by body) -->
+    <origin xyz="0.25 0 0.450" rpy="0 0 0"/>
   </joint>
 
-  <!-- Base Footprint -->
-  <link name="base_footprint"/>
+  <!--
+  NOTE: base_footprint removed to avoid TF conflict.
+  Odometry publishes odom → base_link directly.
 
-  <joint name="base_footprint_joint" type="fixed">
-    <parent link="base_footprint"/>
-    <child link="base_link"/>
-    <origin xyz="0 0 0.1" rpy="0 0 0"/>
-  </joint>
+  TF tree for SLAM:
+    map (slam_toolbox)
+    └── odom (slam_toolbox)
+        └── base_link (odometry_node)
+            └── lidar_link (robot_state_publisher)
+  -->
 
 </robot>

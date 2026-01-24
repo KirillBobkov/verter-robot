@@ -1,11 +1,12 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import String, Int64MultiArray
 from geometry_msgs.msg import Twist
 import serial
 import serial.tools.list_ports
 import time
 import subprocess
+import threading
 from typing import Optional, List
 
 
@@ -25,9 +26,15 @@ class ChassisNode(Node):
         self.arduino_serial: Optional[serial.Serial] = None
         self.current_port = None
 
+        # Переменные для потока чтения энкодеров
+        self.reading_thread: Optional[threading.Thread] = None
+        self.stop_thread = False
+
         self._setup_subscribers()
+        self._setup_publishers()
 
         if self._connect_to_arduino():
+            self._start_encoder_reading()
             self.get_logger().info('Chassis нода инициализирована и готова к работе')
         else:
             self.get_logger().warn('Chassis не подключен при инициализации')
@@ -45,6 +52,49 @@ class ChassisNode(Node):
             Twist, '/cmd_vel', self.cmd_vel_callback, 10
         )
         self.get_logger().info('Подписчик для /cmd_vel создан')
+
+    def _setup_publishers(self):
+        """Настройка публикаторов."""
+        # Publisher для данных энкодеров
+        self.encoder_publisher = self.create_publisher(
+            Int64MultiArray, '/wheel_encoders', 10
+        )
+        self.get_logger().info('Публикатор для /wheel_encoders создан')
+
+    def _start_encoder_reading(self):
+        """Запуск потока чтения данных с энкодеров."""
+        self.stop_thread = False
+        self.reading_thread = threading.Thread(
+            target=self._encoder_reading_loop, daemon=True
+        )
+        self.reading_thread.start()
+        self.get_logger().info('Поток чтения энкодеров запущен')
+
+    def _encoder_reading_loop(self):
+        """Цикл чтения данных энкодеров из Serial."""
+        while not self.stop_thread:
+            try:
+                if self._is_chassis_connected() and self.arduino_serial.in_waiting > 0:
+                    line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
+                    if line.startswith('ENC:'):
+                        self._publish_encoder_data(line)
+            except serial.SerialException as e:
+                self.get_logger().error(f'Ошибка чтения Serial: {e}')
+                time.sleep(1.0)
+            except Exception as e:
+                self.get_logger().debug(f'Исключение в потоке энкодеров: {e}')
+            time.sleep(0.01)
+
+    def _publish_encoder_data(self, line: str):
+        """Парсинг и публикация данных энкодеров."""
+        try:
+            parts = line[4:].split(':')  # Skip 'ENC:'
+            if len(parts) == 3:
+                msg = Int64MultiArray()
+                msg.data = [int(parts[0]), int(parts[1]), int(parts[2])]
+                self.encoder_publisher.publish(msg)
+        except ValueError as e:
+            self.get_logger().debug(f'Ошибка парсинга данных энкодеров: {e}')
 
     def _find_arduino_port(self) -> List[str]:
         """Автоматический поиск портов Arduino по devpath."""
@@ -142,30 +192,14 @@ class ChassisNode(Node):
             angular_vel: Угловая скорость (рад/с)
 
         Returns:
-            Строка команды для Arduino (CHASSIS:FRONT, CHASSIS:STOP и т.д.)
+            Строка команды для Arduino в формате CHASSIS:VEL:linear:angular
         """
-        # Определяем команду на основе скоростей
+        # Проверяем пороги для полной остановки
         if abs(linear_vel) < self.LINEAR_THRESHOLD and abs(angular_vel) < self.ANGULAR_THRESHOLD:
-            # Робот не двигается
             return "CHASSIS:STOP"
 
-        elif abs(angular_vel) > abs(linear_vel):
-            # Преобладает поворот
-            if angular_vel > 0:
-                return f"CHASSIS:LEFT:{abs(angular_vel):.2f}"   # Поворот налево
-            else:
-                return f"CHASSIS:RIGHT:{abs(angular_vel):.2f}"  # Поворот направо
-
-        elif linear_vel > 0:
-            # Движение вперед
-            return f"CHASSIS:FRONT:{linear_vel:.2f}"
-        elif linear_vel < 0:
-            # Движение назад
-            return f"CHASSIS:BACK:{abs(linear_vel):.2f}"
-
-        else:
-            # На всякий случай - стоп
-            return "CHASSIS:STOP"
+        # Velocity mode: отправляем линейную и угловую скорость напрямую
+        return f"CHASSIS:VEL:{linear_vel:.3f}:{angular_vel:.3f}"
 
     def _send_to_arduino(self, command: str):
         """Отправка команды на Arduino."""
@@ -201,6 +235,13 @@ class ChassisNode(Node):
     def destroy_node(self):
         """Корректное завершение работы узла."""
         self.get_logger().info('Завершение работы Chassis ноды')
+
+        # Останавливаем поток чтения энкодеров
+        self.stop_thread = True
+        if self.reading_thread and self.reading_thread.is_alive():
+            self.reading_thread.join(timeout=2.0)
+            self.get_logger().info('Поток чтения энкодеров остановлен')
+
         self._close_chassis_connection()
         super().destroy_node()
 
