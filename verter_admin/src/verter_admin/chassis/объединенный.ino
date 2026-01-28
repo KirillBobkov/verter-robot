@@ -29,11 +29,12 @@ const float ENCODER_RESOLUTION = 4096.0;  // Шагов на оборот энк
 const float METERS_PER_STEP = WHEEL_CIRCUMFERENCE / (ENCODER_RESOLUTION * GEAR_RATIO);
 
 // PID параметры (требуют настройки!)
-const float PID_KP = 150.0;    // Пропорциональный коэффициент
+const float PID_KP = 80.0;     // Пропорциональный коэффициент (было 150.0 - слишком резкий старт)
 const float PID_KI = 50.0;     // Интегральный коэффициент
 const float PID_KD = 5.0;      // Дифференциальный коэффициент
 const float PID_MAX_INTEGRAL = 100.0;  // Ограничение интегральной составляющей
 const unsigned long PID_INTERVAL = 50; // Интервал PID расчёта (мс)
+const int MAX_PWM_CHANGE = 15;         // Макс. изменение PWM за итерацию (плавный разгон)
 
 // Моторы
 CytronMD motor1(PWM_DIR, 4, 5);  // Правое колесо
@@ -504,9 +505,19 @@ void updatePID() {
   calculateWheelVelocity(&leftPID, leftWheel.totalSteps);
   calculateWheelVelocity(&rightPID, rightWheel.totalSteps);
 
-  // Вычисление PID и получение PWM
-  velocityLeftPWM = computePID(&leftPID);
-  velocityRightPWM = computePID(&rightPID);
+  // Вычисление PID и получение целевого PWM
+  int targetLeftPWM = computePID(&leftPID);
+  int targetRightPWM = computePID(&rightPID);
+
+  // Плавный разгон (ramp-up) - ограничиваем изменение PWM за итерацию
+  int leftChange = targetLeftPWM - velocityLeftPWM;
+  int rightChange = targetRightPWM - velocityRightPWM;
+
+  leftChange = constrain(leftChange, -MAX_PWM_CHANGE, MAX_PWM_CHANGE);
+  rightChange = constrain(rightChange, -MAX_PWM_CHANGE, MAX_PWM_CHANGE);
+
+  velocityLeftPWM += leftChange;
+  velocityRightPWM += rightChange;
 
   // Применяем PWM к моторам
   motor2.setSpeed(velocityLeftPWM);   // Левое колесо
