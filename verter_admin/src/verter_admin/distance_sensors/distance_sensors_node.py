@@ -99,36 +99,42 @@ class DistanceSensorsNode(Node):
         }
         self.get_logger().info('Range publishers созданы для 7 ультразвуковых датчиков')
 
+    # Симлинк для Arduino Sensors (настраивается через udev)
+    SYMLINK_PATH = '/dev/arduino_sensors'
+
     def _find_arduino_mega_port(self) -> List[str]:
-        """Автоматический поиск портов Arduino Mega по devpath."""
+        """Поиск порта Arduino Mega (датчики)."""
+        import os
+
+        # Сначала проверяем симлинк (рекомендуемый способ)
+        if os.path.exists(self.SYMLINK_PATH):
+            self.get_logger().info(f'Найден симлинк {self.SYMLINK_PATH}')
+            return [self.SYMLINK_PATH]
+
+        # Fallback: поиск по devpath (для обратной совместимости)
+        self.get_logger().info('Симлинк не найден, поиск устройства по devpath=1.2')
         available_ports = []
-        
-        # Ищем устройство с конкретным devpath для Arduino Mega
-        self.get_logger().info('Поиск устройства с devpath=1.2 для Arduino Mega')
         ports = serial.tools.list_ports.comports()
-        
+
         for port in ports:
             self.get_logger().info(f'Проверяю порт: {port.device}')
-            
-            # Проверяем devpath с помощью udevadm
+
             try:
                 result = subprocess.run(
-                    ['udevadm', 'info', '-a', '-n', port.device], 
-                    capture_output=True, 
+                    ['udevadm', 'info', '-a', '-n', port.device],
+                    capture_output=True,
                     text=True
                 )
-                
+
                 if "devpath==\"1.2\"" in result.stdout or "ATTRS{devpath}==\"1.2\"" in result.stdout:
                     self.get_logger().info(f'Найдено устройство с devpath=1.2 на порту {port.device}')
                     available_ports.append(port.device)
-                else:
-                    self.get_logger().info(f'Порт {port.device} не соответствует devpath=1.2')
             except Exception as e:
                 self.get_logger().error(f'Ошибка при проверке devpath для {port.device}: {e}')
-        
+
         if not available_ports:
-            self.get_logger().warn('Не найдено устройств с devpath=1.2')
-        
+            self.get_logger().warn(f'Настройте udev правила для {self.SYMLINK_PATH} (см. документацию)')
+
         return available_ports
 
     def _connect_to_arduino(self) -> bool:

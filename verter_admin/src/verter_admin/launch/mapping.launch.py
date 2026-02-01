@@ -75,8 +75,8 @@ def generate_launch_description():
     # Launch аргументы
     serial_port_arg = DeclareLaunchArgument(
         'lidar_port',
-        default_value='/dev/ttyUSB0',
-        description='Serial port for RPLiDAR'
+        default_value='/dev/rplidar',
+        description='Serial port for RPLiDAR (symlink recommended, see docs)'
     )
 
     rviz_arg = DeclareLaunchArgument(
