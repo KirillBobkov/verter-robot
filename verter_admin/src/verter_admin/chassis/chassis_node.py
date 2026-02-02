@@ -26,6 +26,9 @@ class ChassisNode(Node):
         self.arduino_serial: Optional[serial.Serial] = None
         self.current_port = None
 
+        # Lock для thread-safe доступа к serial
+        self.serial_lock = threading.Lock()
+
         # Переменные для потока чтения энкодеров
         self.reading_thread: Optional[threading.Thread] = None
         self.stop_thread = False
@@ -74,10 +77,11 @@ class ChassisNode(Node):
         """Цикл чтения данных энкодеров из Serial."""
         while not self.stop_thread:
             try:
-                if self._is_chassis_connected() and self.arduino_serial.in_waiting > 0:
-                    line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
-                    if line.startswith('ENC:'):
-                        self._publish_encoder_data(line)
+                with self.serial_lock:
+                    if self._is_chassis_connected() and self.arduino_serial.in_waiting > 0:
+                        line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
+                        if line.startswith('ENC:'):
+                            self._publish_encoder_data(line)
             except serial.SerialException as e:
                 self.get_logger().error(f'Ошибка чтения Serial: {e}')
                 time.sleep(1.0)
@@ -214,8 +218,9 @@ class ChassisNode(Node):
             return
 
         try:
-            self.arduino_serial.write(f"{command}\n".encode('utf-8'))
-            self.arduino_serial.flush()  # Принудительная отправка буфера
+            with self.serial_lock:
+                self.arduino_serial.write(f"{command}\n".encode('utf-8'))
+                self.arduino_serial.flush()  # Принудительная отправка буфера
             self.get_logger().info(f'Команда отправлена: "{command}"')
         except serial.SerialException as e:
             self.get_logger().error(f'Ошибка отправки: {e}')
