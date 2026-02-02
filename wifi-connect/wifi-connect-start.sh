@@ -5,15 +5,15 @@
 set -e
 
 # Configuration
-: "${PORTAL_INTERFACE:=wlan0}"
+: "${PORTAL_INTERFACE:=wlP1p1s0}"
 : "${PORTAL_SSID:=Verter-Setup}"
 : "${PORTAL_PASSPHRASE:=verter123}"
 : "${PORTAL_GATEWAY:=192.168.42.1}"
 : "${PORTAL_DHCP_RANGE:=192.168.42.2,192.168.42.254}"
-: "${UI_DIRECTORY:=/home/verter/verter-robot/wifi-connect/ui}"
+: "${UI_DIRECTORY:=/home/jetson/verter-robot/wifi-connect/ui}"
 : "${ACTIVITY_TIMEOUT:=0}"
 
-WIFI_CONNECT="/home/verter/verter-robot/wifi-connect/wifi-connect"
+WIFI_CONNECT="/home/jetson/verter-robot/wifi-connect/wifi-connect"
 
 log() {
     printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1"

@@ -8,7 +8,7 @@ Requires=NetworkManager.service
 Type=simple
 
 # WiFi interface
-Environment=PORTAL_INTERFACE=wlan0
+Environment=PORTAL_INTERFACE=wlP1p1s0
 
 # Access Point configuration
 Environment=PORTAL_SSID=Verter-Setup
@@ -17,13 +17,13 @@ Environment=PORTAL_GATEWAY=192.168.42.1
 Environment=PORTAL_DHCP_RANGE=192.168.42.2,192.168.42.254
 
 # UI location
-Environment=UI_DIRECTORY=/home/verter/verter-robot/wifi-connect/ui
+Environment=UI_DIRECTORY=/home/jetson/verter-robot/wifi-connect/ui
 
 # Activity timeout: 0 = no timeout (wait indefinitely for user)
 Environment=ACTIVITY_TIMEOUT=0
 
 # Start script (contains sleep + iwgetid check as per balena docs)
-ExecStart=/home/verter/verter-robot/wifi-connect/wifi-connect-start.sh
+ExecStart=/home/jetson/verter-robot/wifi-connect/wifi-connect-start.sh
 
 # Run once on boot, no restart
 # Script checks if WiFi is connected and skips if already online
