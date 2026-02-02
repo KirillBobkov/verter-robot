@@ -212,9 +212,10 @@ class ChassisNode(Node):
         if not self._is_chassis_connected():
             self.get_logger().warn('Chassis не подключен')
             return
-            
+
         try:
             self.arduino_serial.write(f"{command}\n".encode('utf-8'))
+            self.arduino_serial.flush()  # Принудительная отправка буфера
             self.get_logger().info(f'Команда отправлена: "{command}"')
         except serial.SerialException as e:
             self.get_logger().error(f'Ошибка отправки: {e}')
