@@ -34,7 +34,7 @@ class TeleopKeyboard(Node):
 
         # Параметры скорости
         self.declare_parameter('max_linear_speed', 0.2)  # м/с
-        self.declare_parameter('max_angular_speed', 0.5)  # рад/с
+        self.declare_parameter('max_angular_speed', 0.2)  # рад/с
         self.declare_parameter('linear_acceleration', 0.1)  # м/с^2
         self.declare_parameter('angular_acceleration', 0.3)  # рад/с^2
         self.declare_parameter('linear_deceleration', 0.15)  # м/с^2 (торможение быстрее)
