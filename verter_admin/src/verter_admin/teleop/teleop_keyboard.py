@@ -35,10 +35,10 @@ class TeleopKeyboard(Node):
         # Параметры скорости
         self.declare_parameter('max_linear_speed', 0.2)  # м/с
         self.declare_parameter('max_angular_speed', 0.2)  # рад/с
-        self.declare_parameter('linear_acceleration', 0.1)  # м/с^2
-        self.declare_parameter('angular_acceleration', 0.3)  # рад/с^2
-        self.declare_parameter('linear_deceleration', 0.15)  # м/с^2 (торможение быстрее)
-        self.declare_parameter('angular_deceleration', 0.5)  # рад/с^2
+        self.declare_parameter('linear_acceleration', 0.3)  # м/с^2
+        self.declare_parameter('angular_acceleration', 0.5)  # рад/с^2
+        self.declare_parameter('linear_deceleration', 0.4)  # м/с^2 (торможение быстрее)
+        self.declare_parameter('angular_deceleration', 0.8)  # рад/с^2
         self.declare_parameter('update_rate', 20.0)  # Гц
         self.declare_parameter('speed_step', 0.05)  # шаг изменения макс скорости
 
@@ -118,6 +118,8 @@ class TeleopKeyboard(Node):
         """Главный цикл телеоперирования"""
         try:
             last_key_time = self.get_clock().now()
+            # Время после отпускания клавиши перед началом торможения (сек)
+            brake_delay = 0.3
 
             while rclpy.ok():
                 key = self.get_key_non_blocking(timeout=self.dt)
@@ -137,13 +139,9 @@ class TeleopKeyboard(Node):
 
                     elif key == 'a' or key == 'A' or key == '\x1b[D':
                         self.target_angular = self.max_angular_speed
-                        # При повороте можно двигаться вперёд
-                        # self.target_linear = 0.0
 
                     elif key == 'd' or key == 'D' or key == '\x1b[C':
                         self.target_angular = -self.max_angular_speed
-                        # При повороте можно двигаться вперёд
-                        # self.target_linear = 0.0
 
                     elif key == ' ':  # Экстренный стоп
                         self.target_linear = 0.0
@@ -167,9 +165,11 @@ class TeleopKeyboard(Node):
                         break
 
                 else:
-                    # Клавиша не нажата - тормозим
-                    self.target_linear = 0.0
-                    self.target_angular = 0.0
+                    # Клавиша не нажата - проверяем задержку перед торможением
+                    time_since_key = (current_time - last_key_time).nanoseconds / 1e9
+                    if time_since_key > brake_delay:
+                        self.target_linear = 0.0
+                        self.target_angular = 0.0
 
                 # Плавное изменение скорости
                 self.current_linear = self.smooth_velocity(
