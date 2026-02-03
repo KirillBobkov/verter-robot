@@ -29,7 +29,15 @@ class ChassisNode(Node):
     ANGULAR_THRESHOLD = 0.01   # ~0.57 градуса/с
 
     # Частота обработки serial (Гц)
-    SERIAL_LOOP_RATE = 100.0  # 100 Гц = каждые 10мс
+    SERIAL_LOOP_RATE = 50.0  # 50 Гц = каждые 20мс
+
+    # Минимальное изменение скорости для отправки новой команды
+    # (дедупликация для экономии bandwidth)
+    LINEAR_CHANGE_THRESHOLD = 0.02   # 2 см/с
+    ANGULAR_CHANGE_THRESHOLD = 0.05  # ~3 градуса/с
+
+    # Минимальный интервал между командами (мс)
+    MIN_CMD_INTERVAL = 0.1  # 100мс = макс 10 команд/сек
 
     # Симлинк для Arduino Chassis (настраивается через udev)
     SYMLINK_PATH = '/dev/arduino_chassis'
@@ -46,9 +54,11 @@ class ChassisNode(Node):
         # Буфер для накопления данных serial
         self.serial_buffer = ""
 
-        # Последняя отправленная команда (для дедупликации)
+        # Для дедупликации и throttling
         self.last_sent_command = ""
-        self.last_cmd_vel_time = 0.0
+        self.last_cmd_time = 0.0
+        self.last_linear_vel = 0.0
+        self.last_angular_vel = 0.0
 
         self._setup_subscribers()
         self._setup_publishers()
@@ -209,16 +219,31 @@ class ChassisNode(Node):
         """Обработчик команд скорости из топика /cmd_vel."""
         linear_vel = msg.linear.x
         angular_vel = msg.angular.z
+        current_time = time.time()
 
         command = self._twist_to_command(linear_vel, angular_vel)
 
-        # Дедупликация: не добавляем одинаковые команды подряд
-        # (кроме STOP для безопасности)
-        if command == self.last_sent_command and command != "CHASSIS:STOP":
-            return
+        # STOP команды отправляем всегда (безопасность)
+        is_stop = (command == "CHASSIS:STOP")
+
+        if not is_stop:
+            # Throttling: ограничиваем частоту команд
+            if current_time - self.last_cmd_time < self.MIN_CMD_INTERVAL:
+                return
+
+            # Дедупликация: игнорируем мелкие изменения скорости
+            linear_change = abs(linear_vel - self.last_linear_vel)
+            angular_change = abs(angular_vel - self.last_angular_vel)
+
+            if (linear_change < self.LINEAR_CHANGE_THRESHOLD and
+                angular_change < self.ANGULAR_CHANGE_THRESHOLD):
+                return
 
         self.command_queue.append(command)
         self.last_sent_command = command
+        self.last_cmd_time = current_time
+        self.last_linear_vel = linear_vel
+        self.last_angular_vel = angular_vel
 
     def _twist_to_command(self, linear_vel: float, angular_vel: float) -> str:
         """Конвертирует Twist в команду для Arduino."""
