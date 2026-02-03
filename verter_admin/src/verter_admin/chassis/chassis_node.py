@@ -12,7 +12,7 @@ from typing import Optional, List
 
 class ChassisNode(Node):
     # Константы конфигурации
-    BAUD_RATE = 115200  # Увеличено с 9600 для быстрой передачи
+    BAUD_RATE = 9600
     CONNECTION_TIMEOUT = 2.0
     SERIAL_TIMEOUT = 0.1
 
