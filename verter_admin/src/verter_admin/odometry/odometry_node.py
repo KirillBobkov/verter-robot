@@ -339,10 +339,14 @@ class OdometryNode(Node):
             self.last_right_steps = right_steps
             self.last_encoder_callback_time = current_callback_time
             self.encoder_initialized = True
-            if self.odometry_source != 'encoder':
-                self.odometry_source = 'encoder'
-                self.get_logger().info('Переключение на энкодерную одометрию (closed-loop)')
+            self.odometry_source = 'encoder'
+            self.get_logger().info('Переключение на энкодерную одометрию (closed-loop)')
             return
+
+        # Переключение обратно на encoder если были на cmd_vel (после таймаута)
+        if self.odometry_source != 'encoder':
+            self.odometry_source = 'encoder'
+            self.get_logger().info('Восстановление энкодерной одометрии (closed-loop)')
 
         # Вычисляем дельты шагов
         delta_left = left_steps - self.last_left_steps

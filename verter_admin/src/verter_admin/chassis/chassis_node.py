@@ -77,17 +77,27 @@ class ChassisNode(Node):
         """Цикл чтения данных энкодеров из Serial."""
         while not self.stop_thread:
             try:
-                with self.serial_lock:
-                    if self._is_chassis_connected() and self.arduino_serial.in_waiting > 0:
-                        line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
-                        if line.startswith('ENC:'):
-                            self._publish_encoder_data(line)
+                # Проверяем наличие данных без lock (атомарная операция)
+                if not self._is_chassis_connected():
+                    time.sleep(0.1)
+                    continue
+
+                if self.arduino_serial.in_waiting > 0:
+                    line = None
+                    # Захватываем lock только для чтения
+                    with self.serial_lock:
+                        if self.arduino_serial.in_waiting > 0:
+                            line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
+                    # Публикуем вне lock
+                    if line and line.startswith('ENC:'):
+                        self._publish_encoder_data(line)
+                else:
+                    time.sleep(0.005)  # Короткая пауза если нет данных
             except serial.SerialException as e:
                 self.get_logger().error(f'Ошибка чтения Serial: {e}')
                 time.sleep(1.0)
             except Exception as e:
                 self.get_logger().debug(f'Исключение в потоке энкодеров: {e}')
-            time.sleep(0.01)
 
     def _publish_encoder_data(self, line: str):
         """Парсинг и публикация данных энкодеров."""
@@ -220,8 +230,7 @@ class ChassisNode(Node):
         try:
             with self.serial_lock:
                 self.arduino_serial.write(f"{command}\n".encode('utf-8'))
-                self.arduino_serial.flush()  # Принудительная отправка буфера
-            self.get_logger().info(f'Команда отправлена: "{command}"')
+            self.get_logger().debug(f'Команда отправлена: "{command}"')
         except serial.SerialException as e:
             self.get_logger().error(f'Ошибка отправки: {e}')
             # Попытка переподключения
