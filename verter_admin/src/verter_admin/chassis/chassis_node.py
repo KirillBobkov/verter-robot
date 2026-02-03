@@ -12,13 +12,16 @@ from typing import Optional, List
 
 class ChassisNode(Node):
     # Константы конфигурации
-    BAUD_RATE = 9600
+    BAUD_RATE = 115200  # Увеличено с 9600 для быстрой передачи
     CONNECTION_TIMEOUT = 2.0
     SERIAL_TIMEOUT = 0.1
 
     # Пороги для определения движения
     LINEAR_THRESHOLD = 0.01    # 1 см/с
     ANGULAR_THRESHOLD = 0.01   # ~0.57 градуса/с
+
+    # Throttling для cmd_vel (ограничение частоты отправки)
+    CMD_VEL_MIN_INTERVAL = 0.05  # 50мс = макс 20 Гц
 
     def __init__(self):
         super().__init__('chassis_node')
@@ -32,6 +35,10 @@ class ChassisNode(Node):
         # Переменные для потока чтения энкодеров
         self.reading_thread: Optional[threading.Thread] = None
         self.stop_thread = False
+
+        # Throttling для cmd_vel
+        self.last_cmd_vel_time = 0.0
+        self.last_cmd_vel_command = ""
 
         self._setup_subscribers()
         self._setup_publishers()
@@ -190,6 +197,7 @@ class ChassisNode(Node):
         Обработчик команд скорости из топика /cmd_vel (от Nav2).
 
         Конвертирует команды Twist в формат verter_commands и отправляет на Arduino.
+        Использует throttling чтобы не блокировать чтение энкодеров.
         """
         linear_vel = msg.linear.x
         angular_vel = msg.angular.z
@@ -197,8 +205,19 @@ class ChassisNode(Node):
         # Конвертируем в команду
         command = self._twist_to_command(linear_vel, angular_vel)
 
+        # Throttling: пропускаем если команда та же и интервал не прошёл
+        current_time = time.time()
+        time_since_last = current_time - self.last_cmd_vel_time
+
+        if time_since_last < self.CMD_VEL_MIN_INTERVAL:
+            # Но STOP команды отправляем всегда (безопасность)
+            if command == self.last_cmd_vel_command or command != "CHASSIS:STOP":
+                return
+
         # Отправляем на Arduino
         self._send_to_arduino(command)
+        self.last_cmd_vel_time = current_time
+        self.last_cmd_vel_command = command
         self.get_logger().debug(
             f'Команда Nav2: vx={linear_vel:.2f}, vth={angular_vel:.2f} → {command}'
         )
