@@ -20,7 +20,7 @@ class ChassisNode(Node):
     """
 
     # Константы конфигурации
-    BAUD_RATE = 9600
+    BAUD_RATE = 115200  # Синхронизировано с Arduino
     CONNECTION_TIMEOUT = 2.0
     SERIAL_TIMEOUT = 0.001  # Минимальный таймаут для неблокирующего чтения
 
