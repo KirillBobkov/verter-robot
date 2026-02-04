@@ -6,7 +6,7 @@ import serial
 import serial.tools.list_ports
 import time
 import subprocess
-from collections import deque
+import threading
 from typing import Optional, List
 
 
@@ -14,25 +14,23 @@ class ChassisNode(Node):
     """
     Chassis Node - управление шасси робота через Arduino.
 
-    Архитектура: один поток для всего serial I/O (без lock contention).
-    Команды складываются в очередь и обрабатываются в едином цикле
-    вместе с чтением данных энкодеров.
+    Архитектура:
+    - Основной поток ROS2: обрабатывает callbacks, отправляет команды
+    - Daemon thread: читает данные энкодеров
     """
 
     # Константы конфигурации
     BAUD_RATE = 115200  # Синхронизировано с Arduino
     CONNECTION_TIMEOUT = 2.0
-    SERIAL_TIMEOUT = 0.001  # Минимальный таймаут для неблокирующего чтения
+    SERIAL_TIMEOUT = 0.1  # Достаточный таймаут для readline
 
     # Пороги для определения движения
     LINEAR_THRESHOLD = 0.01    # 1 см/с
     ANGULAR_THRESHOLD = 0.01   # ~0.57 градуса/с
 
-    # Частота обработки serial (Гц)
-    SERIAL_LOOP_RATE = 50.0  # 50 Гц = каждые 20мс
-
-    # Минимальный интервал между командами
-    MIN_CMD_INTERVAL = 0.05  # 50мс = макс 20 команд/сек
+    # Throttling: минимальный интервал между командами (секунды)
+    # Arduino PID работает на 50мс, teleop на 50мс - отправляем не чаще 30мс
+    MIN_CMD_INTERVAL = 0.03
 
     # Симлинк для Arduino Chassis (настраивается через udev)
     SYMLINK_PATH = '/dev/arduino_chassis'
@@ -43,92 +41,71 @@ class ChassisNode(Node):
         self.arduino_serial: Optional[serial.Serial] = None
         self.current_port = None
 
-        # Очередь команд для отправки (вместо прямой отправки)
-        self.command_queue: deque = deque(maxlen=10)
+        # Lock для serial операций (чтение в потоке, запись из callbacks)
+        self.serial_lock = threading.Lock()
 
-        # Буфер для накопления данных serial
-        self.serial_buffer = ""
+        # Поток чтения энкодеров
+        self.reading_thread: Optional[threading.Thread] = None
+        self.stop_thread = False
 
-        # Для throttling команд
+        # Throttling: время последней отправленной команды
         self.last_cmd_time = 0.0
+        self.last_command = ""
 
         self._setup_subscribers()
         self._setup_publishers()
 
         if self._connect_to_arduino():
-            self._start_serial_loop()
-            self.get_logger().info('Chassis нода инициализирована и готова к работе')
+            self._start_encoder_reading()
+            self.get_logger().info('Chassis node ready (115200 baud)')
         else:
-            self.get_logger().warn('Chassis не подключен при инициализации')
+            self.get_logger().warn('Chassis not connected at init')
 
     def _setup_subscribers(self):
         """Настройка подписчиков."""
         self.command_subscriber = self.create_subscription(
             String, 'verter_commands', self.command_callback, 10
         )
-        self.get_logger().info('Подписчик для verter_commands создан')
 
         self.cmd_vel_subscriber = self.create_subscription(
             Twist, '/cmd_vel', self.cmd_vel_callback, 10
         )
-        self.get_logger().info('Подписчик для /cmd_vel создан')
 
     def _setup_publishers(self):
         """Настройка публикаторов."""
         self.encoder_publisher = self.create_publisher(
             Int64MultiArray, '/wheel_encoders', 10
         )
-        self.get_logger().info('Публикатор для /wheel_encoders создан')
 
-    def _start_serial_loop(self):
-        """Запуск единого цикла обработки serial (таймер ROS2)."""
-        timer_period = 1.0 / self.SERIAL_LOOP_RATE
-        self.serial_timer = self.create_timer(timer_period, self._serial_loop_callback)
-        self.get_logger().info(f'Serial loop запущен с частотой {self.SERIAL_LOOP_RATE} Гц')
+    def _start_encoder_reading(self):
+        """Запуск потока чтения данных с энкодеров."""
+        self.stop_thread = False
+        self.reading_thread = threading.Thread(
+            target=self._encoder_reading_loop, daemon=True
+        )
+        self.reading_thread.start()
 
-    def _serial_loop_callback(self):
-        """
-        Единый цикл обработки serial - и чтение, и запись.
-        Вызывается таймером ROS2, без отдельного потока.
-        """
-        if not self._is_chassis_connected():
-            return
+    def _encoder_reading_loop(self):
+        """Цикл чтения данных энкодеров из Serial (отдельный поток)."""
+        while not self.stop_thread:
+            try:
+                if not self._is_chassis_connected():
+                    time.sleep(0.1)
+                    continue
 
-        # 1. Отправляем команду из очереди (если есть)
-        if self.command_queue:
-            command = self.command_queue.popleft()
-            self._write_to_serial(command)
+                with self.serial_lock:
+                    if self.arduino_serial.in_waiting > 0:
+                        line = self.arduino_serial.readline().decode('utf-8', errors='ignore').strip()
+                        if line.startswith('ENC:'):
+                            self._publish_encoder_data(line)
 
-        # 2. Читаем данные с serial (если есть)
-        self._read_from_serial()
+            except serial.SerialException as e:
+                self.get_logger().error(f'Serial read error: {e}', throttle_duration_sec=5.0)
+                time.sleep(1.0)
+            except Exception as e:
+                self.get_logger().debug(f'Encoder thread exception: {e}')
 
-    def _write_to_serial(self, command: str):
-        """Запись команды в serial (без lock, вызывается только из serial_loop)."""
-        try:
-            self.arduino_serial.write(f"{command}\n".encode('utf-8'))
-            self.get_logger().debug(f'Отправлено: "{command}"')
-        except serial.SerialException as e:
-            self.get_logger().error(f'Ошибка записи serial: {e}')
-            self._reconnect_chassis()
-
-    def _read_from_serial(self):
-        """Чтение данных из serial (без lock, вызывается только из serial_loop)."""
-        try:
-            # Читаем все доступные данные
-            if self.arduino_serial.in_waiting > 0:
-                data = self.arduino_serial.read(self.arduino_serial.in_waiting)
-                self.serial_buffer += data.decode('utf-8', errors='ignore')
-
-                # Обрабатываем полные строки
-                while '\n' in self.serial_buffer:
-                    line, self.serial_buffer = self.serial_buffer.split('\n', 1)
-                    line = line.strip()
-                    if line.startswith('ENC:'):
-                        self._publish_encoder_data(line)
-
-        except serial.SerialException as e:
-            self.get_logger().error(f'Ошибка чтения serial: {e}')
-            self._reconnect_chassis()
+            time.sleep(0.005)  # 200 Hz polling
 
     def _publish_encoder_data(self, line: str):
         """Парсинг и публикация данных энкодеров."""
@@ -138,36 +115,34 @@ class ChassisNode(Node):
                 msg = Int64MultiArray()
                 msg.data = [int(parts[0]), int(parts[1]), int(parts[2])]
                 self.encoder_publisher.publish(msg)
-        except ValueError as e:
-            self.get_logger().debug(f'Ошибка парсинга энкодеров: {e}')
+        except ValueError:
+            pass
 
     def _find_arduino_port(self) -> List[str]:
         """Поиск порта Arduino Chassis."""
         import os
 
+        # Проверяем симлинк
         if os.path.exists(self.SYMLINK_PATH):
-            self.get_logger().info(f'Найден симлинк {self.SYMLINK_PATH}')
+            self.get_logger().info(f'Found symlink {self.SYMLINK_PATH}')
             return [self.SYMLINK_PATH]
 
-        self.get_logger().info('Симлинк не найден, поиск устройства по devpath=1.1')
+        # Ищем по devpath
+        self.get_logger().info('Symlink not found, searching by devpath=1.1')
         available_ports = []
         ports = serial.tools.list_ports.comports()
 
         for port in ports:
-            self.get_logger().info(f'Проверяю порт: {port.device}')
             try:
                 result = subprocess.run(
                     ['udevadm', 'info', '-a', '-n', port.device],
                     capture_output=True, text=True
                 )
-                if "devpath==\"1.1\"" in result.stdout or "ATTRS{devpath}==\"1.1\"" in result.stdout:
-                    self.get_logger().info(f'Найдено устройство с devpath=1.1 на порту {port.device}')
+                if 'devpath=="1.1"' in result.stdout or 'ATTRS{devpath}=="1.1"' in result.stdout:
+                    self.get_logger().info(f'Found device at {port.device}')
                     available_ports.append(port.device)
             except Exception as e:
-                self.get_logger().error(f'Ошибка при проверке devpath для {port.device}: {e}')
-
-        if not available_ports:
-            self.get_logger().warn(f'Настройте udev правила для {self.SYMLINK_PATH}')
+                self.get_logger().error(f'Error checking {port.device}: {e}')
 
         return available_ports
 
@@ -176,11 +151,11 @@ class ChassisNode(Node):
         available_ports = self._find_arduino_port()
 
         if not available_ports:
-            self.get_logger().error('Не найдено устройств с devpath=1.1 для Chassis')
+            self.get_logger().error('No chassis device found')
             return False
 
         port = available_ports[0]
-        self.get_logger().info(f'Подключаюсь к порту {port} для Chassis')
+        self.get_logger().info(f'Connecting to {port}')
 
         try:
             self.arduino_serial = serial.Serial(
@@ -191,10 +166,10 @@ class ChassisNode(Node):
             self.current_port = port
 
             time.sleep(self.CONNECTION_TIMEOUT)
-            self.get_logger().info(f'Успешно подключено к Chassis на порту {port}')
+            self.get_logger().info(f'Connected to {port}')
             return True
         except serial.SerialException as e:
-            self.get_logger().error(f'Не удалось подключиться к Chassis: {e}')
+            self.get_logger().error(f'Failed to connect: {e}')
             return False
 
     def _is_chassis_connected(self) -> bool:
@@ -204,25 +179,32 @@ class ChassisNode(Node):
     def command_callback(self, msg):
         """Обработчик команд из топика /verter_commands."""
         command = msg.data
-        self.get_logger().info(f'Голосовая команда: "{command}"')
-        self.command_queue.append(command)
+        self.get_logger().info(f'Voice command: "{command}"')
+        self._send_to_arduino(command)
 
     def cmd_vel_callback(self, msg: Twist):
         """Обработчик команд скорости из топика /cmd_vel."""
         linear_vel = msg.linear.x
         angular_vel = msg.angular.z
-        current_time = time.time()
 
         command = self._twist_to_command(linear_vel, angular_vel)
+        current_time = time.time()
 
-        # Throttling: ограничиваем частоту команд (50мс = 20 Гц)
-        # Но STOP команды отправляем всегда (безопасность)
-        if command != "CHASSIS:STOP":
+        # STOP команды отправляем всегда (безопасность)
+        is_stop = (command == "CHASSIS:STOP")
+
+        if not is_stop:
+            # Throttling: ограничиваем частоту
             if current_time - self.last_cmd_time < self.MIN_CMD_INTERVAL:
                 return
 
-        self.command_queue.append(command)
+            # Дедупликация: не отправляем идентичные команды
+            if command == self.last_command:
+                return
+
+        self._send_to_arduino(command)
         self.last_cmd_time = current_time
+        self.last_command = command
 
     def _twist_to_command(self, linear_vel: float, angular_vel: float) -> str:
         """Конвертирует Twist в команду для Arduino."""
@@ -230,15 +212,29 @@ class ChassisNode(Node):
             return "CHASSIS:STOP"
         return f"CHASSIS:VEL:{linear_vel:.3f}:{angular_vel:.3f}"
 
+    def _send_to_arduino(self, command: str):
+        """Отправка команды на Arduino (синхронная)."""
+        if not self._is_chassis_connected():
+            self.get_logger().warn('Chassis not connected', throttle_duration_sec=5.0)
+            return
+
+        try:
+            with self.serial_lock:
+                self.arduino_serial.write(f"{command}\n".encode('utf-8'))
+                self.arduino_serial.flush()  # Гарантируем отправку
+        except serial.SerialException as e:
+            self.get_logger().error(f'Send error: {e}')
+            self._reconnect_chassis()
+
     def _reconnect_chassis(self):
         """Переподключение к Chassis."""
-        self.get_logger().info('Попытка переподключения к Chassis...')
+        self.get_logger().info('Reconnecting to chassis...')
         self._close_chassis_connection()
 
         if self._connect_to_arduino():
-            self.get_logger().info('Успешно переподключен к Chassis')
+            self.get_logger().info('Reconnected successfully')
         else:
-            self.get_logger().warn('Не удалось переподключиться к Chassis')
+            self.get_logger().warn('Reconnection failed')
 
     def _close_chassis_connection(self):
         """Закрытие соединения с Chassis."""
@@ -247,7 +243,16 @@ class ChassisNode(Node):
 
     def destroy_node(self):
         """Корректное завершение работы узла."""
-        self.get_logger().info('Завершение работы Chassis ноды')
+        self.get_logger().info('Shutting down chassis node')
+
+        # Останавливаем робота
+        self._send_to_arduino("CHASSIS:STOP")
+
+        # Останавливаем поток чтения энкодеров
+        self.stop_thread = True
+        if self.reading_thread and self.reading_thread.is_alive():
+            self.reading_thread.join(timeout=2.0)
+
         self._close_chassis_connection()
         super().destroy_node()
 
@@ -259,7 +264,7 @@ def main(args=None):
     try:
         rclpy.spin(chassis_node)
     except KeyboardInterrupt:
-        chassis_node.get_logger().info('Прерывание пользователем (Ctrl+C)')
+        chassis_node.get_logger().info('Interrupted (Ctrl+C)')
     finally:
         chassis_node.destroy_node()
         rclpy.shutdown()
