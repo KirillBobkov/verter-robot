@@ -320,7 +320,7 @@ class OdometryNode(Node):
                 msg.data[1] - шаги правого колеса (totalSteps)
                 msg.data[2] - временная метка Arduino (millis)
         """
-        if len(msg.data) != 3:
+        if len(msg.data) < 3:
             return
 
         left_steps = msg.data[0]
