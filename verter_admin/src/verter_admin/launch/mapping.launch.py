@@ -72,7 +72,7 @@ def generate_launch_description():
 
     esp32_port_arg = DeclareLaunchArgument(
         'esp32_port',
-        default_value='/dev/ttyUSB1',
+        default_value='/dev/esp32_chassis',
         description='Serial port for ESP32 (micro-ROS)'
     )
 
