@@ -463,7 +463,7 @@ class RecognitionNode(Node):
     def _send_farewell_message(self) -> None:
         """Отправка прощального сообщения"""
         msg = String()
-        msg.data = "рад был помочь"
+        msg.data = "  рад был помочь"
         self.text_to_speech_pub.publish(msg)
 
     # === УПРАВЛЕНИЕ ТАЙМЕРАМИ ===

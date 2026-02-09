@@ -58,7 +58,10 @@ def generate_launch_description():
             package='verter_admin',
             executable='text_to_speech_node',
             name='text_to_speech_node',
-            output='screen'
+            output='screen',
+            parameters=[{
+                'audio_device': 'pulse'  # Использует default sink PulseAudio
+            }]
         ),
         
         # Узел синтеза речи (Silero TTS)
@@ -74,7 +77,10 @@ def generate_launch_description():
             package='verter_admin',
             executable='sound_player_node',
             name='sound_player_node',
-            output='screen'
+            output='screen',
+            parameters=[{
+                'audio_device': 'pulse'  # Использует default sink PulseAudio
+            }]
         ),
         
         # Узел Chassis

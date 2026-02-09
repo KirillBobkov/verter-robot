@@ -60,6 +60,17 @@ class SoundPlayerNode(Node):
             self.env["PULSE_SERVER"] = "unix:/mnt/wslg/PulseServer"
         self.env.setdefault("LC_ALL", "C.UTF-8")
         self.env.setdefault("LANG", "C.UTF-8")
+        
+        # Уменьшаем задержку PulseAudio для более быстрого начала воспроизведения
+        self.env["PULSE_LATENCY_MSEC"] = "30"
+        
+        # Убедимся, что XDG_RUNTIME_DIR установлен для PulseAudio
+        if "XDG_RUNTIME_DIR" not in self.env:
+            self.env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+        
+        self.get_logger().info(f"Audio device: {self.audio_device}")
+        self.get_logger().info(f"XDG_RUNTIME_DIR: {self.env.get('XDG_RUNTIME_DIR')}")
+        self.get_logger().info(f"PULSE_LATENCY_MSEC: {self.env.get('PULSE_LATENCY_MSEC')}")
 
     def sound_command_callback(self, msg):
         """Callback для обработки команд воспроизведения звука"""
@@ -96,8 +107,14 @@ class SoundPlayerNode(Node):
             
             if filename.endswith('.wav'):
                 # Прямое воспроизведение wav файла - БЫСТРО!
+                # Явно задаем формат для совместимости с PulseAudio
+                # Уменьшен буфер для более быстрого начала воспроизведения
+                cmd = ['aplay', '-D', self.audio_device, '-q',
+                       '-f', 'S16_LE', '-r', '44100', '-c', '2',
+                       '--buffer-size=1024', '--period-size=256', sound_path]
+                self.get_logger().info(f"Запуск aplay: {' '.join(cmd)}")
                 self.current_aplay = subprocess.Popen(
-                    ['aplay', '-D', self.audio_device, '-q', sound_path],
+                    cmd,
                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     env=self.env
                 )
@@ -115,9 +132,12 @@ class SoundPlayerNode(Node):
                 )
 
                 # aplay: wav (stdin) -> динамики
+                # Уменьшен буфер для более быстрого начала воспроизведения
+                cmd = ['aplay', '-D', self.audio_device, '-q', '-f', 'S16_LE', '-r', '22050', '-c', '1', '--buffer-size=2048', '--period-size=512']
+                self.get_logger().info(f"Запуск aplay: {' '.join(cmd)}")
                 self.current_aplay = subprocess.Popen(
-                    ['aplay', '-D', self.audio_device, '-q', '-f', 'S16_LE', '-r', '22050', '-c', '1', '--buffer-size=8192'],
-                    stdin=self.current_ffmpeg.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    cmd,
+                    stdin=self.current_ffmpeg.stdout, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                     env=self.env
                 )
 
@@ -177,9 +197,17 @@ class SoundPlayerNode(Node):
         try:
             if self.current_aplay:
                 self.current_aplay.wait()
+                
+                # Читаем stderr независимо от кода возврата для отладки
+                stderr = self.current_aplay.stderr.read().decode() if self.current_aplay.stderr else ''
+                
                 if self.current_aplay.returncode != 0:
-                    stderr = self.current_aplay.stderr.read().decode() if self.current_aplay.stderr else ''
                     self.get_logger().error(f"aplay завершился с кодом {self.current_aplay.returncode}: {stderr}")
+                elif stderr:
+                    # Логируем предупреждения даже при успешном завершении
+                    self.get_logger().warning(f"aplay stderr: {stderr}")
+                else:
+                    self.get_logger().info("aplay завершился успешно")
                 
             # Очистка процессов после завершения
             if self.current_aplay and self.current_aplay.poll() is not None:

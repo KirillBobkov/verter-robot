@@ -74,6 +74,13 @@ class TextToSpeechNode(Node):
             self.env["PULSE_SERVER"] = "unix:/mnt/wslg/PulseServer"
         self.env.setdefault("LC_ALL", "C.UTF-8")
         self.env.setdefault("LANG", "C.UTF-8")
+        
+        # Убедимся, что XDG_RUNTIME_DIR установлен для PulseAudio
+        if "XDG_RUNTIME_DIR" not in self.env:
+            self.env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
+        
+        self.get_logger().info(f"Audio device: {self.audio_device}")
+        self.get_logger().info(f"XDG_RUNTIME_DIR: {self.env.get('XDG_RUNTIME_DIR')}")
     
     def text_callback(self, msg):
         text = msg.data.strip()
@@ -113,51 +120,42 @@ class TextToSpeechNode(Node):
             # СНАЧАЛА ОТКЛЮЧАЕМ МИКРОФОН
             self._deactivate_speech_recognition()
             
-            # Добавляем логирование для отладки
             sample_rate = str(self.voice.config.sample_rate)
             
-            # Используем streaming API с частотой из модели
+            # Запускаем aplay СРАЗУ, без ожидания данных
+            cmd = ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=256", "--period-size=64"]
+            self.get_logger().info(f"Запуск aplay: {' '.join(cmd)}")
             process = subprocess.Popen(
-                ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=4096"],
+                cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,  # Захватываем stderr для отладки
+                stderr=subprocess.PIPE,
+                bufsize=0,  # Отключаем буферизацию stdin
                 env=self.env
             )
             
-            # Буферизация для более эффективной передачи данных (меньше latency)
-            buffer = bytearray()
-            buffer_threshold = 2048  # 2KB буфер для быстрого старта воспроизведения
-            
-            # Синтез речи с оптимизированной буферизацией
+            # Синтезируем и сразу отправляем в aplay
             for chunk in self.voice.synthesize(text.strip()):
                 if process.poll() is not None:
                     break
-                    
-                buffer.extend(chunk.audio_int16_bytes)
                 
-                # Отправляем данные пакетами, а не по одному chunk
-                if len(buffer) >= buffer_threshold:
-                    try:
-                        process.stdin.write(buffer)
-                        buffer.clear()
-                    except BrokenPipeError:
-                        break
-            
-            # Отправляем остатки буфера
-            if buffer:
                 try:
-                    process.stdin.write(buffer)
+                    process.stdin.write(chunk.audio_int16_bytes)
                 except BrokenPipeError:
-                    pass
+                    break
             
             process.stdin.close()
             
-            # Ждем завершения и проверяем ошибки
+            # Ждем завершения
             return_code = process.wait()
+            stderr_output = process.stderr.read().decode() if process.stderr else ""
+            
             if return_code != 0:
-                stderr_output = process.stderr.read().decode() if process.stderr else "no stderr"
                 self.get_logger().error(f"aplay завершился с кодом {return_code}, stderr: {stderr_output}")
+            elif stderr_output:
+                # Логируем предупреждения даже при успешном завершении
+                self.get_logger().warning(f"aplay stderr: {stderr_output}")
+                self.get_logger().info("✓ Аудио воспроизведено успешно")
             else:
                 self.get_logger().info("✓ Аудио воспроизведено успешно")
             
