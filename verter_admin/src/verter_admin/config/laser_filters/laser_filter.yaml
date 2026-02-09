@@ -17,6 +17,14 @@
 laser_filter:
   ros__parameters:
     filter1:
+      name: range_filter
+      type: laser_filters/LaserScanRangeFilter
+      params:
+        # Отсечь точки ближе 20см (корпус робота) и дальше 10м (шум/отражения)
+        lower_threshold: 0.20
+        upper_threshold: 10.0
+        use_message_range_limits: false
+    filter2:
       name: angular_bounds
       type: laser_filters/LaserScanAngularBoundsFilterInPlace
       params:
