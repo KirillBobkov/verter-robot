@@ -75,12 +75,16 @@ class TextToSpeechNode(Node):
         self.env.setdefault("LC_ALL", "C.UTF-8")
         self.env.setdefault("LANG", "C.UTF-8")
         
+        # Увеличиваем задержку для стабильности при автозапуске
+        self.env["PULSE_LATENCY_MSEC"] = "100"
+        
         # Убедимся, что XDG_RUNTIME_DIR установлен для PulseAudio
         if "XDG_RUNTIME_DIR" not in self.env:
             self.env["XDG_RUNTIME_DIR"] = f"/run/user/{os.getuid()}"
         
         self.get_logger().info(f"Audio device: {self.audio_device}")
         self.get_logger().info(f"XDG_RUNTIME_DIR: {self.env.get('XDG_RUNTIME_DIR')}")
+        self.get_logger().info(f"PULSE_LATENCY_MSEC: {self.env.get('PULSE_LATENCY_MSEC')}")
     
     def text_callback(self, msg):
         text = msg.data.strip()
@@ -123,7 +127,8 @@ class TextToSpeechNode(Node):
             sample_rate = str(self.voice.config.sample_rate)
             
             # Запускаем aplay СРАЗУ, без ожидания данных
-            cmd = ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=256", "--period-size=64"]
+            # Увеличенные размеры буфера для предотвращения underrun при автозапуске
+            cmd = ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=4096", "--period-size=512"]
             self.get_logger().info(f"Запуск aplay: {' '.join(cmd)}")
             process = subprocess.Popen(
                 cmd,

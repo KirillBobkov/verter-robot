@@ -1,15 +1,18 @@
 [Unit]
 Description=Verter Admin (User Session)
-After=graphical-session.target sound.target network.target
-Wants=graphical-session.target sound.target
+After=graphical-session.target sound.target network.target pulseaudio.service
+Wants=graphical-session.target sound.target pulseaudio.service
 
 [Service]
 Type=simple
 WorkingDirectory=%h/verter-robot
-ExecStart=/home/verter/verter-robot/verter_admin/services/start_verter_admin.sh
-ExecStop=/home/verter/verter-robot/verter_admin/services/stop_verter_admin.sh
-StandardOutput=file:/home/verter/verter-robot/verter_admin/journal.log
-StandardError=file:/home/verter/verter-robot/verter_admin/journal-error.log
+Environment="XDG_RUNTIME_DIR=/run/user/%U"
+Environment="PULSE_LATENCY_MSEC=100"
+Environment="PULSE_SERVER=unix:/run/user/%U/pulse/native"
+ExecStart=/home/jetson/verter-robot/verter_admin/services/start_verter_admin.sh
+ExecStop=/home/jetson/verter-robot/verter_admin/services/stop_verter_admin.sh
+StandardOutput=file:/home/jetson/verter-robot/verter_admin/journal.log
+StandardError=file:/home/jetson/verter-robot/verter_admin/journal-error.log
 Restart=always
 RestartSec=5
 

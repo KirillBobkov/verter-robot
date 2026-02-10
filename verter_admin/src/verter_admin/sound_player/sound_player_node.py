@@ -61,8 +61,8 @@ class SoundPlayerNode(Node):
         self.env.setdefault("LC_ALL", "C.UTF-8")
         self.env.setdefault("LANG", "C.UTF-8")
         
-        # Уменьшаем задержку PulseAudio для более быстрого начала воспроизведения
-        self.env["PULSE_LATENCY_MSEC"] = "30"
+        # Увеличиваем задержку PulseAudio для стабильности при автозапуске
+        self.env["PULSE_LATENCY_MSEC"] = "100"
         
         # Убедимся, что XDG_RUNTIME_DIR установлен для PulseAudio
         if "XDG_RUNTIME_DIR" not in self.env:
@@ -108,10 +108,10 @@ class SoundPlayerNode(Node):
             if filename.endswith('.wav'):
                 # Прямое воспроизведение wav файла - БЫСТРО!
                 # Явно задаем формат для совместимости с PulseAudio
-                # Уменьшен буфер для более быстрого начала воспроизведения
+                # Увеличен буфер для предотвращения underrun при автозапуске
                 cmd = ['aplay', '-D', self.audio_device, '-q',
                        '-f', 'S16_LE', '-r', '44100', '-c', '2',
-                       '--buffer-size=1024', '--period-size=256', sound_path]
+                       '--buffer-size=4096', '--period-size=512', sound_path]
                 self.get_logger().info(f"Запуск aplay: {' '.join(cmd)}")
                 self.current_aplay = subprocess.Popen(
                     cmd,
@@ -132,8 +132,8 @@ class SoundPlayerNode(Node):
                 )
 
                 # aplay: wav (stdin) -> динамики
-                # Уменьшен буфер для более быстрого начала воспроизведения
-                cmd = ['aplay', '-D', self.audio_device, '-q', '-f', 'S16_LE', '-r', '22050', '-c', '1', '--buffer-size=2048', '--period-size=512']
+                # Увеличен буфер для предотвращения underrun при автозапуске
+                cmd = ['aplay', '-D', self.audio_device, '-q', '-f', 'S16_LE', '-r', '22050', '-c', '1', '--buffer-size=4096', '--period-size=512']
                 self.get_logger().info(f"Запуск aplay: {' '.join(cmd)}")
                 self.current_aplay = subprocess.Popen(
                     cmd,

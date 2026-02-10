@@ -47,10 +47,36 @@ for ((i=1; i<=MAX_WAIT; i++)); do
     sleep 1
 done
 
+echo "Проверка USB аудио устройств..."
+MAX_USB_WAIT=20
+for ((i=1; i<=MAX_USB_WAIT; i++)); do
+    if lsusb | grep -qi "Generic.*USB.*Audio\|ReSpeaker\|ArrayUAC10"; then
+        echo "USB аудио устройство обнаружено."
+        break
+    fi
+    echo "Ждем USB аудио... $i/$MAX_USB_WAIT"
+    sleep 1
+done
+
+# Дополнительная задержка для полной инициализации устройства
+echo "Ожидание инициализации аудио устройств..."
+sleep 2
+
+echo "=== Диагностика аудио системы ==="
+echo "PulseAudio sinks:"
+pactl list sinks short 2>/dev/null || echo "Нет sinks"
+echo ""
+echo "PulseAudio sources:"
+pactl list sources short 2>/dev/null || echo "Нет sources"
+echo ""
+echo "USB аудио устройства:"
+lsusb | grep -i "audio\|repeaker\|arrayuac10" || echo "Не найдены"
+echo "==================================="
+
 echo "Запуск ROS2 системы..."
 
 # Переходим в рабочую директорию
-cd /home/verter/verter-robot/verter_admin
+cd /home/jetson/verter-robot/verter_admin
 
 # Source ROS2
 source /opt/ros/humble/setup.bash
