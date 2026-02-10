@@ -1,5 +1,6 @@
-=== Запуск Verter Admin (User Session) ===
-Tue Feb 10 12:53:29 PM +05 2026
+=== Остановка Verter Admin ===
+Отправка SIGTERM...
+ PM +05 2026
 Ожидание готовности аудио...
 Аудиосистема обнаружена.
 Проверка USB аудио устройств...
@@ -241,3 +242,14 @@ Bus 001 Device 010: ID 0020:0b21 Generic USB Audio
 [doa_node-8] [WARN] [1770710417.376821321] [doa_node]: Arduino для головы не подключен
 [doa_node-8] [INFO] [1770710424.382175625] [doa_node]: DOA угол: 259
 [doa_node-8] [INFO] [1770710431.389348691] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710438.396660636] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710445.403974850] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710452.411251126] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710459.418305830] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710466.425458236] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710473.432703196] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710480.439994343] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710487.447269971] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710494.454129056] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710501.461892143] [doa_node]: DOA угол: 259
+[doa_node-8] [INFO] [1770710508.468789642] [doa_node]: DOA угол: 259
