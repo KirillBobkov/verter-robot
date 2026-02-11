@@ -529,7 +529,7 @@ class OdometryNode(Node):
         odom_msg.header.frame_id = 'odom'
 
         # child_frame_id - система координат робота (его тело)
-        odom_msg.child_frame_id = 'base_link'
+        odom_msg.child_frame_id = 'base_footprint'
 
         # ============================================================================
         # ЗАПОЛНЕНИЕ POSE (позиция и ориентация)
@@ -620,9 +620,9 @@ class OdometryNode(Node):
         transform.header.frame_id = 'odom'
 
         # Дочерняя система координат (куда)
-        transform.child_frame_id = 'base_link'
+        transform.child_frame_id = 'base_footprint'
 
-        # Позиция base_link в системе координат odom
+        # Позиция base_footprint в системе координат odom
         transform.transform.translation.x = self.x
         transform.transform.translation.y = self.y
         transform.transform.translation.z = 0.0

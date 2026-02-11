@@ -24,7 +24,7 @@ slam_toolbox:
     # ROS Parameters
     odom_frame: odom
     map_frame: map
-    base_frame: base_link
+    base_frame: base_footprint
     scan_topic: /scan
     use_map_saver: true
     mode: mapping  # Options: mapping, localization
@@ -93,9 +93,9 @@ slam_toolbox:
     # Range: 0.15-12m, Frequency: ~5.5 Hz
     # Mounted at ~55cm height, 25cm forward from robot center
     minimum_time_interval: 0.01  # Minimum time between scans (5.5Hz = ~180ms)
-    max_laser_range: 12.0        # RPLiDAR A1M8 maximum range
-    minimum_range: 0.15          # RPLiDAR A1M8 minimum range
-    range_threshold: 11.0        # Use up to 11m for mapping (留1m余量)
+    max_laser_range: 6.0         # Ограничение дальности для чистой карты
+    minimum_range: 0.20          # Отсечь ближний шум (корпус)
+    range_threshold: 5.5         # Использовать до 5.5м для маппинга
 
     # Solver plugin parameters
     # Optimized for Jetson Orin Nano (6-core CPU)

@@ -20,9 +20,9 @@ laser_filter:
       name: range_filter
       type: laser_filters/LaserScanRangeFilter
       params:
-        # Отсечь точки ближе 20см (корпус робота) и дальше 10м (шум/отражения)
+        # Отсечь точки ближе 20см (корпус робота) и дальше 6м (шум/отражения)
         lower_threshold: 0.20
-        upper_threshold: 10.0
+        upper_threshold: 6.0
         use_message_range_limits: false
     filter2:
       name: angular_bounds

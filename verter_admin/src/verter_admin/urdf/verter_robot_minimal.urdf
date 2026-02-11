@@ -19,6 +19,9 @@
     <color rgba="0.5 0.5 0.5 1.0"/>
   </material>
 
+  <!-- Base Footprint (ground projection, z=0) -->
+  <link name="base_footprint"/>
+
   <!-- Base Link (Main Body) -->
   <!-- Updated dimensions from CAD drawings: 560mm x 534mm x 550mm -->
   <link name="base_link">
@@ -46,6 +49,13 @@
         izz="0.01"/>
     </inertial>
   </link>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <!-- base_link на высоте радиуса колеса (0.1м) от пола -->
+    <origin xyz="0 0 0.1" rpy="0 0 0"/>
+  </joint>
 
   <!-- Left Wheel -->
   <link name="wheel_left">
@@ -314,20 +324,17 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <!-- Position: front of robot, height ~55cm from ground -->
-    <!-- Lidar mounted ~25cm forward from center, sees front 180° (back 180° blocked by body) -->
-    <origin xyz="0.25 0 0.450" rpy="0 0 0"/>
+    <!-- Position: 120mm forward from center, 700mm above base_link (800mm from ground) -->
+    <origin xyz="0.12 0 0.70" rpy="0 0 0"/>
   </joint>
 
   <!--
-  NOTE: base_footprint removed to avoid TF conflict.
-  Odometry publishes odom → base_link directly.
-
   TF tree for SLAM:
     map (slam_toolbox)
     └── odom (slam_toolbox)
-        └── base_link (odometry_node)
-            └── lidar_link (robot_state_publisher)
+        └── base_footprint (odometry_node)
+            └── base_link (robot_state_publisher)
+                └── lidar_link (robot_state_publisher)
   -->
 
 </robot>

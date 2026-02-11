@@ -174,6 +174,7 @@ setup(
             'doa_node = verter_admin.doa.doa_node:main',
             'teleop_keyboard = verter_admin.teleop.teleop_keyboard:main',
             'waypoint_navigator = verter_admin.waypoints.waypoint_navigator:main',
+            'calibration_node = verter_admin.calibration.calibration_node:main',
         ],
     },
 )
