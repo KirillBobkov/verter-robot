@@ -27,7 +27,7 @@ class CalibrationNode(Node):
     WHEEL_BASE = 0.356
 
     # Скорости для калибровки (медленные для точности)
-    LINEAR_SPEED = 0.15   # м/с
+    LINEAR_SPEED = 0.20   # м/с
     ANGULAR_SPEED = 0.3   # рад/с
 
     # Частота публикации cmd_vel
