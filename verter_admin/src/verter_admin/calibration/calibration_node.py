@@ -23,13 +23,11 @@ from nav_msgs.msg import Odometry
 
 class CalibrationNode(Node):
 
-    # Текущие параметры робота (из odometry_node.py)
     WHEEL_CIRCUMFERENCE = 0.63
     WHEEL_BASE = 0.356
 
-    # Скорости для калибровки
-    LINEAR_SPEED = 0.20   # м/с
-    ANGULAR_SPEED = 0.3   # рад/с
+    LINEAR_SPEED = 0.20
+    ANGULAR_SPEED = 0.3
 
     def __init__(self):
         super().__init__('calibration_node')
@@ -41,32 +39,27 @@ class CalibrationNode(Node):
             Odometry, '/odom', self.odom_callback, 10
         )
 
-        # Команда которую таймер будет публиковать
         self.target_linear = 0.0
         self.target_angular = 0.0
 
-        # Таймер публикации cmd_vel на 20 Гц
+        # Таймер cmd_vel на 20 Гц
         self.cmd_timer = self.create_timer(0.05, self.cmd_timer_callback)
 
-        # Текущая позиция из одометрии
         self.x = 0.0
         self.y = 0.0
         self.yaw = 0.0
         self.odom_received = False
 
-        # Стартовая позиция для текущего теста
         self.start_x = 0.0
         self.start_y = 0.0
         self.start_yaw = 0.0
 
-        # Накопленный угол (для отслеживания полных оборотов)
         self.total_yaw = 0.0
         self.prev_yaw = 0.0
 
         self.get_logger().info('Калибровочная нода запущена')
 
     def cmd_timer_callback(self):
-        """Публикует cmd_vel стабильно на 20 Гц."""
         msg = Twist()
         msg.linear.x = self.target_linear
         msg.angular.z = self.target_angular
@@ -111,11 +104,8 @@ class CalibrationNode(Node):
         self.total_yaw += delta
         self.prev_yaw = self.yaw
 
-    def spin_wait(self, seconds):
-        """Спин ROS на заданное время."""
-        end = time.time() + seconds
-        while time.time() < end and rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.02)
+    def wait_seconds(self, seconds):
+        time.sleep(seconds)
 
     # =========================================================================
     # ТЕСТ 1: ПРЯМАЯ ЛИНИЯ
@@ -125,23 +115,23 @@ class CalibrationNode(Node):
         self.get_logger().info('Поставь робота у отметки на полу. Нажми Enter для старта.')
         input()
 
-        self.spin_wait(0.2)
+        self.wait_seconds(0.3)
         self.save_start()
 
         self.get_logger().info(f'Старт! Еду вперёд {target_distance}м...')
         self.set_cmd(self.LINEAR_SPEED, 0.0)
 
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.02)
+            time.sleep(0.02)
             if self.distance_from_start() >= target_distance:
                 break
 
         self.stop_cmd()
-        self.spin_wait(0.3)
+        self.wait_seconds(0.5)
 
         final_dist = self.distance_from_start()
         self.get_logger().info(f'Остановка. Одометрия: {final_dist:.4f}м')
-        self.get_logger().info(f'Замерь реальное расстояние рулеткой и введи в метрах (например 0.95):')
+        self.get_logger().info('Замерь реальное расстояние рулеткой и введи в метрах (например 0.95):')
 
         try:
             actual = float(input('Реальное расстояние (м): '))
@@ -152,14 +142,14 @@ class CalibrationNode(Node):
         if actual > 0 and final_dist > 0:
             ratio = actual / final_dist
             new_circumference = self.WHEEL_CIRCUMFERENCE * ratio
-            self.get_logger().info(f'')
-            self.get_logger().info(f'=== РЕЗУЛЬТАТ ===')
+            self.get_logger().info('')
+            self.get_logger().info('=== РЕЗУЛЬТАТ ===')
             self.get_logger().info(f'Одометрия: {final_dist:.4f}м, Реальность: {actual:.4f}м')
             self.get_logger().info(f'Коэффициент: {ratio:.4f}')
             self.get_logger().info(f'Текущий WHEEL_CIRCUMFERENCE: {self.WHEEL_CIRCUMFERENCE}')
             self.get_logger().info(f'Новый WHEEL_CIRCUMFERENCE:   {new_circumference:.6f}')
-            self.get_logger().info(f'')
-            self.get_logger().info(f'Измени WHEEL_CIRCUMFERENCE в odometry_node.py и esp32_chassis_microros.ino')
+            self.get_logger().info('')
+            self.get_logger().info('Измени WHEEL_CIRCUMFERENCE в odometry_node.py и esp32_chassis_microros.ino')
 
     # =========================================================================
     # ТЕСТ 2: ПОВОРОТ НА 360°
@@ -171,25 +161,25 @@ class CalibrationNode(Node):
         self.get_logger().info('Отметь направление робота (малярный скотч/лазер). Нажми Enter для старта.')
         input()
 
-        self.spin_wait(0.2)
+        self.wait_seconds(0.3)
         self.save_start()
 
         self.get_logger().info(f'Старт! Поворачиваю на {target_degrees}°...')
         self.set_cmd(0.0, self.ANGULAR_SPEED)
 
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.02)
+            time.sleep(0.02)
             self.update_total_yaw()
             if abs(self.total_yaw) >= target_rad:
                 break
 
         self.stop_cmd()
-        self.spin_wait(0.3)
+        self.wait_seconds(0.5)
 
         final_degrees = math.degrees(abs(self.total_yaw))
         self.get_logger().info(f'Остановка. Одометрия: {final_degrees:.1f}°')
-        self.get_logger().info(f'Робот вернулся точно к отметке?')
-        self.get_logger().info(f'Введи реальный угол поворота (например 350 если недокрутил, 370 если перекрутил):')
+        self.get_logger().info('Робот вернулся точно к отметке?')
+        self.get_logger().info('Введи реальный угол поворота (например 350 если недокрутил, 370 если перекрутил):')
 
         try:
             actual_deg = float(input('Реальный угол (градусы): '))
@@ -200,56 +190,54 @@ class CalibrationNode(Node):
         if actual_deg > 0 and final_degrees > 0:
             ratio = final_degrees / actual_deg
             new_wheel_base = self.WHEEL_BASE * ratio
-            self.get_logger().info(f'')
-            self.get_logger().info(f'=== РЕЗУЛЬТАТ ===')
+            self.get_logger().info('')
+            self.get_logger().info('=== РЕЗУЛЬТАТ ===')
             self.get_logger().info(f'Одометрия: {final_degrees:.1f}°, Реальность: {actual_deg:.1f}°')
             self.get_logger().info(f'Коэффициент: {ratio:.4f}')
             self.get_logger().info(f'Текущий WHEEL_BASE: {self.WHEEL_BASE}')
             self.get_logger().info(f'Новый WHEEL_BASE:   {new_wheel_base:.6f}')
-            self.get_logger().info(f'')
-            self.get_logger().info(f'Измени WHEEL_BASE в odometry_node.py и esp32_chassis_microros.ino')
+            self.get_logger().info('')
+            self.get_logger().info('Измени WHEEL_BASE в odometry_node.py и esp32_chassis_microros.ino')
 
     # =========================================================================
     # ТЕСТ 3: КВАДРАТ
     # =========================================================================
     def drive_distance(self, distance):
-        """Проехать заданное расстояние по одометрии."""
-        self.spin_wait(0.2)
+        self.wait_seconds(0.3)
         self.save_start()
         self.set_cmd(self.LINEAR_SPEED, 0.0)
 
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.02)
+            time.sleep(0.02)
             if self.distance_from_start() >= distance:
                 break
 
         self.stop_cmd()
-        self.spin_wait(0.3)
+        self.wait_seconds(0.5)
 
     def rotate_angle(self, degrees):
-        """Повернуть на заданный угол по одометрии."""
         target_rad = math.radians(abs(degrees))
         direction = 1.0 if degrees > 0 else -1.0
 
-        self.spin_wait(0.2)
+        self.wait_seconds(0.3)
         self.save_start()
         self.set_cmd(0.0, direction * self.ANGULAR_SPEED)
 
         while rclpy.ok():
-            rclpy.spin_once(self, timeout_sec=0.02)
+            time.sleep(0.02)
             self.update_total_yaw()
             if abs(self.total_yaw) >= target_rad:
                 break
 
         self.stop_cmd()
-        self.spin_wait(0.3)
+        self.wait_seconds(0.5)
 
     def test_square(self, side_length=1.0):
         self.get_logger().info(f'=== ТЕСТ: КВАДРАТ ({side_length}м x {side_length}м) ===')
         self.get_logger().info('Отметь стартовую позицию и направление робота. Нажми Enter для старта.')
         input()
 
-        self.spin_wait(0.2)
+        self.wait_seconds(0.3)
         square_start_x = self.x
         square_start_y = self.y
         square_start_yaw = self.yaw
@@ -261,8 +249,7 @@ class CalibrationNode(Node):
             self.get_logger().info(f'Поворот {i+1}/4: 90° влево...')
             self.rotate_angle(90.0)
 
-        # Результат
-        self.spin_wait(0.2)
+        self.wait_seconds(0.3)
         dx = self.x - square_start_x
         dy = self.y - square_start_y
         drift = math.sqrt(dx * dx + dy * dy)
@@ -273,23 +260,23 @@ class CalibrationNode(Node):
         elif dyaw < -math.pi:
             dyaw += 2.0 * math.pi
 
-        self.get_logger().info(f'')
-        self.get_logger().info(f'=== РЕЗУЛЬТАТ КВАДРАТА ===')
+        self.get_logger().info('')
+        self.get_logger().info('=== РЕЗУЛЬТАТ КВАДРАТА ===')
         self.get_logger().info(f'Дрифт позиции: {drift:.4f}м (dx={dx:.4f}, dy={dy:.4f})')
         self.get_logger().info(f'Дрифт угла: {math.degrees(dyaw):.1f}°')
-        self.get_logger().info(f'Робот вернулся на стартовую позицию? Замерь расстояние до отметки.')
+        self.get_logger().info('Робот вернулся на стартовую позицию? Замерь расстояние до отметки.')
 
     # =========================================================================
     # ГЛАВНОЕ МЕНЮ
     # =========================================================================
     def run(self):
-        # Ждём одометрию в спин-потоке
+        # Ждём одометрию
         self.get_logger().info('Ожидание данных одометрии...')
         while rclpy.ok() and not self.odom_received:
             rclpy.spin_once(self, timeout_sec=0.1)
         self.get_logger().info(f'Одометрия получена: x={self.x:.3f}, y={self.y:.3f}, yaw={math.degrees(self.yaw):.1f}°')
 
-        # Запускаем спин в фоновом потоке
+        # Фоновый поток для ROS callbacks (таймер cmd_vel + одометрия)
         self.spin_thread = threading.Thread(target=self._spin_loop, daemon=True)
         self.spin_thread.start()
 
@@ -297,7 +284,6 @@ class CalibrationNode(Node):
         self._menu_loop()
 
     def _spin_loop(self):
-        """Фоновый поток для обработки ROS callbacks."""
         while rclpy.ok():
             rclpy.spin_once(self, timeout_sec=0.02)
 
