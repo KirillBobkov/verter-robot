@@ -86,10 +86,12 @@ def generate_launch_description():
         cmd=[
             'bash', '-c',
             ['source ~/microros_ws/install/setup.bash && '
-             'ros2 run micro_ros_agent micro_ros_agent serial '
+             'exec ros2 run micro_ros_agent micro_ros_agent serial '
              '--dev ', LaunchConfiguration('esp32_port'), ' -b 115200']
         ],
-        output='screen'
+        output='screen',
+        sigterm_timeout='5',
+        sigkill_timeout='10',
     )
 
     # =========================================================================

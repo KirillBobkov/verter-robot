@@ -325,7 +325,8 @@
     <parent link="base_link"/>
     <child link="lidar_link"/>
     <!-- Position: 120mm forward from center, 700mm above base_link (800mm from ground) -->
-    <origin xyz="0.12 0 0.70" rpy="0 0 0"/>
+    <!-- Лидар развёрнут на 180° вокруг Z (физическая ориентация) -->
+    <origin xyz="0.12 0 0.70" rpy="0 0 3.14159"/>
   </joint>
 
   <!--
