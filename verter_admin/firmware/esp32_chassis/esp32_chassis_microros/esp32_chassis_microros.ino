@@ -63,7 +63,7 @@
 // ПАРАМЕТРЫ РОБОТА
 // ============================================================================
 
-const float WHEEL_CIRCUMFERENCE = 0.58; // откалибровано
+const float WHEEL_CIRCUMFERENCE = 0.56; // откалибровано
 const float GEAR_RATIO = 4.0007;
 const float WHEEL_BASE = 0.356;
 
