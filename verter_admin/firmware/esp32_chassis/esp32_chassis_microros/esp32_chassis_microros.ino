@@ -65,7 +65,7 @@
 
 const float WHEEL_CIRCUMFERENCE = 0.60; // откалибровано
 const float GEAR_RATIO = 4.0007;
-const float WHEEL_BASE = 0.356;
+const float WHEEL_BASE = 0.361; // откалибровано
 
 const float MAX_VELOCITY = 0.5;
 const int MAX_PWM = 200;

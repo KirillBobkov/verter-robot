@@ -24,7 +24,7 @@ from nav_msgs.msg import Odometry
 class CalibrationNode(Node):
 
     WHEEL_CIRCUMFERENCE = 0.60
-    WHEEL_BASE = 0.356
+    WHEEL_BASE = 0.361
 
     LINEAR_SPEED = 0.20
     ANGULAR_SPEED = 0.3

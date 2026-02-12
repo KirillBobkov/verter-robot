@@ -50,3 +50,4 @@ journal-error.log
 # *.pt
 # *.pth
 # *.bin
+/firmware/esp32_chassis/mikro_ros_src/
