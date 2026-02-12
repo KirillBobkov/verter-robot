@@ -23,7 +23,7 @@ from nav_msgs.msg import Odometry
 
 class CalibrationNode(Node):
 
-    WHEEL_CIRCUMFERENCE = 0.63
+    WHEEL_CIRCUMFERENCE = 0.60
     WHEEL_BASE = 0.356
 
     LINEAR_SPEED = 0.20
@@ -33,7 +33,7 @@ class CalibrationNode(Node):
         super().__init__('calibration_node')
 
         self.cmd_pub = self.create_publisher(
-            Twist, '/teleop_keyboard/cmd_vel', 10
+            Twist, '/cmd_vel', 10
         )
         self.odom_sub = self.create_subscription(
             Odometry, '/odom', self.odom_callback, 10
@@ -42,8 +42,8 @@ class CalibrationNode(Node):
         self.target_linear = 0.0
         self.target_angular = 0.0
 
-        # Таймер cmd_vel на 20 Гц
-        self.cmd_timer = self.create_timer(0.05, self.cmd_timer_callback)
+        # Таймер cmd_vel на 50 Гц
+        self.cmd_timer = self.create_timer(0.02, self.cmd_timer_callback)
 
         self.x = 0.0
         self.y = 0.0
