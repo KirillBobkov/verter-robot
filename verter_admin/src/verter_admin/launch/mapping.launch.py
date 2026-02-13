@@ -3,13 +3,14 @@
 Launch файл для картографирования на реальном роботе Verter.
 
 Компоненты:
-1. micro_ros_agent - связь с ESP32 шасси (micro-ROS)
-2. twist_mux - мультиплексор команд скорости
-3. odometry_node - одометрия (энкодеры)
-4. robot_state_publisher - публикация TF из URDF
-5. rplidar_node - драйвер лидара
-6. laser_filter - фильтрация заднего сектора
-7. slam_toolbox - построение карты
+1. micro_ros_agent (chassis) - связь с ESP32 шасси (micro-ROS)
+2. micro_ros_agent (imu) - связь с ESP32 IMU (micro-ROS)
+3. twist_mux - мультиплексор команд скорости
+4. odometry_node - одометрия (энкодеры)
+5. robot_state_publisher - публикация TF из URDF
+6. rplidar_node - драйвер лидара
+7. laser_filter - фильтрация заднего сектора
+8. slam_toolbox - построение карты
 
 Архитектура:
                                     ┌─────────────┐
@@ -19,6 +20,8 @@ Launch файл для картографирования на реальном 
                                     └─────────────┘                      │
                                                                          v
   ESP32 /wheel_encoders ──> odometry_node ──> /odom + /tf (odom->base_link)
+
+  ESP32 IMU ──> micro_ros_agent ──> /imu/data (sensor_msgs/Imu)
 
   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
   │   RPLidar   │───>│ /scan_raw   │───>│laser_filter │───> /scan
@@ -73,7 +76,13 @@ def generate_launch_description():
     esp32_port_arg = DeclareLaunchArgument(
         'esp32_port',
         default_value='/dev/esp32_chassis',
-        description='Serial port for ESP32 (micro-ROS)'
+        description='Serial port for ESP32 chassis (micro-ROS)'
+    )
+
+    imu_esp32_port_arg = DeclareLaunchArgument(
+        'imu_esp32_port',
+        default_value='/dev/esp32_imu',
+        description='Serial port for ESP32 IMU (micro-ROS)'
     )
 
     # =========================================================================
@@ -82,12 +91,29 @@ def generate_launch_description():
     # ESP32 напрямую подписан на /cmd_vel и публикует /wheel_encoders
     # Agent обеспечивает serial ↔ DDS мост
 
-    micro_ros_agent = ExecuteProcess(
+    micro_ros_agent_chassis = ExecuteProcess(
         cmd=[
             'bash', '-c',
             ['source ~/microros_ws/install/setup.bash && '
              'exec ros2 run micro_ros_agent micro_ros_agent serial '
              '--dev ', LaunchConfiguration('esp32_port'), ' -b 115200']
+        ],
+        output='screen',
+        sigterm_timeout='5',
+        sigkill_timeout='10',
+    )
+
+    # =========================================================================
+    # MICRO-ROS AGENT (связь с ESP32 IMU)
+    # =========================================================================
+    # ESP32 IMU публикует /imu/data (sensor_msgs/Imu)
+
+    micro_ros_agent_imu = ExecuteProcess(
+        cmd=[
+            'bash', '-c',
+            ['source ~/microros_ws/install/setup.bash && '
+             'exec ros2 run micro_ros_agent micro_ros_agent serial '
+             '--dev ', LaunchConfiguration('imu_esp32_port'), ' -b 115200']
         ],
         output='screen',
         sigterm_timeout='5',
@@ -192,9 +218,11 @@ def generate_launch_description():
         # Аргументы
         lidar_port_arg,
         esp32_port_arg,
+        imu_esp32_port_arg,
 
-        # micro-ROS Agent (ESP32 шасси)
-        micro_ros_agent,
+        # micro-ROS Agents
+        micro_ros_agent_chassis,
+        micro_ros_agent_imu,
 
         # Система управления
         twist_mux_node,

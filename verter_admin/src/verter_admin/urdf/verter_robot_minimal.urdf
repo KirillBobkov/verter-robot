@@ -329,13 +329,32 @@
     <origin xyz="0.12 0 0.70" rpy="0 0 3.14159"/>
   </joint>
 
+  <!-- IMU (Trema BMX055 9 DOF) -->
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.03 0.03 0.01"/>
+      </geometry>
+      <material name="red"/>
+    </visual>
+  </link>
+
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <!-- Центр робота, 39см от пола = 29см от base_link -->
+    <origin xyz="0 0 0.29" rpy="0 0 0"/>
+  </joint>
+
   <!--
   TF tree for SLAM:
     map (slam_toolbox)
     └── odom (slam_toolbox)
         └── base_footprint (odometry_node)
             └── base_link (robot_state_publisher)
-                └── lidar_link (robot_state_publisher)
+                ├── lidar_link (robot_state_publisher)
+                └── imu_link (robot_state_publisher)
   -->
 
 </robot>
