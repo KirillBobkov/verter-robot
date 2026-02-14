@@ -49,8 +49,8 @@ slam_toolbox:
     # Position Variance (uncertainty in position)
     # For odometry-based SLAM with differential drive
     # Lower values = more frequent updates, better for indoor mapping
-    minimum_travel_distance: 0.1   # Update after 10cm movement (was 0.2 - too sparse)
-    minimum_travel_heading: 0.05   # Update after ~3° rotation
+    minimum_travel_distance: 0.3   # Update after 30cm movement (реже = стабильнее)
+    minimum_travel_heading: 0.15   # Update after ~8.6° rotation (меньше обновлений при повороте)
 
     # Scan Matching Parameters
     scan_buffer_size: 10
@@ -65,9 +65,9 @@ slam_toolbox:
     loop_match_minimum_response_fine: 0.45
 
     # Correlation Parameters for Scan Matching
-    correlation_search_space_dimension: 0.5
+    correlation_search_space_dimension: 0.3   # Меньше область поиска = меньше телепортаций
     correlation_search_space_resolution: 0.01
-    correlation_search_space_smear_deviation: 0.1
+    correlation_search_space_smear_deviation: 0.05  # Точнее матчинг
 
     # Loop Closure Parameters
     loop_search_space_dimension: 8.0
@@ -77,8 +77,8 @@ slam_toolbox:
     # Scan Matcher Parameters
     # Controls how much to penalize deviations in distance/angle matching
     # Lower values = trust scan matching more; Higher = trust odometry more
-    distance_variance_penalty: 0.3  # Default: 0.3 (was 0.5)
-    angle_variance_penalty: 1.0     # Default: 1.0 (keep as is)
+    distance_variance_penalty: 0.5  # Больше доверяем одометрии (меньше прыжков)
+    angle_variance_penalty: 1.0     # Default: 1.0
 
     # Fine Search Parameters
     fine_search_angle_offset: 0.00349
