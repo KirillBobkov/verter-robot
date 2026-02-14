@@ -110,7 +110,7 @@ class OdometryNode(Node):
     WHEEL_CIRCUMFERENCE = 0.59  # м - длина окружности колеса (откалибровано)
     GEAR_RATIO = 4.0007         # передаточное число редуктора
     ENCODER_RESOLUTION = 4096   # разрешение энкодера AS5600 (шагов на оборот)
-    WHEEL_BASE = 0.367         # м - расстояние между колёсами (откалибровано)
+    WHEEL_BASE = 0.369         # м - расстояние между колёсами (откалибровано)
 
     # Метров на один шаг энкодера
     METERS_PER_STEP = WHEEL_CIRCUMFERENCE / (ENCODER_RESOLUTION * GEAR_RATIO)
