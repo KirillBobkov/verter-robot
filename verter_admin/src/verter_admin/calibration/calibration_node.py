@@ -304,7 +304,7 @@ class CalibrationNode(Node):
                 break
 
             if choice == '1':
-                self.test_straight(1.0)
+                self.test_straight(2.0)
             elif choice == '2':
                 self.test_rotation(360.0)
             elif choice == '3':

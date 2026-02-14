@@ -130,6 +130,11 @@ class OdometryNode(Node):
         # 'odometry_node' - имя ноды в системе ROS2
         super().__init__('odometry_node')
 
+        # Параметр: публиковать ли TF (odom -> base_footprint)
+        # Отключается когда EKF (robot_localization) берёт на себя TF
+        self.declare_parameter('publish_tf', True)
+        self.publish_tf = self.get_parameter('publish_tf').value
+
         # ============================================================================
         # ПЕРЕМЕННЫЕ СОСТОЯНИЯ РОБОТА
         # ============================================================================
@@ -501,9 +506,10 @@ class OdometryNode(Node):
         self._publish_odometry()
 
         # ============================================================================
-        # ШАГ 5: ПУБЛИКАЦИЯ TF ТРАНСФОРМАЦИИ
+        # ШАГ 5: ПУБЛИКАЦИЯ TF ТРАНСФОРМАЦИИ (если не отключена)
         # ============================================================================
-        self._publish_transform()
+        if self.publish_tf:
+            self._publish_transform()
 
 
     def _publish_odometry(self):

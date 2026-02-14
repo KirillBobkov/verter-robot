@@ -19,9 +19,9 @@ Launch файл для картографирования на реальном 
   /safety/cmd_vel ─────────────────>│             │                      │
                                     └─────────────┘                      │
                                                                          v
-  ESP32 /wheel_encoders ──> odometry_node ──> /odom + /tf (odom->base_link)
-
-  ESP32 IMU ──> micro_ros_agent ──> /imu/data (sensor_msgs/Imu)
+  ESP32 /wheel_encoders ──> odometry_node ──> /odom ─┐
+                                                     ├──> EKF ──> /odometry/filtered + TF
+  ESP32 IMU ──> micro_ros_agent ──> /imu/data ──────┘      (odom->base_footprint)
 
   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
   │   RPLidar   │───>│ /scan_raw   │───>│laser_filter │───> /scan
@@ -58,6 +58,7 @@ def generate_launch_description():
     slam_params_file = os.path.join(pkg_verter_admin, 'config', 'slam', 'slam_toolbox_params.yaml')
     twist_mux_config = os.path.join(pkg_verter_admin, 'config', 'twist_mux', 'twist_mux.yaml')
     laser_filter_config = os.path.join(pkg_verter_admin, 'config', 'laser_filters', 'laser_filter.yaml')
+    ekf_config = os.path.join(pkg_verter_admin, 'config', 'robot_localization', 'ekf.yaml')
 
     # Читаем URDF
     with open(urdf_file, 'r') as f:
@@ -137,10 +138,12 @@ def generate_launch_description():
     )
 
     # Odometry Node - одометрия на основе энкодеров ESP32
+    # TF отключена — её публикует EKF (robot_localization)
     odometry_node = Node(
         package='verter_admin',
         executable='odometry_node',
         name='odometry_node',
+        parameters=[{'publish_tf': False}],
         output='screen'
     )
 
@@ -196,6 +199,20 @@ def generate_launch_description():
     )
 
     # =========================================================================
+    # EKF (SENSOR FUSION: энкодеры + IMU)
+    # =========================================================================
+    # Объединяет данные энкодеров (/odom) и IMU (/imu/data)
+    # Публикует улучшенную одометрию и TF odom -> base_footprint
+
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        output='screen',
+        parameters=[ekf_config],
+    )
+
+    # =========================================================================
     # SLAM TOOLBOX
     # =========================================================================
 
@@ -227,6 +244,9 @@ def generate_launch_description():
         # Система управления
         twist_mux_node,
         odometry_node,
+
+        # Sensor Fusion (EKF)
+        ekf_node,
 
         # TF
         robot_state_publisher,

@@ -1,11 +1,11 @@
 ### ekf_filter_node configuration for Verter Robot
 ### Extended Kalman Filter for sensor fusion: Wheel Odometry + IMU
 ###
-### This configuration fuses:
-### 1. Wheel odometry from diff_drive plugin (/odom) - position and velocity
-### 2. IMU data from MPU-6050 simulation (/verter/imu/data) - orientation and angular velocity
+### Фьюзит (объединяет) данные с двух датчиков:
+### 1. Энкодеры колёс (/odom) - позиция и скорость
+### 2. IMU BMX055 (/imu/data) - угловая скорость и ускорение
 ###
-### Output: /odometry/filtered - fused, more accurate odometry
+### Выход: /odometry/filtered + TF odom→base_footprint
 
 ekf_filter_node:
   ros__parameters:
@@ -34,10 +34,9 @@ ekf_filter_node:
     print_diagnostics: true
     debug: false
 
-    # Publish TF transform
-    # Set to false because diff_drive already publishes odom->base_link
-    # EKF will publish map->odom transform (when used with SLAM)
-    publish_tf: false
+    # Publish TF transform odom -> base_footprint
+    # EKF публикует TF вместо odometry_node (у неё publish_tf отключён)
+    publish_tf: true
 
     # Publish acceleration state
     publish_acceleration: false
@@ -49,8 +48,8 @@ ekf_filter_node:
     # The frame in which the filter operates (usually "odom")
     world_frame: odom
 
-    # The coordinate frame of the robot (usually "base_link")
-    base_link_frame: base_link
+    # The coordinate frame of the robot
+    base_link_frame: base_footprint
 
     # Map frame (for future use with SLAM)
     map_frame: map
@@ -96,21 +95,21 @@ ekf_filter_node:
     # odom0_rejection_threshold: 5.0
 
     # ---------- IMU DATA ----------
-    # Topic: /verter/imu/data (published by gazebo_ros_imu_sensor plugin)
-    # Provides: orientation (yaw), angular velocity (vyaw), linear acceleration (ax, ay)
+    # Topic: /imu/data (published by ESP32 IMU via micro-ROS)
+    # BMX055: raw accel (m/s², with gravity) + raw gyro (rad/s)
+    # Ориентация не публикуется (covariance[0] = -1), EKF сам её рассчитает
 
-    imu0: /verter/imu/data
+    imu0: /imu/data
     imu0_config: [
       # Position: [x,    y,    z,    roll, pitch, yaw]
-                   false, false, false, false, false, true,
+                   false, false, false, false, false, false,
       # Velocity: [vx,   vy,   vz,   vroll, vpitch, vyaw]
                    false, false, false, false, false, true,
       # Acceleration: [ax, ay, az, aroll, apitch, ayaw]
                    true,  true,  false, false, false, false
     ]
 
-    # Differential mode for IMU (default: false for orientation, true for velocities)
-    # For IMU, we want to integrate angular velocity to get orientation
+    # Differential mode for IMU
     imu0_differential: false
 
     # Relative mode
@@ -119,12 +118,9 @@ ekf_filter_node:
     # Queue size
     imu0_queue_size: 10
 
-    # Remove gravitational acceleration from IMU data
-    # Important! Gazebo IMU includes gravity, we need to remove it
+    # Убираем гравитацию из данных акселерометра
+    # BMX055 BMA_M_S отдаёт кажущееся ускорение (включая гравитацию)
     imu0_remove_gravitational_acceleration: true
-
-    # Reject outliers
-    # imu0_rejection_threshold: 2.0
 
     # ========================================================================
     # PROCESS NOISE COVARIANCE
