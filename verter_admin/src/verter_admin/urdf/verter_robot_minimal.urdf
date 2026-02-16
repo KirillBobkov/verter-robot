@@ -343,8 +343,8 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <!-- Центр робота, 39см от пола = 29см от base_link -->
-    <origin xyz="0 0 0.29" rpy="0 0 0"/>
+    <!-- Центр робота, 39см от пола = 29см от base_link, смещён вперёд на 90мм -->
+    <origin xyz="0.09 0 0.29" rpy="0 0 0"/>
   </joint>
 
   <!--
