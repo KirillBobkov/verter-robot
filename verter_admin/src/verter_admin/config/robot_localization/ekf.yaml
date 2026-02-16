@@ -96,8 +96,9 @@ ekf_filter_node:
 
     # ---------- IMU DATA ----------
     # Topic: /imu/data (published by ESP32 IMU via micro-ROS)
-    # BMX055: raw accel (m/s², with gravity) + raw gyro (rad/s)
-    # Ориентация не публикуется (covariance[0] = -1), EKF сам её рассчитает
+    # BMX055: gyro bias откалиброван (angular_velocity.z ≈ 0 стоя на месте)
+    # Акселерометр ОТКЛЮЧЁН: bias ax≈-0.23, ay≈0.23 м/с², az≈9.02 (не 9.81)
+    # TODO: откалибровать акселерометр, затем включить ax/ay
 
     imu0: /imu/data
     imu0_config: [
@@ -105,8 +106,8 @@ ekf_filter_node:
                    false, false, false, false, false, false,
       # Velocity: [vx,   vy,   vz,   vroll, vpitch, vyaw]
                    false, false, false, false, false, true,
-      # Acceleration: [ax, ay, az, aroll, apitch, ayaw]
-                   true,  true,  false, false, false, false
+      # Acceleration: ОТКЛЮЧЕНО — акселерометр не откалиброван
+                   false, false, false, false, false, false
     ]
 
     # Differential mode for IMU
@@ -118,9 +119,7 @@ ekf_filter_node:
     # Queue size
     imu0_queue_size: 10
 
-    # Убираем гравитацию из данных акселерометра
-    # BMX055 BMA_M_S отдаёт кажущееся ускорение (включая гравитацию)
-    imu0_remove_gravitational_acceleration: true
+    # imu0_remove_gravitational_acceleration: true  # не нужно пока ax/ay отключены
 
     # ========================================================================
     # PROCESS NOISE COVARIANCE

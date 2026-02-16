@@ -42,6 +42,10 @@
 // Частота публикации
 #define IMU_PUBLISH_MS 20  // 50 Hz
 
+// Калибровка гироскопа (bias estimation при старте)
+#define GYRO_CALIBRATION_SAMPLES 500  // ~2.5 сек при 5ms задержке
+#define GYRO_CALIBRATION_DELAY_MS 5
+
 // ============================================================================
 // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 // ============================================================================
@@ -49,6 +53,11 @@
 // Датчики BMX055 (раздельные объекты для raw данных)
 iarduino_Position_BMX055 sensorA(BMA);  // Акселерометр
 iarduino_Position_BMX055 sensorG(BMG);  // Гироскоп
+
+// Bias гироскопа (вычисляется при старте)
+float gyroBiasX = 0.0;
+float gyroBiasY = 0.0;
+float gyroBiasZ = 0.0;
 
 // micro-ROS
 rcl_publisher_t imu_pub;
@@ -99,10 +108,27 @@ void setup() {
   sensorA.setBandwidths(BMA_125Hz);
   sensorG.setBandwidths(BMG_116Hz);
 
-  // Калибровка (датчик должен быть неподвижен!)
+  // Аппаратная быстрая калибровка BMX055
   delay(1000);
   sensorA.setFastOffset();
   sensorG.setFastOffset();
+
+  // Программная калибровка гироскопа — робот должен быть неподвижен!
+  // Собираем GYRO_CALIBRATION_SAMPLES сэмплов и вычисляем средний bias
+  float sumX = 0.0, sumY = 0.0, sumZ = 0.0;
+  for (int i = 0; i < GYRO_CALIBRATION_SAMPLES; i++) {
+    sensorG.read(BMG_RAD_S);
+    sumX += sensorG.axisX;
+    sumY += sensorG.axisY;
+    sumZ += sensorG.axisZ;
+    // LED мигает во время калибровки
+    if (i % 50 == 0) digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+    delay(GYRO_CALIBRATION_DELAY_MS);
+  }
+  gyroBiasX = sumX / GYRO_CALIBRATION_SAMPLES;
+  gyroBiasY = sumY / GYRO_CALIBRATION_SAMPLES;
+  gyroBiasZ = sumZ / GYRO_CALIBRATION_SAMPLES;
+  digitalWrite(LED_PIN, LOW);  // Калибровка завершена
 
   // micro-ROS Serial transport
   set_microros_transports();
@@ -195,10 +221,10 @@ void loop() {
     imu_msg.header.stamp.sec = (int32_t)(now / 1000);
     imu_msg.header.stamp.nanosec = (uint32_t)((now % 1000) * 1000000);
 
-    // Угловая скорость (rad/s)
-    imu_msg.angular_velocity.x = sensorG.axisX;
-    imu_msg.angular_velocity.y = sensorG.axisY;
-    imu_msg.angular_velocity.z = sensorG.axisZ;
+    // Угловая скорость (rad/s) с вычитанием bias
+    imu_msg.angular_velocity.x = sensorG.axisX - gyroBiasX;
+    imu_msg.angular_velocity.y = sensorG.axisY - gyroBiasY;
+    imu_msg.angular_velocity.z = sensorG.axisZ - gyroBiasZ;
 
     // Линейное ускорение (m/s²)
     imu_msg.linear_acceleration.x = sensorA.axisX;
