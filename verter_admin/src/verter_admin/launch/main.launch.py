@@ -83,13 +83,8 @@ def generate_launch_description():
             }]
         ),
         
-        # Узел Chassis
-        Node(
-            package='verter_admin',
-            executable='chassis_node',
-            name='chassis_node',
-            output='screen'
-        ),
+        # chassis_node УДАЛЁН — ESP32 через micro-ROS заменил его
+        # Управление моторами и энкодеры теперь в esp32_chassis (mapping.launch.py)
 
         # Узел датчиков расстояния (Arduino Mega)
         Node(

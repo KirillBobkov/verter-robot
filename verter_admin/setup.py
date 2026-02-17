@@ -165,7 +165,7 @@ setup(
             'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',
             'silero_tts_node = verter_admin.text_to_speech.silero_tts_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
-            'chassis_node = verter_admin.chassis.chassis_node:main',
+
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
             'ultrasonic_to_laserscan_node = verter_admin.distance_sensors.ultrasonic_to_laserscan_node:main',
             'range_to_laserscan = verter_admin.distance_sensors.range_to_laserscan:main',
