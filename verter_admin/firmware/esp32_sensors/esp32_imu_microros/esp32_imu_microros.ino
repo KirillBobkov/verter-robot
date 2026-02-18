@@ -1,23 +1,20 @@
 /**
- * ESP32 IMU Controller with micro-ROS
+ * ESP32 IMU + Ultrasonic Controller with micro-ROS
  *
- * Нативный ROS2 узел на ESP32 для публикации данных IMU.
+ * Нативный ROS2 узел на ESP32 для публикации данных IMU и ультразвуковых датчиков.
  *
  * Топики:
- * - Публикация: /imu/data (sensor_msgs/Imu)
+ * - Публикация: /imu/data (sensor_msgs/Imu) — 50 Гц
+ * - Публикация: /ultrasonic/distances (std_msgs/Float32MultiArray) — ~7 Гц
  *
  * Железо:
- * - Trema IMU 9 DOF V2.0 (Bosch BMX055) через I2C
- * - SDA = GPIO 21, SCL = GPIO 22
+ * - Trema IMU 9 DOF V2.0 (Bosch BMX055) через I2C (SDA=21, SCL=22)
+ * - 7x HC-SR04 ультразвуковых датчиков
  *
- * Данные:
- * - linear_acceleration (m/s², включая гравитацию)
- * - angular_velocity (rad/s)
- * - orientation: не публикуется (covariance[0] = -1)
- *
- * Установка:
- * 1. micro_ros_arduino v2.0.8-humble (та же что и для chassis)
- * 2. iarduino_Position_BMX055 библиотека
+ * Timing:
+ * - IMU читается каждый цикл (50 Гц)
+ * - Ультразвук: 1 датчик за цикл (round-robin), полный скан 7 шт ≈ 7 Гц
+ * - pulseIn таймаут 15000мкс ≈ 2.5м макс дальность
  */
 
 #define BMX055_DISABLE_BMM  // Магнитометр отключён (помехи от моторов)
@@ -29,39 +26,65 @@
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 #include <sensor_msgs/msg/imu.h>
+#include <std_msgs/msg/float32_multi_array.h>
 #include <Wire.h>
 #include <iarduino_Position_BMX055.h>
 
 // ESP32 LED
 #define LED_PIN 2
 
-// I2C пины
+// I2C пины (IMU)
 #define I2C_SDA 21
 #define I2C_SCL 22
 
-// Частота публикации
+// Частота публикации IMU
 #define IMU_PUBLISH_MS 20  // 50 Hz
 
 // Калибровка гироскопа (bias estimation при старте)
-#define GYRO_CALIBRATION_SAMPLES 500  // ~2.5 сек при 5ms задержке
+#define GYRO_CALIBRATION_SAMPLES 500
 #define GYRO_CALIBRATION_DELAY_MS 5
+
+// ============================================================================
+// HC-SR04 ULTRASONIC SENSORS (7 штук)
+// ============================================================================
+
+#define NUM_SENSORS 7
+#define US_TIMEOUT_US 15000   // 15мс таймаут ≈ 2.5м макс дальность
+#define US_INVALID   -1.0f    // Невалидное значение (датчик не ответил)
+
+// Пины: {trig, echo}
+const int sensorPins[NUM_SENSORS][2] = {
+  {16, 34},  // Sensor 1: front_center
+  {17, 35},  // Sensor 2: front_left_inner
+  {18, 32},  // Sensor 3: front_left_outer
+  {19, 33},  // Sensor 4: front_right_inner
+  {23, 25},  // Sensor 5: front_right_outer
+  {26, 27},  // Sensor 6: left
+  {14, 12},  // Sensor 7: right
+};
+
+// Текущие расстояния (метры)
+float distances[NUM_SENSORS];
+int currentSensor = 0;  // Индекс текущего датчика (round-robin)
 
 // ============================================================================
 // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
 // ============================================================================
 
-// Датчики BMX055 (раздельные объекты для raw данных)
+// Датчики BMX055
 iarduino_Position_BMX055 sensorA(BMA);  // Акселерометр
 iarduino_Position_BMX055 sensorG(BMG);  // Гироскоп
 
-// Bias гироскопа (вычисляется при старте)
+// Bias гироскопа
 float gyroBiasX = 0.0;
 float gyroBiasY = 0.0;
 float gyroBiasZ = 0.0;
 
 // micro-ROS
 rcl_publisher_t imu_pub;
+rcl_publisher_t us_pub;
 sensor_msgs__msg__Imu imu_msg;
+std_msgs__msg__Float32MultiArray us_msg;
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
@@ -84,6 +107,33 @@ void errorLoop() {
 }
 
 // ============================================================================
+// ULTRASONIC SENSOR READING
+// ============================================================================
+
+float readUltrasonic(int trigPin, int echoPin) {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH, US_TIMEOUT_US);
+  if (duration == 0) {
+    return US_INVALID;
+  }
+  // Скорость звука 343 м/с → 0.000343 м/мкс, туда-обратно /2
+  return (duration * 0.000343f) / 2.0f;
+}
+
+void setupUltrasonic() {
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    pinMode(sensorPins[i][0], OUTPUT);   // trig
+    pinMode(sensorPins[i][1], INPUT);    // echo
+    distances[i] = US_INVALID;
+  }
+}
+
+// ============================================================================
 // SETUP
 // ============================================================================
 
@@ -96,39 +146,36 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(400000);
 
-  // Инициализация датчиков
+  // Инициализация IMU
   sensorA.begin();
   sensorG.begin();
-
-  // Настройка диапазонов
-  sensorA.setScale(BMA_4G);       // +-4g (достаточно для мобильного робота)
-  sensorG.setScale(BMG_500DPS);   // +-500 deg/s
-
-  // Частота обновления данных
+  sensorA.setScale(BMA_4G);
+  sensorG.setScale(BMG_500DPS);
   sensorA.setBandwidths(BMA_125Hz);
   sensorG.setBandwidths(BMG_116Hz);
 
-  // Аппаратная быстрая калибровка BMX055
+  // Аппаратная калибровка BMX055
   delay(1000);
   sensorA.setFastOffset();
   sensorG.setFastOffset();
 
-  // Программная калибровка гироскопа — робот должен быть неподвижен!
-  // Собираем GYRO_CALIBRATION_SAMPLES сэмплов и вычисляем средний bias
+  // Программная калибровка гироскопа
   float sumX = 0.0, sumY = 0.0, sumZ = 0.0;
   for (int i = 0; i < GYRO_CALIBRATION_SAMPLES; i++) {
     sensorG.read(BMG_RAD_S);
     sumX += sensorG.axisX;
     sumY += sensorG.axisY;
     sumZ += sensorG.axisZ;
-    // LED мигает во время калибровки
     if (i % 50 == 0) digitalWrite(LED_PIN, !digitalRead(LED_PIN));
     delay(GYRO_CALIBRATION_DELAY_MS);
   }
   gyroBiasX = sumX / GYRO_CALIBRATION_SAMPLES;
   gyroBiasY = sumY / GYRO_CALIBRATION_SAMPLES;
   gyroBiasZ = sumZ / GYRO_CALIBRATION_SAMPLES;
-  digitalWrite(LED_PIN, LOW);  // Калибровка завершена
+  digitalWrite(LED_PIN, LOW);
+
+  // Инициализация ультразвуковых датчиков
+  setupUltrasonic();
 
   // micro-ROS Serial transport
   set_microros_transports();
@@ -136,17 +183,15 @@ void setup() {
 
   allocator = rcl_get_default_allocator();
 
-  // Ждём агента (LED мигает)
+  // Ждём агента
   while (rmw_uros_ping_agent(1000, 1) != RMW_RET_OK) {
     digitalWrite(LED_PIN, !digitalRead(LED_PIN));
     delay(500);
   }
-  digitalWrite(LED_PIN, HIGH);  // Подключились
+  digitalWrite(LED_PIN, HIGH);
 
-  // Init support
+  // Init support & node
   RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
-
-  // Create node
   RCCHECK(rclc_node_init_default(&node, "esp32_imu", "", &support));
 
   // Publisher: /imu/data
@@ -156,26 +201,31 @@ void setup() {
     "/imu/data"
   ));
 
-  // Init IMU message
-  initImuMessage();
+  // Publisher: /ultrasonic/distances
+  RCCHECK(rclc_publisher_init_default(
+    &us_pub, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+    "/ultrasonic/distances"
+  ));
 
-  // Executor (без подписчиков, только для spin)
+  // Init messages
+  initImuMessage();
+  initUltrasonicMessage();
+
+  // Executor
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
 }
 
 // ============================================================================
-// IMU MESSAGE INITIALIZATION
+// MESSAGE INITIALIZATION
 // ============================================================================
 
 void initImuMessage() {
-  // Аллокация строки frame_id
   imu_msg.header.frame_id.data = (char*)malloc(20);
   imu_msg.header.frame_id.capacity = 20;
   snprintf(imu_msg.header.frame_id.data, 20, "imu_link");
   imu_msg.header.frame_id.size = strlen(imu_msg.header.frame_id.data);
 
-  // Ориентация не публикуется (covariance[0] = -1)
-  // "please set element 0 of the associated covariance matrix to -1"
   imu_msg.orientation.x = 0.0;
   imu_msg.orientation.y = 0.0;
   imu_msg.orientation.z = 0.0;
@@ -183,20 +233,24 @@ void initImuMessage() {
   memset(imu_msg.orientation_covariance, 0, sizeof(imu_msg.orientation_covariance));
   imu_msg.orientation_covariance[0] = -1.0;
 
-  // Ковариация угловой скорости (диагональ)
-  // BMG при 500DPS: noise ~0.014 deg/s = ~0.000244 rad/s -> variance ~6e-8
-  // Ставим консервативно
   memset(imu_msg.angular_velocity_covariance, 0, sizeof(imu_msg.angular_velocity_covariance));
-  imu_msg.angular_velocity_covariance[0] = 0.001;  // X
-  imu_msg.angular_velocity_covariance[4] = 0.001;  // Y
-  imu_msg.angular_velocity_covariance[8] = 0.001;  // Z
+  imu_msg.angular_velocity_covariance[0] = 0.001;
+  imu_msg.angular_velocity_covariance[4] = 0.001;
+  imu_msg.angular_velocity_covariance[8] = 0.001;
 
-  // Ковариация линейного ускорения (диагональ)
-  // BMA при 4G: noise ~0.25 mg/sqrt(Hz) -> conservative estimate
   memset(imu_msg.linear_acceleration_covariance, 0, sizeof(imu_msg.linear_acceleration_covariance));
-  imu_msg.linear_acceleration_covariance[0] = 0.01;  // X
-  imu_msg.linear_acceleration_covariance[4] = 0.01;  // Y
-  imu_msg.linear_acceleration_covariance[8] = 0.01;  // Z
+  imu_msg.linear_acceleration_covariance[0] = 0.01;
+  imu_msg.linear_acceleration_covariance[4] = 0.01;
+  imu_msg.linear_acceleration_covariance[8] = 0.01;
+}
+
+void initUltrasonicMessage() {
+  us_msg.data.capacity = NUM_SENSORS;
+  us_msg.data.size = NUM_SENSORS;
+  us_msg.data.data = (float*)malloc(NUM_SENSORS * sizeof(float));
+  for (int i = 0; i < NUM_SENSORS; i++) {
+    us_msg.data.data[i] = US_INVALID;
+  }
 }
 
 // ============================================================================
@@ -206,32 +260,46 @@ void initImuMessage() {
 void loop() {
   unsigned long now = millis();
 
-  // Читаем датчики
-  sensorA.read(BMA_M_S);    // m/s² (кажущееся ускорение, включает гравитацию)
-  sensorG.read(BMG_RAD_S);  // rad/s
+  // Читаем IMU (быстро, I2C)
+  sensorA.read(BMA_M_S);
+  sensorG.read(BMG_RAD_S);
+
+  // Читаем ОДИН ультразвуковой датчик (round-robin)
+  distances[currentSensor] = readUltrasonic(
+    sensorPins[currentSensor][0],
+    sensorPins[currentSensor][1]
+  );
+  currentSensor++;
+
+  // Когда все 7 прочитаны — публикуем и начинаем заново
+  if (currentSensor >= NUM_SENSORS) {
+    currentSensor = 0;
+
+    // Заполняем сообщение
+    for (int i = 0; i < NUM_SENSORS; i++) {
+      us_msg.data.data[i] = distances[i];
+    }
+    RCSOFTCHECK(rcl_publish(&us_pub, &us_msg, NULL));
+  }
 
   // Process micro-ROS callbacks
   RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
 
-  // Публикация с интервалом
+  // Публикация IMU с интервалом
   if (now - lastPublish >= IMU_PUBLISH_MS) {
     lastPublish = now;
 
-    // Timestamp
     imu_msg.header.stamp.sec = (int32_t)(now / 1000);
     imu_msg.header.stamp.nanosec = (uint32_t)((now % 1000) * 1000000);
 
-    // Угловая скорость (rad/s) с вычитанием bias
     imu_msg.angular_velocity.x = sensorG.axisX - gyroBiasX;
     imu_msg.angular_velocity.y = sensorG.axisY - gyroBiasY;
     imu_msg.angular_velocity.z = sensorG.axisZ - gyroBiasZ;
 
-    // Линейное ускорение (m/s²)
     imu_msg.linear_acceleration.x = sensorA.axisX;
     imu_msg.linear_acceleration.y = sensorA.axisY;
     imu_msg.linear_acceleration.z = sensorA.axisZ;
 
-    // Публикуем
     RCSOFTCHECK(rcl_publish(&imu_pub, &imu_msg, NULL));
   }
 

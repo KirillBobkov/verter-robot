@@ -167,6 +167,7 @@ setup(
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
 
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
+            'range_converter_node = verter_admin.distance_sensors.range_converter_node:main',
             'ultrasonic_to_laserscan_node = verter_admin.distance_sensors.ultrasonic_to_laserscan_node:main',
             'range_to_laserscan = verter_admin.distance_sensors.range_to_laserscan:main',
             'laserscan_merger = verter_admin.distance_sensors.laserscan_merger:main',

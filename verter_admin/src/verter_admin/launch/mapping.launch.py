@@ -198,6 +198,15 @@ def generate_launch_description():
         output='screen'
     )
 
+    # Range Converter - конвертирует Float32MultiArray от ESP32 в 7x Range
+    # Ультразвук используется в navigation.launch.py для Nav2, тут только для мониторинга
+    range_converter_node = Node(
+        package='verter_admin',
+        executable='range_converter_node',
+        name='range_converter_node',
+        output='screen'
+    )
+
     # =========================================================================
     # EKF (SENSOR FUSION: энкодеры + IMU)
     # =========================================================================
@@ -254,6 +263,9 @@ def generate_launch_description():
         # Сенсоры
         rplidar_node,
         laser_filter_node,
+
+        # Ультразвуковые датчики (ESP32 → Range)
+        range_converter_node,
 
         # SLAM
         slam_toolbox_node,
