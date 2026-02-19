@@ -86,14 +86,6 @@ def generate_launch_description():
         # chassis_node УДАЛЁН — ESP32 через micro-ROS заменил его
         # Управление моторами и энкодеры теперь в esp32_chassis (mapping.launch.py)
 
-        # Узел датчиков расстояния (Arduino Mega)
-        Node(
-            package='verter_admin',
-            executable='distance_sensors_node',
-            name='distance_sensors_node',
-            output='screen'
-        ),
-
         # Узел DOA (Direction of Arrival)
         Node(
             package='verter_admin',
