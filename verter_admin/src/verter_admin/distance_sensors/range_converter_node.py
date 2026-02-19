@@ -54,14 +54,14 @@ class RangeConverterNode(Node):
         )
 
         # 7 паблишеров Range (по одному на датчик)
-        self.publishers = []
+        self.range_pubs = []
         for sensor in SENSORS:
             pub = self.create_publisher(
                 Range,
                 f'/verter/distance_sensors/{sensor["name"]}',
                 qos,
             )
-            self.publishers.append(pub)
+            self.range_pubs.append(pub)
 
         self.get_logger().info(
             f'Range converter: /ultrasonic/distances → {len(SENSORS)} Range topics'
@@ -91,7 +91,7 @@ class RangeConverterNode(Node):
             else:
                 range_msg.range = distance
 
-            self.publishers[i].publish(range_msg)
+            self.range_pubs[i].publish(range_msg)
 
 
 def main(args=None):
