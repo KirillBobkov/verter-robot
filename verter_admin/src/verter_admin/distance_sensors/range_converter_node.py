@@ -20,11 +20,11 @@ from sensor_msgs.msg import Range
 # Порядок датчиков соответствует массиву из ESP32 (пины)
 # Реальное расположение определено экспериментально
 SENSORS = [
-    {'name': 'front_left_inner',  'frame_id': 'sensor_front_left_inner'},   # [0] G16/G34 — не работает, TBD
+    {'name': 'right',             'frame_id': 'sensor_right'},              # [0] G16/G34
     {'name': 'front_right_outer', 'frame_id': 'sensor_front_right_outer'},  # [1] G17/G35
     {'name': 'front_right_inner', 'frame_id': 'sensor_front_right_inner'},  # [2] G18/G32
     {'name': 'front_center',      'frame_id': 'sensor_front_center'},       # [3] G19/G33
-    {'name': 'right',             'frame_id': 'sensor_right'},              # [4] G23/G25 — не работает, TBD
+    {'name': 'front_left_inner',  'frame_id': 'sensor_front_left_inner'},   # [4] G23/G25
     {'name': 'front_left_outer',  'frame_id': 'sensor_front_left_outer'},   # [5] G26/G27
     {'name': 'left',              'frame_id': 'sensor_left'},               # [6] G14/G12
 ]
