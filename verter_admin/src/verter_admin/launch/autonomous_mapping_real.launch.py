@@ -88,8 +88,8 @@ def generate_launch_description():
     )
     initial_scan_spin_angle_arg = DeclareLaunchArgument(
         'initial_scan_spin_angle',
-        default_value='3.14',
-        description='Initial scan spin angle in radians (pi = 180 deg)',
+        default_value='6.28',
+        description='Initial scan spin angle in radians (2*pi = 360 deg)',
     )
     initial_scan_spin_speed_arg = DeclareLaunchArgument(
         'initial_scan_spin_speed',
@@ -299,7 +299,7 @@ def generate_launch_description():
     )
 
     explore_lite = TimerAction(
-        period=45.0,
+        period=60.0,
         actions=[
             Node(
                 package='explore_lite',
