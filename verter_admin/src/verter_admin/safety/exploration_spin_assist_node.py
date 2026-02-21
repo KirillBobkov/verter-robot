@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Periodic scan spin assist for front-only lidar exploration."""
 
+import math
+
 import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
@@ -20,7 +22,8 @@ class ExplorationSpinAssistNode(Node):
         self.declare_parameter('idle_speed_threshold', 0.03)
         self.declare_parameter('idle_duration_sec', 6.0)
         self.declare_parameter('spin_speed', 0.2)
-        self.declare_parameter('spin_duration_sec', 8.0)
+        self.declare_parameter('spin_angle_rad', math.pi)
+        self.declare_parameter('spin_duration_sec', 0.0)
         self.declare_parameter('cooldown_sec', 20.0)
         self.declare_parameter('safety_holdoff_sec', 1.0)
         self.declare_parameter('control_rate_hz', 20.0)
@@ -31,7 +34,14 @@ class ExplorationSpinAssistNode(Node):
         self.idle_speed_threshold = float(self.get_parameter('idle_speed_threshold').value)
         self.idle_duration_sec = float(self.get_parameter('idle_duration_sec').value)
         self.spin_speed = float(self.get_parameter('spin_speed').value)
-        self.spin_duration_sec = float(self.get_parameter('spin_duration_sec').value)
+        self.spin_angle_rad = abs(float(self.get_parameter('spin_angle_rad').value))
+        spin_duration_param = float(self.get_parameter('spin_duration_sec').value)
+        if abs(self.spin_speed) < 1e-6:
+            self.spin_speed = 0.2
+        if spin_duration_param > 0.0:
+            self.spin_duration_sec = spin_duration_param
+        else:
+            self.spin_duration_sec = self.spin_angle_rad / abs(self.spin_speed)
         self.cooldown_sec = float(self.get_parameter('cooldown_sec').value)
         self.safety_holdoff_sec = float(self.get_parameter('safety_holdoff_sec').value)
         self.control_rate_hz = float(self.get_parameter('control_rate_hz').value)
@@ -54,7 +64,8 @@ class ExplorationSpinAssistNode(Node):
         self.create_timer(1.0 / self.control_rate_hz, self._tick)
         self.get_logger().info(
             'exploration_spin_assist_node started: '
-            f'idle={self.idle_duration_sec:.1f}s, spin={self.spin_duration_sec:.1f}s'
+            f'idle={self.idle_duration_sec:.1f}s, spin={self.spin_duration_sec:.1f}s '
+            f'(~{self.spin_angle_rad:.2f} rad)'
         )
 
     def _odom_cb(self, msg: Odometry):

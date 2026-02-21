@@ -240,7 +240,8 @@ def generate_launch_description():
                 'safety_topic': '/safety/cmd_vel',
                 'idle_duration_sec': 6.0,
                 'spin_speed': 0.2,
-                'spin_duration_sec': 8.0,
+                'spin_angle_rad': 3.14,
+                'spin_duration_sec': 0.0,
                 'cooldown_sec': 20.0,
             }
         ],
