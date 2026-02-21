@@ -49,8 +49,10 @@ slam_toolbox:
     # Position Variance (uncertainty in position)
     # For odometry-based SLAM with differential drive
     # Lower values = more frequent updates, better for indoor mapping
-    minimum_travel_distance: 0.15  # Update after 15cm movement
-    minimum_travel_heading: 0.15   # Update after ~8.6° rotation (меньше обновлений при повороте)
+    # Aggressive updates so map grows even during in-place rotation.
+    minimum_travel_distance: 0.15  # Update after 2cm movement
+    minimum_travel_heading: 0.05   # Update after ~1.7° rotation
+    map_update_interval: 2       # Publish map updates at least every 0.5s
 
     # Scan Matching Parameters
     scan_buffer_size: 10
