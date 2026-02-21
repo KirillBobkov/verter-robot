@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Nav2 bringup for real mapping without velocity_smoother.
+"""Nav2 bringup for real mapping with velocity_smoother routed via twist_mux.
 
 This launch keeps a single motion command path:
-  Nav2 controller -> /nav2/cmd_vel -> twist_mux -> /cmd_vel
+  Nav2 controller/behaviors -> /nav2/cmd_vel_raw
+  velocity_smoother -> /nav2/cmd_vel
+  twist_mux -> /cmd_vel
 """
 
 import os
@@ -32,6 +34,7 @@ def generate_launch_description():
         'behavior_server',
         'bt_navigator',
         'waypoint_follower',
+        'velocity_smoother',
     ]
 
     remappings = [('/tf', 'tf'), ('/tf_static', 'tf_static')]
@@ -85,7 +88,7 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings + [('cmd_vel', '/nav2/cmd_vel')],
+                remappings=remappings + [('cmd_vel', '/nav2/cmd_vel_raw')],
             ),
             Node(
                 package='nav2_smoother',
@@ -118,7 +121,19 @@ def generate_launch_description():
                 respawn_delay=2.0,
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings,
+                remappings=remappings + [('cmd_vel', '/nav2/cmd_vel_raw')],
+            ),
+            Node(
+                package='nav2_velocity_smoother',
+                executable='velocity_smoother',
+                name='velocity_smoother',
+                output='screen',
+                respawn=use_respawn,
+                respawn_delay=2.0,
+                parameters=[configured_params],
+                arguments=['--ros-args', '--log-level', log_level],
+                remappings=remappings
+                + [('cmd_vel', '/nav2/cmd_vel_raw'), ('cmd_vel_smoothed', '/nav2/cmd_vel')],
             ),
             Node(
                 package='nav2_bt_navigator',
