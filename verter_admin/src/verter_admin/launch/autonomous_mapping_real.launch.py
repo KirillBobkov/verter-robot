@@ -249,7 +249,7 @@ def generate_launch_description():
     )
 
     nav2_bringup = TimerAction(
-        period=8.0,
+        period=18.0,
         actions=[
             GroupAction(
                 actions=[
@@ -271,7 +271,7 @@ def generate_launch_description():
     )
 
     initial_scan_spin = TimerAction(
-        period=10.0,
+        period=20.0,
         actions=[
             Node(
                 package='verter_admin',
@@ -291,7 +291,7 @@ def generate_launch_description():
     )
 
     explore_lite = TimerAction(
-        period=30.0,
+        period=45.0,
         actions=[
             Node(
                 package='explore_lite',
