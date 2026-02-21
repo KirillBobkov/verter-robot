@@ -114,7 +114,7 @@ Visualization Manager:
                 sensor_right:
                   {}
       Update Interval: 0
-      Value: false
+      Value: true
     - Alpha: 1
       Class: rviz_default_plugins/RobotModel
       Collision Enabled: false
@@ -291,7 +291,7 @@ Visualization Manager:
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: false
-      Enabled: false
+      Enabled: true
       Name: Map
       Topic:
         Depth: 5
@@ -307,12 +307,12 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /map_updates
       Use Timestamp: false
-      Value: false
+      Value: true
     - Alpha: 0.3499999940395355
       Class: rviz_default_plugins/Map
       Color Scheme: map
       Draw Behind: false
-      Enabled: false
+      Enabled: true
       Name: Global Costmap
       Topic:
         Depth: 5
@@ -328,7 +328,7 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /global_costmap/costmap_updates
       Use Timestamp: false
-      Value: false
+      Value: true
     - Class: rviz_default_plugins/Range
       Color: 255; 165; 0
       Enabled: false
@@ -357,7 +357,7 @@ Visualization Manager:
       Value: false
     - Class: rviz_default_plugins/Range
       Color: 255; 255; 0
-      Enabled: true
+      Enabled: false
       Name: US Front Left Outer
       Queue Size: 10
       Topic:
@@ -367,10 +367,10 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /verter/distance_sensors/front_left_outer
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Range
       Color: 255; 200; 0
-      Enabled: true
+      Enabled: false
       Name: US Front Right Inner
       Queue Size: 10
       Topic:
@@ -380,10 +380,10 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /verter/distance_sensors/front_right_inner
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Range
       Color: 255; 255; 0
-      Enabled: true
+      Enabled: false
       Name: US Front Right Outer
       Queue Size: 10
       Topic:
@@ -393,10 +393,10 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /verter/distance_sensors/front_right_outer
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Range
       Color: 0; 200; 255
-      Enabled: true
+      Enabled: false
       Name: US Left
       Queue Size: 10
       Topic:
@@ -406,10 +406,10 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /verter/distance_sensors/left
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/Range
       Color: 0; 200; 255
-      Enabled: true
+      Enabled: false
       Name: US Right
       Queue Size: 10
       Topic:
@@ -419,7 +419,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /verter/distance_sensors/right
-      Value: true
+      Value: false
     - Alpha: 1
       Buffer Length: 1
       Class: rviz_default_plugins/Path

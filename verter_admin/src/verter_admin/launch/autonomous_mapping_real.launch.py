@@ -164,22 +164,29 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_description, 'use_sim_time': False}],
     )
 
-    rplidar_node = Node(
-        package='rplidar_ros',
-        executable='rplidar_node',
-        name='rplidar_node',
-        parameters=[
-            {
-                'serial_port': LaunchConfiguration('lidar_port'),
-                'frame_id': 'lidar_link',
-                'scan_mode': 'Express',
-                'serial_baudrate': 115200,
-                'inverted': False,
-                'angle_compensate': True,
-            }
+    rplidar_node = TimerAction(
+        period=1.0,
+        actions=[
+            Node(
+                package='rplidar_ros',
+                executable='rplidar_node',
+                name='rplidar_node',
+                parameters=[
+                    {
+                        'serial_port': LaunchConfiguration('lidar_port'),
+                        'frame_id': 'lidar_link',
+                        'scan_mode': 'Express',
+                        'serial_baudrate': 115200,
+                        'inverted': False,
+                        'angle_compensate': True,
+                    }
+                ],
+                remappings=[('scan', '/scan_raw')],
+                respawn=True,
+                respawn_delay=5.0,
+                output='screen',
+            ),
         ],
-        remappings=[('scan', '/scan_raw')],
-        output='screen',
     )
 
     laser_filter_node = Node(

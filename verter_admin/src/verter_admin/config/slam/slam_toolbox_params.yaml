@@ -30,7 +30,8 @@ slam_toolbox:
     mode: mapping  # Options: mapping, localization
 
     # Map saving parameters
-    map_file_name: /tmp/slam_toolbox_map  # Default save location
+    # Start from an empty map on boot; maps are saved explicitly via save_map.sh.
+    map_file_name: ""
     map_start_pose: [0.0, 0.0, 0.0]  # x, y, yaw
 
     # Debugging
@@ -50,9 +51,9 @@ slam_toolbox:
     # For odometry-based SLAM with differential drive
     # Lower values = more frequent updates, better for indoor mapping
     # Aggressive updates so map grows even during in-place rotation.
-    minimum_travel_distance: 0.15  # Update after 2cm movement
-    minimum_travel_heading: 0.05   # Update after ~1.7° rotation
-    map_update_interval: 2       # Publish map updates at least every 0.5s
+    minimum_travel_distance: 0.02  # Update after 2cm movement
+    minimum_travel_heading: 0.05   # Update after ~2.9° rotation
+    map_update_interval: 0.5       # Publish map updates every 0.5s
 
     # Scan Matching Parameters
     scan_buffer_size: 10

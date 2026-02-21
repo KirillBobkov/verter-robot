@@ -45,7 +45,7 @@ Launch файл для картографирования на реальном 
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -167,22 +167,30 @@ def generate_launch_description():
     # =========================================================================
 
     # RPLiDAR A1M8 - публикует в /scan_raw (до фильтрации)
-    rplidar_node = Node(
-        package='rplidar_ros',
-        executable='rplidar_node',
-        name='rplidar_node',
-        parameters=[{
-            'serial_port': LaunchConfiguration('lidar_port'),
-            'frame_id': 'lidar_link',
-            'scan_mode': 'Express',
-            'serial_baudrate': 115200,
-            'inverted': False,
-            'angle_compensate': True,
-        }],
-        remappings=[
-            ('scan', '/scan_raw'),
+    # Задержка 3с + respawn при падении (USB иногда не готов при старте)
+    rplidar_node = TimerAction(
+        period=3.0,
+        actions=[
+            Node(
+                package='rplidar_ros',
+                executable='rplidar_node',
+                name='rplidar_node',
+                parameters=[{
+                    'serial_port': LaunchConfiguration('lidar_port'),
+                    'frame_id': 'lidar_link',
+                    'scan_mode': 'Express',
+                    'serial_baudrate': 115200,
+                    'inverted': False,
+                    'angle_compensate': True,
+                }],
+                remappings=[
+                    ('scan', '/scan_raw'),
+                ],
+                respawn=True,
+                respawn_delay=5.0,
+                output='screen',
+            ),
         ],
-        output='screen'
     )
 
     # Laser Filter - фильтрует задний сектор (корпус робота)
