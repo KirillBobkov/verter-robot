@@ -176,6 +176,7 @@ setup(
             'teleop_keyboard = verter_admin.teleop.teleop_keyboard:main',
             'waypoint_navigator = verter_admin.waypoints.waypoint_navigator:main',
             'calibration_node = verter_admin.calibration.calibration_node:main',
+            'proximity_safety_node = verter_admin.safety.proximity_safety_node:main',
         ],
     },
 )

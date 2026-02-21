@@ -6,6 +6,7 @@ Launch-файлы лежат в `verter_admin/src/verter_admin/launch/`:
 
 - `main.launch.py` — основной запуск
 - `autonomous_mapping.launch.py` — автономное картирование
+- `autonomous_mapping_real.launch.py` — автономное картирование на реальном роботе
 - `real_robot_navigation.launch.py` — навигация на реальном роботе
 - `lidar_simulation.launch.py` — симуляция лидара
 - `test_lidar.launch.py` — тест лидара
@@ -34,5 +35,4 @@ ros2 run verter_admin recognition_node
 ros2 run verter_admin text_to_speech_node
 ros2 run verter_admin sound_player_node
 ```
-
 
