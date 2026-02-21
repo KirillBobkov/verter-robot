@@ -84,8 +84,8 @@ explore:
 #
 # Убедитесь что в nav2_params.yaml для global_costmap установлено:
 # - track_unknown_space: true  (критично для frontier exploration!)
-# - rolling_window: false
-# - width и height подходящие для размера помещения
+# - rolling_window: true (избегаем out-of-bounds при дрейфе/сдвиге карты)
+# - width/height достаточно большие для помещения
 #
 # ============================================================================
 # ПРИМЕЧАНИЯ ПО НАСТРОЙКЕ

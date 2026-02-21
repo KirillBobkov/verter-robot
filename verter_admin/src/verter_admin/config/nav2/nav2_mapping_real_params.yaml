@@ -186,13 +186,10 @@ global_costmap:
       robot_radius: 0.25
       resolution: 0.05
       track_unknown_space: true
-      # Static costmap (не rolling) — критично для explore_lite frontier detection
-      # SLAM карта приходит через static_layer, explore_lite находит границы
-      rolling_window: false
-      width: 50
-      height: 50
-      origin_x: -25.0
-      origin_y: -25.0
+      # Keep the global costmap centered around robot to avoid out-of-bounds.
+      rolling_window: true
+      width: 35
+      height: 35
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
