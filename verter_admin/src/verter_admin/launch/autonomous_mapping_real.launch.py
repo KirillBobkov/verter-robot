@@ -24,6 +24,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node, SetRemap
@@ -74,6 +75,26 @@ def generate_launch_description():
         'resume_distance',
         default_value='0.25',
         description='Distance to release safety stop (m)',
+    )
+    spin_assist_enabled_arg = DeclareLaunchArgument(
+        'spin_assist_enabled',
+        default_value='true',
+        description='Enable periodic scan-assist spin when robot is idle',
+    )
+    initial_scan_spin_arg = DeclareLaunchArgument(
+        'initial_scan_spin',
+        default_value='true',
+        description='Perform initial in-place scan spin before exploration',
+    )
+    initial_scan_spin_angle_arg = DeclareLaunchArgument(
+        'initial_scan_spin_angle',
+        default_value='3.14',
+        description='Initial scan spin angle in radians (pi = 180 deg)',
+    )
+    initial_scan_spin_speed_arg = DeclareLaunchArgument(
+        'initial_scan_spin_speed',
+        default_value='0.20',
+        description='Initial scan spin speed in rad/s',
     )
 
     micro_ros_agent_chassis = ExecuteProcess(
@@ -200,6 +221,25 @@ def generate_launch_description():
         ],
     )
 
+    spin_assist_node = Node(
+        package='verter_admin',
+        executable='exploration_spin_assist_node',
+        name='exploration_spin_assist_node',
+        output='screen',
+        parameters=[
+            {
+                'odom_topic': '/odometry/filtered',
+                'cmd_topic': '/teleop_keyboard/cmd_vel',
+                'safety_topic': '/safety/cmd_vel',
+                'idle_duration_sec': 6.0,
+                'spin_speed': 0.2,
+                'spin_duration_sec': 8.0,
+                'cooldown_sec': 20.0,
+            }
+        ],
+        condition=IfCondition(LaunchConfiguration('spin_assist_enabled')),
+    )
+
     slam_toolbox_node = Node(
         package='slam_toolbox',
         executable='async_slam_toolbox_node',
@@ -230,8 +270,28 @@ def generate_launch_description():
         ],
     )
 
+    initial_scan_spin = TimerAction(
+        period=10.0,
+        actions=[
+            Node(
+                package='verter_admin',
+                executable='initial_scan_spin_node',
+                name='initial_scan_spin_node',
+                output='screen',
+                parameters=[
+                    {
+                        'cmd_topic': '/teleop_keyboard/cmd_vel',
+                        'spin_angle_rad': LaunchConfiguration('initial_scan_spin_angle'),
+                        'angular_speed': LaunchConfiguration('initial_scan_spin_speed'),
+                    }
+                ],
+                condition=IfCondition(LaunchConfiguration('initial_scan_spin')),
+            )
+        ],
+    )
+
     explore_lite = TimerAction(
-        period=15.0,
+        period=30.0,
         actions=[
             Node(
                 package='explore_lite',
@@ -256,6 +316,10 @@ def generate_launch_description():
             imu_esp32_port_arg,
             stop_distance_arg,
             resume_distance_arg,
+            spin_assist_enabled_arg,
+            initial_scan_spin_arg,
+            initial_scan_spin_angle_arg,
+            initial_scan_spin_speed_arg,
             micro_ros_agent_chassis,
             micro_ros_agent_imu,
             twist_mux_node,
@@ -267,8 +331,10 @@ def generate_launch_description():
             range_converter_node,
             range_to_laserscan_node,
             proximity_safety_node,
+            spin_assist_node,
             slam_toolbox_node,
             nav2_bringup,
+            initial_scan_spin,
             explore_lite,
         ]
     )

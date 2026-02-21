@@ -81,15 +81,15 @@ controller_server:
     # Progress checker parameters
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.3
+      required_movement_radius: 0.10
       movement_time_allowance: 10.0  # Быстрее определяет застревание
 
     # Goal checker parameters
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.15
-      yaw_goal_tolerance: 0.25
+      xy_goal_tolerance: 0.05
+      yaw_goal_tolerance: 0.20
 
     # Regulated Pure Pursuit controller (проще и надежнее чем DWB)
     FollowPath:
@@ -141,7 +141,7 @@ local_costmap:
         publish_voxel_map: True
         origin_z: 0.0
         z_resolution: 0.05
-        z_voxels: 40  # 40 voxels * 0.05m = 2.0m height
+        z_voxels: 16  # nav2 voxel grid supports up to 16
         max_obstacle_height: 2.0  # Увеличено с 0.8 до 2.0 для учёта данных лидара
         mark_threshold: 0
         observation_sources: lidar_scan ultrasonic
@@ -176,6 +176,7 @@ local_costmap:
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
+        subscribe_to_updates: True
       always_send_full_costmap: True
 
 global_costmap:
@@ -189,15 +190,17 @@ global_costmap:
       robot_radius: 0.25  # URDF collision cylinder radius (точный размер)
       resolution: 0.05
       track_unknown_space: true
-      # ВАЖНО ДЛЯ EXPLORATION: rolling_window ДОЛЖЕН быть true!
-      # Static costmap сохраняет всю карту для обнаружения frontiers
+      # Для frontier exploration используем статический слой карты от SLAM
       width: 100
       height: 100
-      rolling_window: true
+      rolling_window: false
       # Карта центрируется в точке старта SLAM (origin)
       origin_x: 0.0
       origin_y: 0.0
-      plugins: ["obstacle_layer", "inflation_layer"]
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True

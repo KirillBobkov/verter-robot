@@ -177,6 +177,8 @@ setup(
             'waypoint_navigator = verter_admin.waypoints.waypoint_navigator:main',
             'calibration_node = verter_admin.calibration.calibration_node:main',
             'proximity_safety_node = verter_admin.safety.proximity_safety_node:main',
+            'initial_scan_spin_node = verter_admin.safety.initial_scan_spin_node:main',
+            'exploration_spin_assist_node = verter_admin.safety.exploration_spin_assist_node:main',
         ],
     },
 )
