@@ -279,7 +279,7 @@ def generate_launch_description():
     )
 
     initial_scan_spin = TimerAction(
-        period=20.0,
+        period=8.0,
         actions=[
             Node(
                 package='verter_admin',
