@@ -183,19 +183,27 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       use_sim_time: false
-      robot_radius: 0.25  # URDF collision cylinder radius (точный размер)
+      robot_radius: 0.25
       resolution: 0.05
       track_unknown_space: true
-      # Rolling window keeps robot inside global costmap and avoids out-of-bounds.
-      width: 35
-      height: 35
-      rolling_window: true
-      plugins: ["obstacle_layer", "inflation_layer"]
+      # Static costmap (не rolling) — критично для explore_lite frontier detection
+      # SLAM карта приходит через static_layer, explore_lite находит границы
+      rolling_window: false
+      width: 50
+      height: 50
+      origin_x: -25.0
+      origin_y: -25.0
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        # Подписка на /map от slam_toolbox
+        map_topic: /map
+        subscribe_to_updates: true
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         observation_sources: lidar_scan ultrasonic
-        # RPLiDAR A1M8 (main navigation)
         lidar_scan:
           sensor_frame: lidar_link
           data_type: LaserScan
@@ -204,23 +212,22 @@ global_costmap:
           clearing: true
           min_obstacle_height: 0.0
           max_obstacle_height: 2.0
-        # HC-SR04 ultrasonic sensors (safety layer)
         ultrasonic:
           sensor_frame: base_link
           data_type: LaserScan
           topic: /ultrasonic/ranges
           marking: true
-          clearing: false  # Safety-only: add obstacles but don't clear
+          clearing: false
           min_obstacle_height: 0.0
-          max_obstacle_height: 0.8  # Датчики на 5см, обнаруживают до 80см высоты
-          raytrace_max_range: 2.0  # HC-SR04 reliable up to 1m
+          max_obstacle_height: 0.8
+          raytrace_max_range: 2.0
           raytrace_min_range: 0.02
           obstacle_max_range: 1.0
           obstacle_min_range: 0.02
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 8.0  # Высокое значение = предпочтение центра коридора
-        inflation_radius: 0.30  # Меньше отступ для узких коридоров
+        cost_scaling_factor: 8.0
+        inflation_radius: 0.30
       always_send_full_costmap: True
 
 planner_server:
