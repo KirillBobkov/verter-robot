@@ -20,19 +20,17 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
-    GroupAction,
     IncludeLaunchDescription,
     TimerAction,
 )
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import Node, SetRemap
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
     pkg_verter_admin = get_package_share_directory('verter_admin')
-    pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
 
     urdf_file = os.path.join(pkg_verter_admin, 'urdf', 'verter_robot_minimal.urdf')
     slam_params_file = os.path.join(pkg_verter_admin, 'config', 'slam', 'slam_toolbox_params.yaml')
@@ -243,6 +241,7 @@ def generate_launch_description():
                 'spin_angle_rad': 3.14,
                 'spin_duration_sec': 0.0,
                 'cooldown_sec': 20.0,
+                'min_translation_after_spin_m': 0.20,
             }
         ],
         condition=IfCondition(LaunchConfiguration('spin_assist_enabled')),
@@ -259,21 +258,17 @@ def generate_launch_description():
     nav2_bringup = TimerAction(
         period=18.0,
         actions=[
-            GroupAction(
-                actions=[
-                    SetRemap(src='cmd_vel', dst='/nav2/cmd_vel'),
-                    SetRemap(src='/cmd_vel', dst='/nav2/cmd_vel'),
-                    IncludeLaunchDescription(
-                        PythonLaunchDescriptionSource(
-                            os.path.join(pkg_nav2_bringup, 'launch', 'navigation_launch.py')
-                        ),
-                        launch_arguments={
-                            'use_sim_time': 'false',
-                            'params_file': nav2_params_file,
-                            'autostart': 'true',
-                        }.items(),
-                    ),
-                ]
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    os.path.join(pkg_verter_admin, 'launch', 'nav2_navigation_no_smoother.launch.py')
+                ),
+                launch_arguments={
+                    'use_sim_time': 'false',
+                    'params_file': nav2_params_file,
+                    'autostart': 'true',
+                    'use_respawn': 'false',
+                    'log_level': 'info',
+                }.items(),
             )
         ],
     )

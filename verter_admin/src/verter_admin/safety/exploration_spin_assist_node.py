@@ -26,6 +26,7 @@ class ExplorationSpinAssistNode(Node):
         self.declare_parameter('spin_duration_sec', 0.0)
         self.declare_parameter('cooldown_sec', 20.0)
         self.declare_parameter('safety_holdoff_sec', 1.0)
+        self.declare_parameter('min_translation_after_spin_m', 0.12)
         self.declare_parameter('control_rate_hz', 20.0)
 
         self.odom_topic = self.get_parameter('odom_topic').value
@@ -44,6 +45,9 @@ class ExplorationSpinAssistNode(Node):
             self.spin_duration_sec = self.spin_angle_rad / abs(self.spin_speed)
         self.cooldown_sec = float(self.get_parameter('cooldown_sec').value)
         self.safety_holdoff_sec = float(self.get_parameter('safety_holdoff_sec').value)
+        self.min_translation_after_spin_m = float(
+            self.get_parameter('min_translation_after_spin_m').value
+        )
         self.control_rate_hz = float(self.get_parameter('control_rate_hz').value)
 
         self.cmd_pub = self.create_publisher(Twist, self.cmd_topic, 10)
@@ -54,8 +58,13 @@ class ExplorationSpinAssistNode(Node):
         self.last_spin_end_time = self.get_clock().now() - Duration(seconds=9999.0)
         self.last_safety_time = None
         self.current_speed = 0.0
+        self.current_x = None
+        self.current_y = None
         self.spin_active = False
         self.spin_end_time = None
+        self.waiting_translation_after_spin = False
+        self.spin_end_x = None
+        self.spin_end_y = None
 
         self.spin_cmd = Twist()
         self.spin_cmd.angular.z = self.spin_speed
@@ -65,16 +74,29 @@ class ExplorationSpinAssistNode(Node):
         self.get_logger().info(
             'exploration_spin_assist_node started: '
             f'idle={self.idle_duration_sec:.1f}s, spin={self.spin_duration_sec:.1f}s '
-            f'(~{self.spin_angle_rad:.2f} rad)'
+            f'(~{self.spin_angle_rad:.2f} rad), '
+            f'min_translation_after_spin={self.min_translation_after_spin_m:.2f}m'
         )
 
     def _odom_cb(self, msg: Odometry):
+        self.current_x = float(msg.pose.pose.position.x)
+        self.current_y = float(msg.pose.pose.position.y)
+
         v = msg.twist.twist.linear
         w = msg.twist.twist.angular
         speed = (v.x ** 2 + v.y ** 2) ** 0.5 + abs(w.z) * 0.5
         self.current_speed = speed
         if speed > self.idle_speed_threshold:
             self.last_motion_time = self.get_clock().now()
+
+        if self.waiting_translation_after_spin and self.spin_end_x is not None:
+            dx = self.current_x - self.spin_end_x
+            dy = self.current_y - self.spin_end_y
+            if (dx * dx + dy * dy) ** 0.5 >= self.min_translation_after_spin_m:
+                self.waiting_translation_after_spin = False
+                self.get_logger().info(
+                    'Translation after spin detected, spin-assist re-enabled'
+                )
 
     def _safety_cb(self, _msg: Twist):
         self.last_safety_time = self.get_clock().now()
@@ -96,6 +118,10 @@ class ExplorationSpinAssistNode(Node):
         self.spin_active = False
         self.spin_end_time = None
         self.last_spin_end_time = self.get_clock().now()
+        if self.current_x is not None:
+            self.spin_end_x = self.current_x
+            self.spin_end_y = self.current_y
+            self.waiting_translation_after_spin = True
         self.cmd_pub.publish(self.stop_cmd)
         self.get_logger().info('Scan-assist spin finished')
 
@@ -114,6 +140,10 @@ class ExplorationSpinAssistNode(Node):
             return
 
         if (now - self.last_spin_end_time) < Duration(seconds=self.cooldown_sec):
+            return
+
+        # Do not start a new spin until robot translates after previous spin.
+        if self.waiting_translation_after_spin:
             return
 
         if self.current_speed > self.idle_speed_threshold:
@@ -138,4 +168,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
