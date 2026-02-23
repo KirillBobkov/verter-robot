@@ -4,7 +4,7 @@
 
 ### 1. Увеличены размеры буфера aplay для предотвращения underrun
 
-#### Файл: [`verter_admin/src/verter_admin/text_to_speech/text_to_speech_node.py`](verter_admin/src/verter_admin/text_to_speech/text_to_speech_node.py)
+#### Файл: `verter_admin/src/verter_admin/text_to_speech/text_to_speech_node.py`
 ```python
 # Было:
 cmd = ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=256", "--period-size=64"]
@@ -13,7 +13,7 @@ cmd = ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate
 cmd = ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=4096", "--period-size=512"]
 ```
 
-#### Файл: [`verter_admin/src/verter_admin/sound_player/sound_player_node.py`](verter_admin/src/verter_admin/sound_player/sound_player_node.py)
+#### Файл: `verter_admin/src/verter_admin/sound_player/sound_player_node.py`
 ```python
 # Для WAV файлов (строка 112-114):
 # Было:
@@ -36,13 +36,13 @@ cmd = ['aplay', '-D', self.audio_device, '-q', '-f', 'S16_LE', '-r', '22050', '-
 
 ### 2. Увеличена задержка PulseAudio для стабильности при автозапуске
 
-#### Файл: [`verter_admin/src/verter_admin/text_to_speech/text_to_speech_node.py`](verter_admin/src/verter_admin/text_to_speech/text_to_speech_node.py)
+#### Файл: `verter_admin/src/verter_admin/text_to_speech/text_to_speech_node.py`
 ```python
 # Добавлено:
 self.env["PULSE_LATENCY_MSEC"] = "100"  # Было 30
 ```
 
-#### Файл: [`verter_admin/src/verter_admin/sound_player/sound_player_node.py`](verter_admin/src/verter_admin/sound_player/sound_player_node.py)
+#### Файл: `verter_admin/src/verter_admin/sound_player/sound_player_node.py`
 ```python
 # Было:
 self.env["PULSE_LATENCY_MSEC"] = "30"
@@ -53,7 +53,7 @@ self.env["PULSE_LATENCY_MSEC"] = "100"
 
 ### 3. Добавлена проверка USB аудио устройств
 
-#### Файл: [`verter_admin/services/start_verter_admin.sh`](verter_admin/services/start_verter_admin.sh)
+#### Файл: `verter_admin/services/start_verter_admin.sh`
 ```bash
 # Добавлено после ожидания PulseAudio:
 echo "Проверка USB аудио устройств..."
@@ -74,7 +74,7 @@ sleep 2
 
 ### 4. Добавлено диагностическое логирование
 
-#### Файл: [`verter_admin/services/start_verter_admin.sh`](verter_admin/services/start_verter_admin.sh)
+#### Файл: `verter_admin/services/start_verter_admin.sh`
 ```bash
 # Добавлено перед запуском ROS2:
 echo "=== Диагностика аудио системы ==="
@@ -91,7 +91,7 @@ echo "==================================="
 
 ### 5. Улучшен systemd сервис
 
-#### Файл: [`verter_admin/services/verter-admin.service`](verter_admin/services/verter-admin.service)
+#### Файл: `verter_admin/services/verter-admin.service`
 ```ini
 # Было:
 After=graphical-session.target sound.target network.target
@@ -289,4 +289,4 @@ self.env["PULSE_LATENCY_MSEC"] = "30"
 
 ## Дополнительная информация
 
-Подробный план исправлений находится в [`plans/autostart-audio-fix.md`](../../plans/autostart-audio-fix.md).
+Подробный план исправлений находится в `plans/autostart-audio-fix.md`.
