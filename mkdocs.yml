@@ -24,25 +24,10 @@ nav:
   - Главная: index.md
   - Кодовая документация:
       - Обзор: code/verter_admin.md
-      - Ноды:
-          - speech_to_text_* (STT): code/nodes/speech_to_text_node.md
-          - recognition_node: code/nodes/recognition_node.md
-          - ai_assistant_node: code/nodes/ai_assistant_node.md
-          - text_to_speech_node: code/nodes/text_to_speech_node.md
-          - silero_tts_node: code/nodes/silero_tts_node.md
-          - sound_player_node: code/nodes/sound_player_node.md
-          - chassis_node: code/nodes/chassis_node.md
-          - distance_sensors_node: code/nodes/distance_sensors.md
-          - doa_node: code/nodes/doa_node.md
-          - odometry_node: code/nodes/odometry_node.md
-          - teleop_keyboard: code/nodes/teleop_keyboard.md
-          - waypoint_navigator: code/nodes/waypoint_navigator.md
-          - Теслик играет в мяч: plans/teslik.md
       - API:
           - Интерфейсы и топики: code/api.md
           - Топики (справка): code/api/topics.md
       - Инженерия и план:
-          - План разработки: code/engineering/DEVELOPMENT_PLAN.md
           - Итоги фазы 1: code/engineering/PHASE1_SUMMARY.md
           - Итоги чистки/рефакторинга: code/engineering/CLEANUP_SUMMARY.md
           - Оптимизация: code/engineering/OPTIMIZATION_NOTES.md
@@ -51,8 +36,6 @@ nav:
           - Тест-кейсы голосового пайплайна: code/dev/speech_pipeline_test_cases.md
           - Журнал изменений URDF: code/dev/urdf_changes_log.md
           - Параметры URDF к замеру: code/dev/urdf_parameters_to_measure.md
-          - Архив:
-              - Тест-кейсы распознавания (Vosk, legacy): code/dev/legacy/vosk_speech_recognition_test_cases.md
   - Проектная документация:
       - Обзор: project/verter_admin.md
       - Цель проекта: project/PROJECT_GOAL.md
@@ -78,5 +61,13 @@ nav:
               - Решенные проблемы: project/networking/wifi-connect/PROBLEMS-SOLVED.md
   - Аппаратная часть:
       - Обзор: hardware.md
+      - ESP32 MicroROS Setup: hardware/esp32_microros_setup.md
+  - Планы:
+      - Диагностика аудио-синка: plans/audio-sink-diagnosis.md
+      - Исправление автозапуска аудио: plans/autostart-audio-fix.md
+  - Операции:
+      - Установка исправления автозапуска аудио: project/operations/autostart-audio-fix-install.md
+      - Исправление USB-Serial на Jetson: project/operations/jetson-usb-serial-fix.md
+      - Проверка подключения лидара: project/operations/lidar_connection_check.md
 
 

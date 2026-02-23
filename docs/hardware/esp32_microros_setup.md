@@ -4,12 +4,12 @@
 
 ## Содержание
 
-1. [Необходимое оборудование](#1-необходимое-оборудование)
-2. [Установка инструментов разработки](#2-установка-инструментов-разработки)
-3. [Прошивка ESP32](#3-прошивка-esp32)
-4. [Настройка micro-ROS Agent на Jetson](#4-настройка-micro-ros-agent-на-jetson)
-5. [Подключение моторов и энкодеров](#5-подключение-моторов-и-энкодеров)
-6. [Тестирование](#6-тестирование)
+1. [Необходимое оборудование](#1-neobkhodimoe-oborudovanie)
+2. [Установка инструментов разработки](#2-ustanovka-instrumentov-razrabotki)
+3. [Прошивка ESP32](#3-proshivka-esp32)
+4. [Настройка micro-ROS Agent на Jetson](#4-nastroika-micro-ros-agent-na-jetson)
+5. [Подключение моторов и энкодеров](#5-podkliuchenie-motorov-i-enkoderov)
+6. [Тестирование](#6-testirovanie)
 7. [Troubleshooting](#7-troubleshooting)
 
 ---
