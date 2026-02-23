@@ -37,6 +37,7 @@ nav:
           - odometry_node: code/nodes/odometry_node.md
           - teleop_keyboard: code/nodes/teleop_keyboard.md
           - waypoint_navigator: code/nodes/waypoint_navigator.md
+          - Теслик играет в мяч: plans/teslik.md
       - API:
           - Интерфейсы и топики: code/api.md
           - Топики (справка): code/api/topics.md
