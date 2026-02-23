@@ -28,6 +28,7 @@ nav:
           - Интерфейсы и топики: code/api.md
           - Топики (справка): code/api/topics.md
       - Инженерия и план:
+          - Чертежи: hardware/Колёсная_база.md
           - Итоги фазы 1: code/engineering/PHASE1_SUMMARY.md
           - Итоги чистки/рефакторинга: code/engineering/CLEANUP_SUMMARY.md
           - Оптимизация: code/engineering/OPTIMIZATION_NOTES.md
