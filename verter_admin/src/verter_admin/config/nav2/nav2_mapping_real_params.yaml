@@ -134,8 +134,8 @@ local_costmap:
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0  # Плавный градиент стоимости от препятствий
-        inflation_radius: 0.35  # Больше inscribed radius (0.255) + запас
+        cost_scaling_factor: 10.0  # Быстрый спад стоимости — проезжает узкие проходы
+        inflation_radius: 0.26  # Чуть больше inscribed radius (0.255)
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
