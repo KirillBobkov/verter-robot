@@ -76,7 +76,7 @@ def generate_launch_description():
     )
     spin_assist_enabled_arg = DeclareLaunchArgument(
         'spin_assist_enabled',
-        default_value='true',
+        default_value='false',
         description='Enable periodic scan-assist spin when robot is idle',
     )
     initial_scan_spin_arg = DeclareLaunchArgument(
