@@ -51,9 +51,9 @@ slam_toolbox:
     # For odometry-based SLAM with differential drive
     # Lower values = more frequent updates, better for indoor mapping
     # Aggressive updates so map grows even during in-place rotation.
-    minimum_travel_distance: 0.0   # Без ограничения по расстоянию — карта обновляется и при вращении на месте
-    minimum_travel_heading: 0.02   # Update after ~1° rotation
-    map_update_interval: 0.5       # Publish map updates every 0.5s
+    minimum_travel_distance: 0.05  # Обновлять карту после 5 см перемещения
+    minimum_travel_heading: 0.05   # Update after ~3° rotation
+    map_update_interval: 1.0       # Publish map updates every 1s
 
     # Scan Matching Parameters
     scan_buffer_size: 10
