@@ -10,7 +10,7 @@
 
 ## Автоматическая проверка
 
-Используйте скрипт [`check_lidar_connection.sh`](../../verter_admin/check_lidar_connection.sh) для автоматической проверки:
+Используйте скрипт `check_lidar_connection.sh` для автоматической проверки:
 
 ```bash
 bash /home/jetson/verter-robot/verter_admin/check_lidar_connection.sh
@@ -114,7 +114,7 @@ ros2 topic echo /scan --once
 
 ### Шаг 8: Мониторинг данных
 
-Скрипт [`check_lidar_connection.sh`](../../verter_admin/check_lidar_connection.sh) включает режим непрерывного мониторинга данных лидара с интервалом 1 секунда.
+Скрипт `check_lidar_connection.sh` включает режим непрерывного мониторинга данных лидара с интервалом 1 секунда.
 
 ## Конфигурация проекта
 
@@ -134,8 +134,8 @@ ros2 topic echo /scan --once
 
 ### Launch файлы
 
-- [`mapping.launch.py`](../../verter_admin/src/verter_admin/launch/mapping.launch.py) - полный запуск с SLAM
-- [`real_robot_navigation.launch.py`](../../verter_admin/src/verter_admin/launch/real_robot_navigation.launch.py) - навигация на реальном роботе
+- `mapping.launch.py` - полный запуск с SLAM
+- `real_robot_navigation.launch.py` - навигация на реальном роботе
 
 ## Решение проблем
 

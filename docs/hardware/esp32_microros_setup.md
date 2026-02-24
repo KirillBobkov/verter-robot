@@ -4,17 +4,17 @@
 
 ## Содержание
 
-1. [Необходимое оборудование](#1-необходимое-оборудование)
-2. [Установка инструментов разработки](#2-установка-инструментов-разработки)
-3. [Прошивка ESP32](#3-прошивка-esp32)
-4. [Настройка micro-ROS Agent на Jetson](#4-настройка-micro-ros-agent-на-jetson)
-5. [Подключение моторов и энкодеров](#5-подключение-моторов-и-энкодеров)
-6. [Тестирование](#6-тестирование)
+1. [Необходимое оборудование](#1-neobkhodimoe-oborudovanie)
+2. [Установка инструментов разработки](#2-ustanovka-instrumentov-razrabotki)
+3. [Прошивка ESP32](#3-proshivka-esp32)
+4. [Настройка micro-ROS Agent на Jetson](#4-nastroika-micro-ros-agent-na-jetson)
+5. [Подключение моторов и энкодеров](#5-podkliuchenie-motorov-i-enkoderov)
+6. [Тестирование](#6-testirovanie)
 7. [Troubleshooting](#7-troubleshooting)
 
 ---
 
-## 1. Необходимое оборудование
+## 1. Необходимое оборудование {#1-neobkhodimoe-oborudovanie}
 
 ### ESP32 плата
 
@@ -67,7 +67,7 @@
 
 ---
 
-## 2. Установка инструментов разработки
+## 2. Установка инструментов разработки {#2-ustanovka-instrumentov-razrabotki}
 
 ### Вариант A: Arduino IDE (проще для начала)
 
@@ -140,7 +140,7 @@ pio run --target upload  # Прошивка
 
 ---
 
-## 3. Прошивка ESP32
+## 3. Прошивка ESP32 {#3-proshivka-esp32}
 
 ### Драйвер CH340C
 
@@ -214,7 +214,7 @@ screen /dev/ttyUSB0 115200
 
 ---
 
-## 4. Настройка micro-ROS Agent на Jetson
+## 4. Настройка micro-ROS Agent на Jetson {#4-nastroika-micro-ros-agent-na-jetson}
 
 micro-ROS Agent - это мост между ESP32 и ROS2 на Jetson.
 
@@ -293,7 +293,7 @@ sudo udevadm trigger
 
 ---
 
-## 5. Подключение моторов и энкодеров
+## 5. Подключение моторов и энкодеров {#5-podkliuchenie-motorov-i-enkoderov}
 
 ### Схема подключения к ESP32 30-pin (Type-C CH340C)
 
@@ -369,7 +369,7 @@ ESP32               │                         │
 
 ---
 
-## 6. Тестирование
+## 6. Тестирование {#6-testirovanie}
 
 ### Шаг 1: Проверка связи
 
@@ -416,7 +416,7 @@ ros2 run verter_admin teleop_keyboard
 
 ---
 
-## 7. Troubleshooting
+## 7. Troubleshooting {#7-troubleshooting}
 
 ### ESP32 не определяется как USB устройство
 
