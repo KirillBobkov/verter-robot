@@ -134,8 +134,8 @@ local_costmap:
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 8.0  # Высокое значение = предпочтение центра коридора
-        inflation_radius: 0.05  # 5 см дополнительного отступа от препятствий
+        cost_scaling_factor: 3.0  # Плавный градиент стоимости от препятствий
+        inflation_radius: 0.35  # Больше inscribed radius (0.255) + запас
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -225,8 +225,8 @@ global_costmap:
           obstacle_min_range: 0.02
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 8.0
-        inflation_radius: 0.05
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.35
       always_send_full_costmap: True
 
 planner_server:
