@@ -110,8 +110,6 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('src/verter_admin/launch', '*.launch.py'))),
         # Включаем URDF модели робота
         (os.path.join('share', package_name, 'urdf'), glob(os.path.join('src/verter_admin/urdf', '*.urdf'))),
-        # Включаем world файли для Gazebo
-        (os.path.join('share', package_name, 'worlds'), glob(os.path.join('src/verter_admin/worlds', '*.world'))),
         # Включаем конфигурацию Nav2
         (os.path.join('share', package_name, 'config', 'nav2'), glob(os.path.join('src/verter_admin/config/nav2', '*.yaml'))),
         # Включаем конфигурацию SLAM
