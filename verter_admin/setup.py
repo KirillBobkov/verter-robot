@@ -122,6 +122,8 @@ setup(
         (os.path.join('share', package_name, 'config', 'twist_mux'), glob(os.path.join('src/verter_admin/config/twist_mux', '*.yaml'))),
         # Включаем конфигурацию Laser Filters
         (os.path.join('share', package_name, 'config', 'laser_filters'), glob(os.path.join('src/verter_admin/config/laser_filters', '*.yaml'))),
+        # Включаем веб-интерфейс
+        (os.path.join('share', package_name, 'web'), glob(os.path.join('src/verter_admin/web', '*.html'))),
         # Arduino скетчи не включаем в сборку
         # Включаем dataset в пакет
         *get_dataset_files(),
@@ -166,13 +168,13 @@ setup(
 
             'distance_sensors_node = verter_admin.distance_sensors.distance_sensors_node:main',
             'range_converter_node = verter_admin.distance_sensors.range_converter_node:main',
-            'ultrasonic_to_laserscan_node = verter_admin.distance_sensors.ultrasonic_to_laserscan_node:main',
             'range_to_laserscan = verter_admin.distance_sensors.range_to_laserscan:main',
-            'laserscan_merger = verter_admin.distance_sensors.laserscan_merger:main',
             'odometry_node = verter_admin.odometry.odometry_node:main',
             'doa_node = verter_admin.doa.doa_node:main',
             'teleop_keyboard = verter_admin.teleop.teleop_keyboard:main',
             'waypoint_navigator = verter_admin.waypoints.waypoint_navigator:main',
+            'waypoint_manager = verter_admin.waypoints.waypoint_manager:main',
+            'web_server_node = verter_admin.web.web_server_node:main',
             'calibration_node = verter_admin.calibration.calibration_node:main',
             'proximity_safety_node = verter_admin.safety.proximity_safety_node:main',
             'initial_scan_spin_node = verter_admin.safety.initial_scan_spin_node:main',

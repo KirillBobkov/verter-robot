@@ -9,21 +9,21 @@ Launch файл для навигации по готовой карте на р
 4. odometry_node - одометрия (энкодеры)
 5. EKF - фьюзинг энкодеров + IMU
 6. robot_state_publisher - TF из URDF
-7. rplidar_node + laser_filter - лидар
-8. map_server - загрузка карты
-9. amcl - локализация на карте
-10. Nav2 - планирование и следование по пути
+7. rplidar_node + laser_filter - лидар (с задержкой и respawn)
+8. range_converter_node - ультразвуковые датчики ESP32 → Range
+9. proximity_safety_node - экстренная остановка по ультразвуку
+10. map_server - загрузка карты
+11. amcl - локализация на карте
+12. Nav2 - планирование и следование по пути (через nav2_navigation_no_smoother)
 
-Архитектура:
-  /teleop_keyboard/cmd_vel ────>│           │
-  /nav2/cmd_vel ───────────────>│ twist_mux │──> /cmd_vel ──> ESP32
-                                └───────────┘
-  ESP32 /wheel_encoders ──> odometry_node ──> /odom ─┐
-  ESP32 /imu/data ──────────────────────────────────┤
-                                                     └──> EKF ──> /odometry/filtered
-  RPLiDAR ──> /scan_raw ──> laser_filter ──> /scan ──> AMCL (локализация)
-                                                    └──> Nav2 (навигация)
-  map_server ──> /map ──> AMCL + Nav2 global costmap
+Поток скорости:
+  Nav2 controller/behaviors → /nav2/cmd_vel_raw
+  velocity_smoother          → /nav2/cmd_vel
+  twist_mux (priority 10)   → /cmd_vel → ESP32
+
+  /safety/cmd_vel (priority 200)  ─┐
+  /teleop_keyboard/cmd_vel (100)  ─┼─→ twist_mux → /cmd_vel
+  /nav2/cmd_vel (10)              ─┘
 
 Использование:
     ros2 launch verter_admin navigation.launch.py
@@ -42,7 +42,6 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     pkg_verter_admin = get_package_share_directory('verter_admin')
-    pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
 
     # Пути к конфигурационным файлам
     urdf_file = os.path.join(pkg_verter_admin, 'urdf', 'verter_robot_minimal.urdf')
@@ -89,6 +88,18 @@ def generate_launch_description():
         'imu_esp32_port',
         default_value='/dev/esp32_imu',
         description='Serial port for ESP32 IMU (micro-ROS)'
+    )
+
+    stop_distance_arg = DeclareLaunchArgument(
+        'stop_distance',
+        default_value='0.20',
+        description='Emergency stop distance (m)',
+    )
+
+    resume_distance_arg = DeclareLaunchArgument(
+        'resume_distance',
+        default_value='0.25',
+        description='Distance to release safety stop (m)',
     )
 
     # =========================================================================
@@ -166,25 +177,32 @@ def generate_launch_description():
     )
 
     # =========================================================================
-    # ЛИДАР
+    # ЛИДАР (с задержкой 3с и авто-перезапуском)
     # =========================================================================
 
-    rplidar_node = Node(
-        package='rplidar_ros',
-        executable='rplidar_node',
-        name='rplidar_node',
-        parameters=[{
-            'serial_port': LaunchConfiguration('lidar_port'),
-            'frame_id': 'lidar_link',
-            'scan_mode': 'Express',
-            'serial_baudrate': 115200,
-            'inverted': False,
-            'angle_compensate': True,
-        }],
-        remappings=[
-            ('scan', '/scan_raw'),
+    rplidar_node = TimerAction(
+        period=3.0,
+        actions=[
+            Node(
+                package='rplidar_ros',
+                executable='rplidar_node',
+                name='rplidar_node',
+                parameters=[{
+                    'serial_port': LaunchConfiguration('lidar_port'),
+                    'frame_id': 'lidar_link',
+                    'scan_mode': 'Express',
+                    'serial_baudrate': 115200,
+                    'inverted': False,
+                    'angle_compensate': True,
+                }],
+                remappings=[
+                    ('scan', '/scan_raw'),
+                ],
+                respawn=True,
+                respawn_delay=5.0,
+                output='screen',
+            ),
         ],
-        output='screen'
     )
 
     laser_filter_node = Node(
@@ -197,6 +215,35 @@ def generate_launch_description():
             ('scan_filtered', '/scan'),
         ],
         output='screen'
+    )
+
+    # =========================================================================
+    # УЛЬТРАЗВУКОВЫЕ ДАТЧИКИ
+    # =========================================================================
+
+    range_converter_node = Node(
+        package='verter_admin',
+        executable='range_converter_node',
+        name='range_converter_node',
+        output='screen',
+    )
+
+    # =========================================================================
+    # БЕЗОПАСНОСТЬ (экстренная остановка по ультразвуку/лидару)
+    # =========================================================================
+
+    proximity_safety_node = Node(
+        package='verter_admin',
+        executable='proximity_safety_node',
+        name='proximity_safety_node',
+        output='screen',
+        parameters=[{
+            'stop_distance': LaunchConfiguration('stop_distance'),
+            'resume_distance': LaunchConfiguration('resume_distance'),
+            'scan_topic': '/scan',
+            'ultrasonic_topic': '/ultrasonic/ranges',
+            'cmd_topic': '/safety/cmd_vel',
+        }],
     )
 
     # =========================================================================
@@ -236,7 +283,9 @@ def generate_launch_description():
     )
 
     # =========================================================================
-    # NAV2 NAVIGATION (с задержкой для инициализации локализации)
+    # NAV2 NAVIGATION (с задержкой 5с для инициализации AMCL)
+    # Используем кастомный launch с правильными ремапами через twist_mux:
+    #   controller/behaviors → /nav2/cmd_vel_raw → velocity_smoother → /nav2/cmd_vel → twist_mux
     # =========================================================================
 
     nav2_bringup = TimerAction(
@@ -244,12 +293,14 @@ def generate_launch_description():
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    os.path.join(pkg_nav2_bringup, 'launch', 'navigation_launch.py')
+                    os.path.join(pkg_verter_admin, 'launch', 'nav2_navigation.launch.py')
                 ),
                 launch_arguments={
                     'use_sim_time': 'false',
                     'params_file': nav2_params_file,
-                    'autostart': 'true'
+                    'autostart': 'true',
+                    'use_respawn': 'false',
+                    'log_level': 'info',
                 }.items()
             )
         ]
@@ -265,6 +316,8 @@ def generate_launch_description():
         lidar_port_arg,
         esp32_port_arg,
         imu_esp32_port_arg,
+        stop_distance_arg,
+        resume_distance_arg,
 
         # micro-ROS Agents
         micro_ros_agent_chassis,
@@ -278,9 +331,15 @@ def generate_launch_description():
         # TF
         robot_state_publisher,
 
-        # Лидар
+        # Лидар (с задержкой и respawn)
         rplidar_node,
         laser_filter_node,
+
+        # Ультразвуковые датчики
+        range_converter_node,
+
+        # Безопасность
+        proximity_safety_node,
 
         # Локализация
         map_server,

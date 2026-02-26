@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Nav2 bringup for real mapping with velocity_smoother routed via twist_mux.
+"""Nav2 bringup with velocity_smoother routed via twist_mux.
 
-This launch keeps a single motion command path:
-  Nav2 controller/behaviors -> /nav2/cmd_vel_raw
-  velocity_smoother -> /nav2/cmd_vel
-  twist_mux -> /cmd_vel
+Sub-launch: запускает только ноды Nav2 с ремапами скорости.
+Используется из navigation.launch.py и autonomous_mapping_real.launch.py.
+
+Поток команд:
+  Nav2 controller/behaviors → /nav2/cmd_vel_raw
+  velocity_smoother          → /nav2/cmd_vel
+  twist_mux                  → /cmd_vel
 """
 
 import os

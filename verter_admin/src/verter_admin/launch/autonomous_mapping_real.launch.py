@@ -260,7 +260,7 @@ def generate_launch_description():
         actions=[
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
-                    os.path.join(pkg_verter_admin, 'launch', 'nav2_navigation_no_smoother.launch.py')
+                    os.path.join(pkg_verter_admin, 'launch', 'nav2_navigation.launch.py')
                 ),
                 launch_arguments={
                     'use_sim_time': 'false',
