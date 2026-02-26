@@ -2,8 +2,12 @@
 ### Extended Kalman Filter for sensor fusion: Wheel Odometry + IMU
 ###
 ### Фьюзит (объединяет) данные с двух датчиков:
-### 1. Энкодеры колёс (/odom) - позиция и скорость
-### 2. IMU BMX055 (/imu/data) - угловая скорость и ускорение
+### 1. Энкодеры колёс (/odom) — абсолютная позиция (x, y, yaw)
+### 2. IMU BMX055 (/imu/data) — угловая скорость (vyaw)
+###
+### Принцип: энкодеры дают позицию + абсолютный yaw,
+### IMU даёт vyaw для сглаживания yaw между обновлениями энкодеров.
+### НЕ мешаем pose и twist из одного источника.
 ###
 ### Выход: /odometry/filtered + TF odom→base_footprint
 
@@ -13,92 +17,64 @@ ekf_filter_node:
     # GENERAL SETTINGS
     # ========================================================================
 
-    # Frequency of the filter (Hz)
-    # Higher = more responsive but more CPU
-    # Recommended: 30-50 Hz for mobile robots
     frequency: 50.0
-
-    # Timeout for sensor data (seconds)
-    # If no data received within this time, sensor is considered failed
     sensor_timeout: 0.1
-
-    # Operating in 2D mode (planar motion only)
-    # For differential drive robots, we only care about x, y, yaw
     two_d_mode: true
 
-    # Transform settings
     transform_time_offset: 0.0
     transform_timeout: 0.0
 
-    # Print diagnostics to terminal
     print_diagnostics: true
     debug: false
 
-    # Publish TF transform odom -> base_footprint
-    # EKF публикует TF вместо odometry_node (у неё publish_tf отключён)
     publish_tf: true
-
-    # Publish acceleration state
     publish_acceleration: false
 
     # ========================================================================
     # FRAME IDs
     # ========================================================================
 
-    # The frame in which the filter operates (usually "odom")
     world_frame: odom
-
-    # The coordinate frame of the robot
     base_link_frame: base_footprint
-
-    # Map frame (for future use with SLAM)
     map_frame: map
-
-    # Output odometry frame
     odom_frame: odom
 
     # ========================================================================
     # SENSOR INPUTS
     # ========================================================================
+    #
+    # Правило robot_localization: из одного источника берём ЛИБО позицию,
+    # ЛИБО скорость по одной оси, не оба сразу. Иначе EKF переуверен.
+    #
+    # Энкодеры (odom0): абсолютная позиция x, y + абсолютный yaw
+    # IMU (imu0): угловая скорость vyaw
+    #
+    # EKF сам вычислит vx из изменений x,y и скорректирует yaw
+    # по данным IMU gyro между обновлениями энкодеров.
 
-    # List of sensors to fuse
-    # Format: odom0, odom1, imu0, imu1, etc.
-
-    # ---------- ODOMETRY FROM DIFF_DRIVE ----------
-    # Topic: /odom (published by gazebo_ros_diff_drive plugin)
-    # Provides: position (x, y) and velocity (vx, vyaw)
+    # ---------- ODOMETRY FROM ENCODERS ----------
+    # Абсолютная позиция (x, y) и абсолютный yaw от энкодеров.
+    # Скорости НЕ берём — EKF выведет их из позиции.
 
     odom0: /odom
     odom0_config: [
       # Position: [x,    y,    z,    roll, pitch, yaw]
-                   true,  true, false, false, false, false,
+                   true,  true, false, false, false, true,
       # Velocity: [vx,   vy,   vz,   vroll, vpitch, vyaw]
-                   true,  false, false, false, false, true,
+                   false, false, false, false, false, false,
       # Acceleration: [ax, ay, az, aroll, apitch, ayaw]
                    false, false, false, false, false, false
     ]
 
-    # Differential mode for odometry (default: false)
-    # If true, integrates velocity. If false, uses absolute position.
-    # For wheel odometry, use false (we trust absolute position from encoders)
     odom0_differential: false
-
-    # Relative mode (default: false)
-    # If true, measurements are treated as relative to first measurement
     odom0_relative: false
-
-    # Queue size for odometry messages
     odom0_queue_size: 10
 
-    # Reject outliers (Mahalanobis distance threshold)
-    # Set to large value to not reject outliers initially
-    # odom0_rejection_threshold: 5.0
-
     # ---------- IMU DATA ----------
-    # Topic: /imu/data (published by ESP32 IMU via micro-ROS)
-    # BMX055: gyro bias откалиброван (angular_velocity.z ≈ 0 стоя на месте)
-    # Акселерометр ОТКЛЮЧЁН: bias ax≈-0.23, ay≈0.23 м/с², az≈9.02 (не 9.81)
-    # TODO: откалибровать акселерометр, затем включить ax/ay
+    # BMX055 gyro: bias ~0 стоя на месте, шум ±0.005 rad/s,
+    # выбросы до ±0.012 rad/s.
+    # Берём только vyaw — сглаживает yaw между обновлениями энкодеров.
+    # Акселерометр не откалиброван, отключён.
 
     imu0: /imu/data
     imu0_config: [
@@ -110,69 +86,52 @@ ekf_filter_node:
                    false, false, false, false, false, false
     ]
 
-    # Differential mode for IMU
     imu0_differential: false
-
-    # Relative mode
     imu0_relative: false
-
-    # Queue size
     imu0_queue_size: 10
-
-    # imu0_remove_gravitational_acceleration: true  # не нужно пока ax/ay отключены
 
     # ========================================================================
     # PROCESS NOISE COVARIANCE
     # ========================================================================
-    # How much we trust the motion model (higher = trust less)
-    # Format: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+    # Шум модели движения. Больше = меньше доверие к модели,
+    # больше доверие к сенсорам. Диагональная 15x15 матрица.
+    # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
 
     process_noise_covariance: [
-      # Position uncertainty (meters²)
-      0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # x
-      0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # y
-      0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # z (not used in 2D)
-      # Orientation uncertainty (rad²)
-      0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # roll (not used)
-      0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # pitch (not used)
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # yaw (IMPORTANT!)
-      # Velocity uncertainty (m/s)²
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.025, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # vx
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.025, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # vy
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  # vz
-      # Angular velocity uncertainty (rad/s)²
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  # vroll
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  # vpitch
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,  # vyaw (IMPORTANT!)
-      # Acceleration uncertainty (m/s²)²
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  # ax
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  # ay
-      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015  # az
+      0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
+      0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015
     ]
 
     # ========================================================================
     # INITIAL STATE COVARIANCE
     # ========================================================================
-    # Uncertainty in initial state (at startup)
-    # Usually larger than process noise
 
     initial_estimate_covariance: [
-      # Position (meters²) - moderate uncertainty at startup
       1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      # Orientation (rad²) - moderate uncertainty at startup
       0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-      # Velocity - start with zero velocity assumed
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,  0.0,
-      # Acceleration - start with zero
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,  0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9, 0.0,
       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-9

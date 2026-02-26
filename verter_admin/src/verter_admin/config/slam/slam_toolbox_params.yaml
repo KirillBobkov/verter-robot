@@ -1,9 +1,9 @@
 # SLAM Toolbox Configuration for Verter Robot
 # Based on robot specifications and sensor setup
 #
-# Robot parameters:
-# - Wheel base: 0.356m (расстояние между колёсами)
-# - Wheel circumference: 0.63m (длина окружности колеса)
+# Robot parameters (calibrated):
+# - Wheel base: 0.374m (расстояние между колёсами)
+# - Wheel circumference: 0.59m (длина окружности колеса)
 # - Max velocity: 0.5 m/s
 # - Differential drive with encoder-based odometry
 #
