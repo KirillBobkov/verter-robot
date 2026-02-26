@@ -1,5 +1,4 @@
 # SLAM Toolbox Configuration for Verter Robot
-# Based on robot specifications and sensor setup
 #
 # Robot parameters (calibrated):
 # - Wheel base: 0.374m (расстояние между колёсами)
@@ -8,13 +7,14 @@
 # - Differential drive with encoder-based odometry
 #
 # Sensors:
-# - RPLiDAR A1M8 (scan topic: /scan)
-# - 7x HC-SR04 ultrasonic sensors (optional)
+# - RPLiDAR A1M8: ~5.5 Hz, 360° (фильтруется до передних 180°)
+#   При 0.3 м/с робот сдвигается на ~5 см за один скан — motion distortion.
+#   Рекомендуемая скорость маппинга: 0.10–0.15 м/с.
+# - 7x HC-SR04 ultrasonic sensors (не используются SLAM)
 #
 # Frames:
-# - Scan topic: /scan (from rplidar_node)
-# - Odometry topic: /odom (from odometry_node, encoder-based)
-# - Base frame: base_link
+# - Scan topic: /scan (from laser_filter, передняя 180°)
+# - Base frame: base_footprint
 # - Odom frame: odom
 # - Lidar frame: lidar_link
 
@@ -30,7 +30,7 @@ slam_toolbox:
     mode: mapping  # Options: mapping, localization
 
     # Map saving parameters
-    # Start from an empty map on boot; maps are saved explicitly via save_map.sh.
+    # Start from an empty map on boot; maps are saved explicitly.
     map_file_name: ""
     map_start_pose: [0.0, 0.0, 0.0]  # x, y, yaw
 
@@ -39,51 +39,57 @@ slam_toolbox:
     throttle_scans: 1  # Process every N scans (1 = all scans)
 
     # TF Parameters
-    transform_publish_period: 0.05  # 20 Hz (matching controller)
+    transform_publish_period: 0.05  # 20 Hz
     tf_buffer_duration: 30.0
     transform_timeout: 0.5
-    use_sim_time: false  # Real robot - use system time!
+    use_sim_time: false
 
     # General Parameters
-    stack_size_to_use: 40000000  # Program stack size to execute
+    stack_size_to_use: 40000000
 
-    # Position Variance (uncertainty in position)
-    # For odometry-based SLAM with differential drive
-    # Lower values = more frequent updates, better for indoor mapping
-    # Aggressive updates so map grows even during in-place rotation.
-    minimum_travel_distance: 0.05  # Обновлять карту после 5 см перемещения
-    minimum_travel_heading: 0.05   # Update after ~3° rotation
-    map_update_interval: 1.0       # Publish map updates every 1s
+    # ========================================================================
+    # КОГДА ОБНОВЛЯТЬ КАРТУ
+    # ========================================================================
+    # Реже = качественнее. Каждое обновление — это один скан, вставленный в карту.
+    # Шумный скан (motion distortion) портит карту.
+    # При 0.15 м/с за 0.15м робот двигается ~1с = ~5 сканов. Берём лучший.
+    minimum_travel_distance: 0.15  # Обновлять после 15 см (было 5 см — слишком часто)
+    minimum_travel_heading: 0.15   # Обновлять после ~8.5° поворота (было 3°)
+    map_update_interval: 2.0       # Публикация карты каждые 2с (было 1с)
 
-    # Scan Matching Parameters
+    # ========================================================================
+    # SCAN MATCHING — сопоставление сканов
+    # ========================================================================
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
-    link_match_minimum_response_fine: 0.1  # Default: 0.1 (was 0.3 - too strict!)
+    link_match_minimum_response_fine: 0.1
     link_scan_maximum_distance: 1.5
-    loop_search_maximum_distance: 3.0
-    do_loop_closing: true
-    loop_match_minimum_chain_size: 10
-    loop_match_maximum_variance_coarse: 3.0
-    loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
 
-    # Correlation Parameters for Scan Matching
-    correlation_search_space_dimension: 0.3   # Меньше область поиска = меньше телепортаций
+    # ========================================================================
+    # CORRELATION — поиск совпадений между сканами
+    # ========================================================================
+    # search_space_dimension: область поиска (метры). Больше = лучше находит
+    # при большом дрифте, но дольше и больше шанс ложного совпадения.
+    # smear_deviation: размытие при сравнении. Меньше = строже, точнее стены.
+    correlation_search_space_dimension: 0.5    # Было 0.3 — увеличиваем для компенсации дрифта
     correlation_search_space_resolution: 0.01
-    correlation_search_space_smear_deviation: 0.05  # Точнее матчинг
+    correlation_search_space_smear_deviation: 0.03  # Было 0.05 — строже, тоньше стены
 
-    # Loop Closure Parameters
-    loop_search_space_dimension: 8.0
-    loop_search_space_resolution: 0.05
-    loop_search_space_smear_deviation: 0.03
+    # ========================================================================
+    # ДОВЕРИЕ: одометрия vs scan matching
+    # ========================================================================
+    # distance_variance_penalty: больше = больше доверие одометрии по расстоянию
+    # angle_variance_penalty: больше = больше доверие одометрии по углу
+    #
+    # Энкодеры дают хорошую линейную одометрию (откалиброваны), но yaw дрифтит.
+    # Поэтому: доверяем одометрии по дистанции, но scan matching по углу.
+    distance_variance_penalty: 0.8   # Было 0.5 — больше доверяем энкодерам по расстоянию
+    angle_variance_penalty: 0.6      # Было 1.0 — меньше доверяем одометрии по углу,
+                                     # пусть scan matching корректирует повороты
 
-    # Scan Matcher Parameters
-    # Controls how much to penalize deviations in distance/angle matching
-    # Lower values = trust scan matching more; Higher = trust odometry more
-    distance_variance_penalty: 0.5  # Больше доверяем одометрии (меньше прыжков)
-    angle_variance_penalty: 1.0     # Default: 1.0
-
-    # Fine Search Parameters
+    # ========================================================================
+    # FINE SEARCH — точная подгонка
+    # ========================================================================
     fine_search_angle_offset: 0.00349
     coarse_search_angle_offset: 0.349
     coarse_angle_resolution: 0.0349
@@ -91,21 +97,41 @@ slam_toolbox:
     minimum_distance_penalty: 0.5
     use_response_expansion: true
 
-    # Laser Scanner Parameters (RPLiDAR A1M8)
-    # Specs: 360° scanner, but filtered to 180° FOV (back blocked by robot body)
-    # Range: 0.15-12m, Frequency: ~5.5 Hz
-    # Mounted at ~55cm height, 25cm forward from robot center
-    minimum_time_interval: 0.01  # Minimum time between scans (5.5Hz = ~180ms)
-    max_laser_range: 6.0         # Ограничение дальности для чистой карты
-    minimum_range: 0.20          # Отсечь ближний шум (корпус)
-    range_threshold: 5.5         # Использовать до 5.5м для маппинга
+    # ========================================================================
+    # LOOP CLOSURE — замыкание петель
+    # ========================================================================
+    # Когда робот возвращается в ранее посещённое место, SLAM корректирует
+    # всю карту. Это главный способ убрать накопленную ошибку.
+    do_loop_closing: true
+    loop_search_maximum_distance: 3.0
+    loop_match_minimum_chain_size: 6     # Было 10 — быстрее срабатывает loop closure
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine: 0.45
 
-    # Solver plugin parameters
-    # Optimized for Jetson Orin Nano (6-core CPU)
+    # Loop closure search space
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # ========================================================================
+    # ЛИДАР (RPLiDAR A1M8)
+    # ========================================================================
+    # 5.5 Hz, передняя 180° после laser_filter
+    # При 0.15 м/с motion distortion = ~2.7 см за скан (приемлемо)
+    # При 0.30 м/с motion distortion = ~5.4 см за скан (стены двоятся)
+    minimum_time_interval: 0.01
+    max_laser_range: 6.0
+    minimum_range: 0.20
+    range_threshold: 5.5
+
+    # ========================================================================
+    # SOLVER (Jetson Orin Nano, 6 cores)
+    # ========================================================================
     solver_plugin: solver_plugins::CeresSolver
-    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY  # Parallel solver, uses all cores
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
     ceres_trust_strategy: LEVENBERG_MARQUARDT
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
-    num_threads: 6  # Use all 6 Cortex-A78AE cores on Jetson Orin Nano
+    num_threads: 6
