@@ -5,6 +5,7 @@
  *
  * Топики:
  * - Публикация: /imu/data (sensor_msgs/Imu) — 50 Гц
+ * - Публикация: /imu/mag_raw (std_msgs/Float32MultiArray) — 10 Гц [x_µT, y_µT, z_µT, heading_deg]
  * - Публикация: /ultrasonic/distances (std_msgs/Float32MultiArray) — ~7 Гц
  *
  * Железо:
@@ -17,10 +18,12 @@
  * - pulseIn таймаут 15000мкс ≈ 2.5м макс дальность
  */
 
-#define BMX055_DISABLE_BMM  // Магнитометр отключён (помехи от моторов)
+// BMX055_DISABLE_BMM убран — магнитометр включён для логирования.
+// Данные публикуются на /imu/mag_raw для оценки уровня помех от моторов.
 
 #include <micro_ros_arduino.h>
 #include <stdio.h>
+#include <math.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <rclc/rclc.h>
@@ -37,8 +40,9 @@
 #define I2C_SDA 21
 #define I2C_SCL 22
 
-// Частота публикации IMU
-#define IMU_PUBLISH_MS 20  // 50 Hz
+// Частоты публикации
+#define IMU_PUBLISH_MS 20   // 50 Hz
+#define MAG_PUBLISH_MS 100  // 10 Hz (для логирования достаточно)
 
 // Калибровка гироскопа (bias estimation при старте)
 #define GYRO_CALIBRATION_SAMPLES 500
@@ -74,6 +78,7 @@ int currentSensor = 0;  // Индекс текущего датчика (round-r
 // Датчики BMX055
 iarduino_Position_BMX055 sensorA(BMA);  // Акселерометр
 iarduino_Position_BMX055 sensorG(BMG);  // Гироскоп
+iarduino_Position_BMX055 sensorM(BMM);  // Магнитометр (для логирования)
 
 // Bias гироскопа
 float gyroBiasX = 0.0;
@@ -82,8 +87,10 @@ float gyroBiasZ = 0.0;
 
 // micro-ROS
 rcl_publisher_t imu_pub;
+rcl_publisher_t mag_pub;
 rcl_publisher_t us_pub;
 sensor_msgs__msg__Imu imu_msg;
+std_msgs__msg__Float32MultiArray mag_msg;
 std_msgs__msg__Float32MultiArray us_msg;
 rclc_executor_t executor;
 rclc_support_t support;
@@ -91,6 +98,7 @@ rcl_allocator_t allocator;
 rcl_node_t node;
 
 unsigned long lastPublish = 0;
+unsigned long lastMagPublish = 0;
 
 // ============================================================================
 // micro-ROS ERROR HANDLING
@@ -149,15 +157,20 @@ void setup() {
   // Инициализация IMU
   sensorA.begin();
   sensorG.begin();
+  sensorM.begin();
   sensorA.setScale(BMA_4G);
   sensorG.setScale(BMG_500DPS);
+  sensorM.setScale(BMM_REGULAR);      // 0.6 µT noise, default oversampling
   sensorA.setBandwidths(BMA_125Hz);
   sensorG.setBandwidths(BMG_116Hz);
+  sensorM.setBandwidths(BMM_10Hz);    // 10 Hz ODR — достаточно для логирования
 
   // Аппаратная калибровка BMX055
   delay(1000);
   sensorA.setFastOffset();
   sensorG.setFastOffset();
+  // Магнитометр: НЕ калибруем автоматически — хотим видеть сырые данные
+  // Калибровка делается вручную после оценки помех
 
   // Программная калибровка гироскопа
   float sumX = 0.0, sumY = 0.0, sumZ = 0.0;
@@ -201,6 +214,13 @@ void setup() {
     "/imu/data"
   ));
 
+  // Publisher: /imu/mag_raw (для логирования магнитометра)
+  RCCHECK(rclc_publisher_init_default(
+    &mag_pub, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+    "/imu/mag_raw"
+  ));
+
   // Publisher: /ultrasonic/distances
   RCCHECK(rclc_publisher_init_default(
     &us_pub, &node,
@@ -210,6 +230,7 @@ void setup() {
 
   // Init messages
   initImuMessage();
+  initMagMessage();
   initUltrasonicMessage();
 
   // Executor
@@ -244,6 +265,16 @@ void initImuMessage() {
   imu_msg.linear_acceleration_covariance[8] = 0.01;
 }
 
+void initMagMessage() {
+  // [0]=mag_x (µT), [1]=mag_y (µT), [2]=mag_z (µT), [3]=heading (deg)
+  mag_msg.data.capacity = 4;
+  mag_msg.data.size = 4;
+  mag_msg.data.data = (float*)malloc(4 * sizeof(float));
+  for (int i = 0; i < 4; i++) {
+    mag_msg.data.data[i] = 0.0f;
+  }
+}
+
 void initUltrasonicMessage() {
   us_msg.data.capacity = NUM_SENSORS;
   us_msg.data.size = NUM_SENSORS;
@@ -260,9 +291,10 @@ void initUltrasonicMessage() {
 void loop() {
   unsigned long now = millis();
 
-  // Читаем IMU (быстро, I2C)
+  // Читаем IMU + магнитометр (I2C)
   sensorA.read(BMA_M_S);
   sensorG.read(BMG_RAD_S);
+  sensorM.read(BMM_MCT);  // Микротесла
 
   // Читаем ОДИН ультразвуковой датчик (round-robin)
   distances[currentSensor] = readUltrasonic(
@@ -301,6 +333,18 @@ void loop() {
     imu_msg.linear_acceleration.z = sensorA.axisZ;
 
     RCSOFTCHECK(rcl_publish(&imu_pub, &imu_msg, NULL));
+  }
+
+  // Публикация магнитометра (10 Hz)
+  if (now - lastMagPublish >= MAG_PUBLISH_MS) {
+    lastMagPublish = now;
+
+    mag_msg.data.data[0] = sensorM.axisX;  // µT
+    mag_msg.data.data[1] = sensorM.axisY;  // µT
+    mag_msg.data.data[2] = sensorM.axisZ;  // µT
+    mag_msg.data.data[3] = atan2(sensorM.axisY, sensorM.axisX) * 180.0f / M_PI;  // heading deg
+
+    RCSOFTCHECK(rcl_publish(&mag_pub, &mag_msg, NULL));
   }
 
   delay(1);
