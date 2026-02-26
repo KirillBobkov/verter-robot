@@ -1,5 +1,16 @@
 #!/usr/bin/env python3
-"""Emergency stop publisher based on near obstacle distance."""
+"""Emergency stop publisher based on near obstacle distance.
+
+When obstacle is closer than stop_distance:
+- Blocks FORWARD movement (positive linear.x)
+- Allows BACKWARD movement and rotation (so operator can drive away)
+- Releases when obstacle is farther than resume_distance
+
+Manual override:
+    ros2 param set /proximity_safety_node override true
+    # drive robot away
+    ros2 param set /proximity_safety_node override false
+"""
 
 import math
 
@@ -12,7 +23,12 @@ from sensor_msgs.msg import LaserScan
 
 
 class ProximitySafetyNode(Node):
-    """Publishes zero Twist to /safety/cmd_vel when obstacle is too close."""
+    """Blocks forward motion when obstacle is too close.
+
+    Subscribes to teleop and nav2 cmd_vel topics. When safety is active,
+    republishes commands with forward speed clamped to zero, allowing
+    reverse and rotation so the operator can maneuver away.
+    """
 
     def __init__(self):
         super().__init__('proximity_safety_node')
@@ -24,6 +40,7 @@ class ProximitySafetyNode(Node):
         self.declare_parameter('resume_distance', 0.25)
         self.declare_parameter('sensor_timeout_sec', 0.8)
         self.declare_parameter('control_rate_hz', 20.0)
+        self.declare_parameter('override', False)
 
         self.scan_topic = self.get_parameter('scan_topic').value
         self.ultrasonic_topic = self.get_parameter('ultrasonic_topic').value
@@ -46,27 +63,49 @@ class ProximitySafetyNode(Node):
         self.ultrasonic_last_stamp = None
         self.safety_active = False
 
+        # Последняя команда от оператора/nav2 — для пропуска заднего хода
+        self._last_teleop_cmd = Twist()
+        self._last_nav_cmd = Twist()
+
+        # Сенсоры
         self.create_subscription(
-            LaserScan,
-            self.scan_topic,
-            self._scan_callback,
-            qos_profile_sensor_data,
+            LaserScan, self.scan_topic,
+            self._scan_callback, qos_profile_sensor_data,
         )
         self.create_subscription(
-            LaserScan,
-            self.ultrasonic_topic,
-            self._ultrasonic_callback,
-            qos_profile_sensor_data,
+            LaserScan, self.ultrasonic_topic,
+            self._ultrasonic_callback, qos_profile_sensor_data,
+        )
+
+        # Подписка на команды движения (чтобы пропускать задний ход)
+        self.create_subscription(
+            Twist, '/teleop_keyboard/cmd_vel',
+            self._teleop_callback, 10,
+        )
+        self.create_subscription(
+            Twist, '/nav2/cmd_vel',
+            self._nav_callback, 10,
         )
 
         self.cmd_pub = self.create_publisher(Twist, self.cmd_topic, 10)
-        self.stop_twist = Twist()
         self.create_timer(1.0 / self.control_rate_hz, self._control_loop)
+
+        self.add_on_set_parameters_callback(self._on_param_change)
 
         self.get_logger().info(
             'proximity_safety_node started: '
-            f'stop<{self.stop_distance:.2f}m, resume>{self.resume_distance:.2f}m'
+            f'stop<{self.stop_distance:.2f}m, resume>{self.resume_distance:.2f}m, '
+            f'override: ros2 param set {self.get_name()} override true'
         )
+
+    def _on_param_change(self, params):
+        from rcl_interfaces.msg import SetParametersResult
+        for p in params:
+            if p.name == 'override' and p.value:
+                self.get_logger().warn('OVERRIDE ENABLED — safety disabled')
+            elif p.name == 'override' and not p.value:
+                self.get_logger().info('Override disabled — safety restored')
+        return SetParametersResult(successful=True)
 
     @staticmethod
     def _min_valid_range(msg: LaserScan) -> float:
@@ -87,6 +126,12 @@ class ProximitySafetyNode(Node):
         self.ultrasonic_min_range = self._min_valid_range(msg)
         self.ultrasonic_last_stamp = self.get_clock().now()
 
+    def _teleop_callback(self, msg: Twist):
+        self._last_teleop_cmd = msg
+
+    def _nav_callback(self, msg: Twist):
+        self._last_nav_cmd = msg
+
     def _get_recent_min(self, min_range: float, stamp):
         if stamp is None:
             return math.inf
@@ -95,6 +140,15 @@ class ProximitySafetyNode(Node):
         return min_range
 
     def _control_loop(self):
+        # Проверка override
+        override = self.get_parameter('override').value
+        if override:
+            # Override активен — safety не вмешивается
+            if self.safety_active:
+                self.safety_active = False
+                self.get_logger().warn('Safety released by override')
+            return
+
         scan_min = self._get_recent_min(self.scan_min_range, self.scan_last_stamp)
         ultrasonic_min = self._get_recent_min(
             self.ultrasonic_min_range, self.ultrasonic_last_stamp
@@ -111,11 +165,20 @@ class ProximitySafetyNode(Node):
             if nearest <= self.stop_distance:
                 self.safety_active = True
                 self.get_logger().warn(
-                    f'Obstacle too close: nearest={nearest:.3f} m, publishing stop'
+                    f'Obstacle too close: nearest={nearest:.3f} m, blocking forward'
                 )
 
         if self.safety_active:
-            self.cmd_pub.publish(self.stop_twist)
+            # Берём команду от телеопа (приоритет) или nav2
+            src = self._last_teleop_cmd
+            if abs(src.linear.x) < 0.001 and abs(src.angular.z) < 0.001:
+                src = self._last_nav_cmd
+
+            filtered = Twist()
+            # Блокируем только движение ВПЕРЁД, пропускаем назад и вращение
+            filtered.linear.x = min(0.0, src.linear.x)  # ≤ 0 (назад OK)
+            filtered.angular.z = src.angular.z           # вращение OK
+            self.cmd_pub.publish(filtered)
 
 
 def main(args=None):
@@ -132,4 +195,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-
