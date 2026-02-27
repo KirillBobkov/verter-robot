@@ -6,11 +6,14 @@
 #   sudo ln -sf "$(pwd)/scripts/verter" /usr/local/bin/verter
 #
 # Использование:
-#   verter --save-map              # сохранить в ~/maps/map_YYYYMMDD_HHMMSS
+#   verter --save-map              # сохранить карту (спросит имя, Enter = timestamp)
 #   verter --save-map my_map       # сохранить в ~/maps/my_map
 #   verter --save-map ~/path/name  # сохранить по произвольному пути
 #                                  # + сохранить док-позицию в <map>.dock.yaml
 #   verter --nav map.yaml          # запустить навигацию по карте (без RViz)
+#                                  # + автоприменить <map>.dock.yaml если он есть
+#   verter --nav                   # автовыбор карты из ~/maps (если >1, покажет меню)
+#   verter --nav --update          # git pull + colcon build, затем запуск nav
 #   verter --nav ~/maps/map.yaml   # полный путь до карты
 
 set -e
@@ -47,6 +50,10 @@ _source_ros() {
         echo "Ошибка: ros2 не найден. Проверьте установку ROS2/окружение." >&2
         exit 127
     fi
+}
+
+_source_ros_base() {
+    source /opt/ros/humble/setup.bash 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------------------
@@ -144,12 +151,201 @@ _save_dock_pose_file() {
     echo "Док-позиция сохранена → $dock_file"
 }
 
+_update_workspace() {
+    _source_ros_base
+
+    if ! command -v git &>/dev/null; then
+        echo "Ошибка: git не найден." >&2
+        return 127
+    fi
+    if ! command -v colcon &>/dev/null; then
+        echo "Ошибка: colcon не найден. Установите ROS2 build tools." >&2
+        return 127
+    fi
+
+    echo "Обновление кода (git pull --ff-only) в $VERTER_WS_DIR"
+    if ! (cd "$VERTER_WS_DIR" && git pull --ff-only); then
+        echo "Ошибка: git pull завершился с ошибкой." >&2
+        return 1
+    fi
+
+    echo "Сборка workspace (colcon build --symlink-install)"
+    if ! (cd "$VERTER_WS_DIR" && colcon build --symlink-install); then
+        echo "Ошибка: colcon build завершился с ошибкой." >&2
+        return 1
+    fi
+
+    echo "Обновление и сборка завершены."
+    return 0
+}
+
+_wait_for_node() {
+    local node_name="$1"
+    local timeout_sec="${2:-30}"
+    local deadline=$((SECONDS + timeout_sec))
+
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        if ros2 node list 2>/dev/null | grep -Fxq "$node_name"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+_apply_dock_pose_file() {
+    local dock_file="$1"
+    if [ ! -f "$dock_file" ]; then
+        return 1
+    fi
+
+    local dock_x dock_y dock_yaw
+    dock_x="$(awk -F': ' '/^x:/{print $2; exit}' "$dock_file")"
+    dock_y="$(awk -F': ' '/^y:/{print $2; exit}' "$dock_file")"
+    dock_yaw="$(awk -F': ' '/^yaw:/{print $2; exit}' "$dock_file")"
+
+    if [ -z "$dock_x" ] || [ -z "$dock_y" ] || [ -z "$dock_yaw" ]; then
+        echo "Предупреждение: не удалось прочитать x/y/yaw из $dock_file" >&2
+        return 1
+    fi
+
+    local quat qz qw
+    if ! quat="$(python3 - "$dock_yaw" <<'PY'
+import math
+import sys
+
+yaw = float(sys.argv[1])
+print(f"{math.sin(yaw / 2.0):.9f} {math.cos(yaw / 2.0):.9f}")
+PY
+)"; then
+        echo "Предупреждение: не удалось вычислить кватернион из yaw=$dock_yaw" >&2
+        return 1
+    fi
+    read -r qz qw <<<"$quat"
+
+    echo "Применяю док-позицию из $dock_file"
+    echo "x=$dock_x, y=$dock_y, yaw=$dock_yaw"
+
+    local msg
+    msg="{header: {frame_id: map}, pose: {pose: {position: {x: $dock_x, y: $dock_y, z: 0.0}, orientation: {x: 0.0, y: 0.0, z: $qz, w: $qw}}}}"
+
+    # Публикуем несколько раз для надежной доставки после старта AMCL.
+    ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" >/dev/null 2>&1 || true
+    sleep 0.3
+    ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" >/dev/null 2>&1 || true
+    sleep 0.3
+    ros2 topic pub --once /initialpose geometry_msgs/msg/PoseWithCovarianceStamped "$msg" >/dev/null 2>&1 || true
+
+    echo "Док-позиция отправлена в /initialpose"
+    return 0
+}
+
+_resolve_nav_map_path() {
+    local map_input="${1:-}"
+    local map_path=""
+
+    if [ -n "$map_input" ]; then
+        if [[ "$map_input" == /* || "$map_input" == ~* ]]; then
+            map_path="$map_input"
+        else
+            map_path=~/maps/"$map_input"
+        fi
+
+        map_path="${map_path/#\~/$HOME}"
+        if [[ "$map_path" != *.yaml ]]; then
+            map_path="${map_path}.yaml"
+        fi
+
+        if [ ! -f "$map_path" ]; then
+            echo "Ошибка: файл карты не найден: $map_path" >&2
+            return 2
+        fi
+
+        echo "$map_path"
+        return 0
+    fi
+
+    local maps_dir="$HOME/maps"
+    local -a maps=()
+    if [ -d "$maps_dir" ]; then
+        while IFS= read -r line; do
+            maps+=("$line")
+        done < <(find "$maps_dir" -maxdepth 1 -type f -name '*.yaml' ! -name '*.dock.yaml' | sort)
+    fi
+
+    local count="${#maps[@]}"
+    if [ "$count" -eq 0 ]; then
+        echo "Ошибка: в $maps_dir не найдено ни одной карты (*.yaml)." >&2
+        return 2
+    fi
+
+    if [ "$count" -eq 1 ]; then
+        echo "Автовыбор карты: ${maps[0]}" >&2
+        echo "${maps[0]}"
+        return 0
+    fi
+
+    if [ ! -t 0 ]; then
+        echo "Ошибка: найдено несколько карт ($count), но нет интерактивного терминала для выбора." >&2
+        echo "Укажите карту явно: verter --nav /home/jetson/maps/<name>.yaml" >&2
+        return 2
+    fi
+
+    local selected=""
+    if command -v whiptail &>/dev/null; then
+        local -a menu=()
+        local i=1
+        local map
+        for map in "${maps[@]}"; do
+            menu+=("$i" "$(basename "$map")")
+            i=$((i + 1))
+        done
+
+        local choice
+        choice="$(whiptail --title "Verter nav" --menu "Выберите карту" 20 90 10 "${menu[@]}" 3>&1 1>&2 2>&3)" || return 130
+        if ! [[ "$choice" =~ ^[0-9]+$ ]]; then
+            echo "Ошибка: некорректный выбор карты." >&2
+            return 2
+        fi
+        selected="${maps[$((choice - 1))]}"
+    else
+        echo "Найдено несколько карт. Выберите номер:"
+        local i=1
+        local map
+        for map in "${maps[@]}"; do
+            echo "  $i) $(basename "$map")"
+            i=$((i + 1))
+        done
+
+        local choice=""
+        while true; do
+            read -r -p "Номер карты [1-$count]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -le "$count" ]; then
+                selected="${maps[$((choice - 1))]}"
+                break
+            fi
+            echo "Некорректный ввод, попробуйте еще раз."
+        done
+    fi
+
+    echo "$selected"
+    return 0
+}
+
 # ---------------------------------------------------------------------------
 # Команды
 # ---------------------------------------------------------------------------
 cmd_save_map() {
     local name="${1:-}"
     local path
+
+    if [ -z "$name" ] && [ -t 0 ]; then
+        local default_name="map_$(date +%Y%m%d_%H%M%S)"
+        read -r -p "Введите имя карты [${default_name}]: " name
+        name="${name:-$default_name}"
+    fi
+    name="${name%.yaml}"
+    name="${name%.pgm}"
 
     if [ -z "$name" ]; then
         path=~/maps/map_$(date +%Y%m%d_%H%M%S)
@@ -185,35 +381,64 @@ cmd_save_map() {
 }
 
 cmd_nav() {
-    local map_input="${1:-}"
-    shift || true
+    local update_requested=0
+    local map_input=""
+    local -a launch_args=()
+    local arg
 
-    if [ -z "$map_input" ]; then
-        echo "Ошибка: укажите карту." >&2
-        echo "Пример: verter --nav /home/jetson/maps/map_20260227_142836.yaml" >&2
-        exit 2
+    for arg in "$@"; do
+        case "$arg" in
+            --update)
+                update_requested=1
+                ;;
+            map:=*)
+                map_input="${arg#map:=}"
+                ;;
+            *)
+                if [ -z "$map_input" ] && [[ "$arg" != -* ]] && [[ "$arg" != *:=* ]]; then
+                    map_input="$arg"
+                else
+                    launch_args+=("$arg")
+                fi
+                ;;
+        esac
+    done
+
+    if [ "$update_requested" -eq 1 ]; then
+        _update_workspace || exit $?
     fi
 
     local map_path
-    if [[ "$map_input" == /* || "$map_input" == ~* ]]; then
-        map_path="$map_input"
-    else
-        map_path=~/maps/"$map_input"
-    fi
+    map_path="$(_resolve_nav_map_path "$map_input")" || exit $?
 
-    map_path="${map_path/#\~/$HOME}"
-    if [[ "$map_path" != *.yaml ]]; then
-        map_path="${map_path}.yaml"
-    fi
-
-    if [ ! -f "$map_path" ]; then
-        echo "Ошибка: файл карты не найден: $map_path" >&2
-        exit 2
-    fi
+    local dock_path="${map_path%.yaml}.dock.yaml"
 
     _source_ros
     echo "Запуск навигации с картой: $map_path"
-    exec ros2 launch verter_admin navigation.launch.py map:="$map_path" "$@"
+
+    if [ -f "$dock_path" ]; then
+        echo "Найдена док-позиция: $dock_path"
+        ros2 launch verter_admin navigation.launch.py map:="$map_path" "${launch_args[@]}" &
+        local nav_pid=$!
+
+        trap 'kill -INT "$nav_pid" 2>/dev/null || true' INT TERM
+
+        if _wait_for_node "/amcl" 35; then
+            _apply_dock_pose_file "$dock_path" || true
+        else
+            echo "Предупреждение: /amcl не поднялся за 35с, док-позиция не применена." >&2
+        fi
+
+        set +e
+        wait "$nav_pid"
+        local code=$?
+        set -e
+        trap - INT TERM
+        exit $code
+    fi
+
+    echo "Док-позиция не найдена (${dock_path}) — запуск без автоприменения /initialpose."
+    exec ros2 launch verter_admin navigation.launch.py map:="$map_path" "${launch_args[@]}"
 }
 
 cmd_help() {
@@ -221,14 +446,17 @@ cmd_help() {
     echo ""
     echo "Команды:"
     echo "  --save-map [name]   Сохранить текущую карту"
-    echo "                        без аргумента → ~/maps/map_YYYYMMDD_HHMMSS"
+    echo "                        без аргумента спросит имя (Enter = map_YYYYMMDD_HHMMSS)"
     echo "                        verter --save-map my_map  → ~/maps/my_map"
     echo "                        verter --save-map ~/path/name"
     echo "                        также сохраняет док-позицию: <map>.dock.yaml"
     echo ""
-    echo "  --nav <map.yaml>    Запустить navigation.launch.py (без RViz)"
+    echo "  --nav [map.yaml]    Запустить navigation.launch.py (без RViz)"
+    echo "                        verter --nav            → авто-выбор карты из ~/maps"
     echo "                        verter --nav map_20260227_142836"
     echo "                        verter --nav /home/jetson/maps/map_20260227_142836.yaml"
+    echo "                        verter --nav --update   → git pull + colcon build + launch"
+    echo "                        если рядом есть <map>.dock.yaml, поза применится автоматически"
     echo "                        доп. аргументы передаются в ros2 launch"
     echo ""
     echo "  --help              Показать эту справку"
