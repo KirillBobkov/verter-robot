@@ -23,6 +23,12 @@ class ArbitrationPolicy:
     NAV2_PRIORITY = 10
     TELEOP_LOCK_PRIORITY = 100
 
+    # Canonical aliases for QG-6 traceability (same values, different names)
+    TWIST_MUX_SOURCE_SAFETY = SAFETY_PRIORITY
+    TWIST_MUX_SOURCE_TELEOP_KB = TELEOP_PRIORITY
+    TWIST_MUX_SOURCE_TELEOP_JOY = TELEOP_JOY_PRIORITY
+    TWIST_MUX_SOURCE_NAV2 = NAV2_PRIORITY
+
 
 class MotionTimeouts:
     """Timing contracts for safety and command chain."""

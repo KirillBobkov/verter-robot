@@ -124,6 +124,10 @@ setup(
         (os.path.join('share', package_name, 'config', 'laser_filters'), glob(os.path.join('src/verter_admin/config/laser_filters', '*.yaml'))),
         # Включаем веб-интерфейс
         (os.path.join('share', package_name, 'web'), glob(os.path.join('src/verter_admin/web', '*.html'))),
+        # Включаем скрипты (save_map.sh и др.)
+        (os.path.join('share', package_name, 'scripts'), glob(os.path.join('scripts', '*.sh'))),
+        # Включаем конфигурацию RViz (waypoint_navigation.rviz)
+        (os.path.join('share', package_name, 'config', 'rviz'), glob(os.path.join('src/verter_admin/config/rviz', '*.rviz'))),
         # Arduino скетчи не включаем в сборку
         # Включаем dataset в пакет
         *get_dataset_files(),
@@ -172,7 +176,9 @@ setup(
             'doa_node = verter_admin.doa.doa_node:main',
             'teleop_keyboard = verter_admin.control.adapters.ros.teleop_keyboard:main',
             'calibration_node = verter_admin.calibration.calibration_node:main',
-            'proximity_safety_node = verter_admin.control.adapters.ros.proximity_safety_node:main'
+            'proximity_safety_node = verter_admin.control.adapters.ros.proximity_safety_node:main',
+            'waypoint_manager_node = verter_admin.waypoints.adapters.ros.waypoint_manager_node:main',
+            'web_server_node = verter_admin.web.adapters.ros.web_server_node:main'
         ],
     },
 )

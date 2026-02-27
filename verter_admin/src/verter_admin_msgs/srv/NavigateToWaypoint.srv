@@ -1,0 +1,5 @@
+# Request navigation to a previously saved named waypoint
+string name
+---
+bool success
+string message

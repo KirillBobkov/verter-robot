@@ -104,6 +104,12 @@ def generate_launch_description():
         description='Distance to release safety stop (m)',
     )
 
+    rosbridge_port_arg = DeclareLaunchArgument(
+        'rosbridge_port',
+        default_value='9090',
+        description='Optional: TCP port for rosbridge WebSocket (used when waypoint_ui.launch.py is started alongside navigation).',
+    )
+
     # =========================================================================
     # MICRO-ROS AGENTS
     # =========================================================================
@@ -324,6 +330,7 @@ def generate_launch_description():
         imu_esp32_port_arg,
         stop_distance_arg,
         resume_distance_arg,
+        rosbridge_port_arg,
 
         # micro-ROS Agents
         micro_ros_agent_chassis,

@@ -1,0 +1,7 @@
+# List all saved waypoints (parallel arrays; caller must zip)
+# x, y in metres (SI); theta in radians (SI)
+---
+string[] names
+float64[] x
+float64[] y
+float64[] theta
