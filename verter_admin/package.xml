@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>verter_admin</name>
+  <version>0.0.0</version>
+  <description>Пакет для распознавания речи с помощью Sherpa-ONNX CTC</description>
+  <maintainer email="user@example.com">Имя Пользователя</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
+  <depend>action_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>diagnostic_updater</depend>
+  <depend>laser_geometry</depend>
+  <depend>map_server</depend>
+  <depend>robot_localization</depend>
+  <depend>slam_toolbox</depend>
+  <depend>explore_lite</depend>
+  <depend>twist_mux</depend>
+  <depend>laser_filters</depend>
+  <depend>realsense2_camera</depend>
+  <depend>rosserial_python</depend>
+  <depend>rosserial_arduino</depend>
+  <depend>webots_ros2</depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>python3-pygame</exec_depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
+
