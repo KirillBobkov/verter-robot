@@ -48,6 +48,8 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from verter_admin.contracts.motion import TopicContract
+from verter_admin.control.infrastructure import build_twist_mux_parameters
 
 
 def generate_launch_description():
@@ -56,7 +58,6 @@ def generate_launch_description():
     # Пути к конфигурационным файлам
     urdf_file = os.path.join(pkg_verter_admin, 'urdf', 'verter_robot_minimal.urdf')
     slam_params_file = os.path.join(pkg_verter_admin, 'config', 'slam', 'slam_toolbox_params.yaml')
-    twist_mux_config = os.path.join(pkg_verter_admin, 'config', 'twist_mux', 'twist_mux.yaml')
     laser_filter_config = os.path.join(pkg_verter_admin, 'config', 'laser_filters', 'laser_filter.yaml')
     ekf_config = os.path.join(pkg_verter_admin, 'config', 'robot_localization', 'ekf.yaml')
 
@@ -130,9 +131,9 @@ def generate_launch_description():
         package='twist_mux',
         executable='twist_mux',
         name='twist_mux',
-        parameters=[twist_mux_config],
+        parameters=[build_twist_mux_parameters()],
         remappings=[
-            ('cmd_vel_out', '/cmd_vel'),
+            ('cmd_vel_out', TopicContract.FINAL_CMD_VEL),
         ],
         output='screen'
     )

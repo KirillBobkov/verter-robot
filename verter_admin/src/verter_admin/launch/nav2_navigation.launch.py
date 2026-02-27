@@ -19,6 +19,7 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.descriptions import ParameterFile
 from nav2_common.launch import RewrittenYaml
+from verter_admin.contracts.motion import TopicContract
 
 
 def generate_launch_description():
@@ -136,7 +137,7 @@ def generate_launch_description():
                 parameters=[configured_params],
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings
-                + [('cmd_vel', '/nav2/cmd_vel_raw'), ('cmd_vel_smoothed', '/nav2/cmd_vel')],
+                + [('cmd_vel', '/nav2/cmd_vel_raw'), ('cmd_vel_smoothed', TopicContract.NAV2_CMD_VEL)],
             ),
             Node(
                 package='nav2_bt_navigator',

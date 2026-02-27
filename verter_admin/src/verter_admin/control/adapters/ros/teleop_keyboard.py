@@ -24,6 +24,7 @@ import tty
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from verter_admin.contracts.motion import TopicContract
 
 
 class TeleopKeyboard(Node):
@@ -52,7 +53,7 @@ class TeleopKeyboard(Node):
         self.speed_step = self.get_parameter('speed_step').value
 
         # Publisher для cmd_vel (через twist_mux)
-        self.cmd_vel_pub = self.create_publisher(Twist, '/teleop_keyboard/cmd_vel', 10)
+        self.cmd_vel_pub = self.create_publisher(Twist, TopicContract.TELEOP_CMD_VEL, 10)
 
         # Целевая скорость (куда стремимся)
         self.target_linear = 0.0

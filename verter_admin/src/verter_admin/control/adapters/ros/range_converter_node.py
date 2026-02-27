@@ -6,7 +6,7 @@
 и публикует 7 отдельных Range сообщений для каждого датчика
 с правильными frame_id из URDF.
 
-Далее range_to_laserscan.py конвертирует Range → LaserScan для Nav2.
+Далее данные используются safety-конвейером через подписку на Range/LaserScan источники.
 """
 
 import math

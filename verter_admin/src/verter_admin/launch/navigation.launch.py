@@ -38,6 +38,11 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from verter_admin.contracts.motion import (
+    MotionTimeouts,
+    TopicContract,
+)
+from verter_admin.control.infrastructure import build_twist_mux_parameters
 
 
 def generate_launch_description():
@@ -47,9 +52,6 @@ def generate_launch_description():
     urdf_file = os.path.join(pkg_verter_admin, 'urdf', 'verter_robot_minimal.urdf')
     nav2_params_file = os.path.join(
         pkg_verter_admin, 'config', 'nav2', 'nav2_navigation_params.yaml'
-    )
-    twist_mux_config = os.path.join(
-        pkg_verter_admin, 'config', 'twist_mux', 'twist_mux.yaml'
     )
     laser_filter_config = os.path.join(
         pkg_verter_admin, 'config', 'laser_filters', 'laser_filter.yaml'
@@ -92,13 +94,13 @@ def generate_launch_description():
 
     stop_distance_arg = DeclareLaunchArgument(
         'stop_distance',
-        default_value='0.20',
+        default_value='0.15',
         description='Emergency stop distance (m)',
     )
 
     resume_distance_arg = DeclareLaunchArgument(
         'resume_distance',
-        default_value='0.25',
+        default_value='0.20',
         description='Distance to release safety stop (m)',
     )
 
@@ -138,9 +140,9 @@ def generate_launch_description():
         package='twist_mux',
         executable='twist_mux',
         name='twist_mux',
-        parameters=[twist_mux_config],
+        parameters=[build_twist_mux_parameters()],
         remappings=[
-            ('cmd_vel_out', '/cmd_vel'),
+            ('cmd_vel_out', TopicContract.FINAL_CMD_VEL),
         ],
         output='screen'
     )
@@ -242,7 +244,11 @@ def generate_launch_description():
             'resume_distance': LaunchConfiguration('resume_distance'),
             'scan_topic': '/scan',
             'ultrasonic_topic': '/ultrasonic/ranges',
-            'cmd_topic': '/safety/cmd_vel',
+            'cmd_topic': TopicContract.SAFETY_CMD_VEL,
+            'sensor_timeout_sec': MotionTimeouts.SENSOR_FRESHNESS_SEC,
+            'command_timeout_sec': MotionTimeouts.TWIST_MUX_SOURCE_SEC,
+            'override': False,
+            'allow_degraded_motion': False,
         }],
     )
 

@@ -6,7 +6,7 @@ Components:
 1. micro_ros_agent (chassis + imu)
 2. twist_mux, odometry, EKF
 3. RPLiDAR + laser filter
-4. Range converter + range_to_laserscan
+4. Range converter
 5. Proximity safety stop node
 6. SLAM Toolbox
 7. Nav2
@@ -23,10 +23,14 @@ from launch.actions import (
     IncludeLaunchDescription,
     TimerAction,
 )
-from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from verter_admin.contracts.motion import (
+    MotionTimeouts,
+    TopicContract,
+)
+from verter_admin.control.infrastructure import build_twist_mux_parameters
 
 
 def generate_launch_description():
@@ -40,7 +44,6 @@ def generate_launch_description():
     explore_params_file = os.path.join(
         pkg_verter_admin, 'config', 'explore', 'explore_lite_real_params.yaml'
     )
-    twist_mux_config = os.path.join(pkg_verter_admin, 'config', 'twist_mux', 'twist_mux.yaml')
     laser_filter_config = os.path.join(
         pkg_verter_admin, 'config', 'laser_filters', 'laser_filter.yaml'
     )
@@ -66,35 +69,14 @@ def generate_launch_description():
     )
     stop_distance_arg = DeclareLaunchArgument(
         'stop_distance',
-        default_value='0.20',
+        default_value='0.15',
         description='Emergency stop distance (m)',
     )
     resume_distance_arg = DeclareLaunchArgument(
         'resume_distance',
-        default_value='0.25',
+        default_value='0.20',
         description='Distance to release safety stop (m)',
     )
-    spin_assist_enabled_arg = DeclareLaunchArgument(
-        'spin_assist_enabled',
-        default_value='false',
-        description='Enable periodic scan-assist spin when robot is idle',
-    )
-    initial_scan_spin_arg = DeclareLaunchArgument(
-        'initial_scan_spin',
-        default_value='true',
-        description='Perform initial in-place scan spin before exploration',
-    )
-    initial_scan_spin_angle_arg = DeclareLaunchArgument(
-        'initial_scan_spin_angle',
-        default_value='6.28',
-        description='Initial scan spin angle in radians (2*pi = 360 deg)',
-    )
-    initial_scan_spin_speed_arg = DeclareLaunchArgument(
-        'initial_scan_spin_speed',
-        default_value='0.20',
-        description='Initial scan spin speed in rad/s',
-    )
-
     micro_ros_agent_chassis = ExecuteProcess(
         cmd=[
             'bash',
@@ -133,8 +115,8 @@ def generate_launch_description():
         package='twist_mux',
         executable='twist_mux',
         name='twist_mux',
-        parameters=[twist_mux_config],
-        remappings=[('cmd_vel_out', '/cmd_vel')],
+        parameters=[build_twist_mux_parameters()],
+        remappings=[('cmd_vel_out', TopicContract.FINAL_CMD_VEL)],
         output='screen',
     )
 
@@ -203,13 +185,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    range_to_laserscan_node = Node(
-        package='verter_admin',
-        executable='range_to_laserscan',
-        name='range_to_laserscan',
-        output='screen',
-    )
-
     proximity_safety_node = Node(
         package='verter_admin',
         executable='proximity_safety_node',
@@ -221,30 +196,13 @@ def generate_launch_description():
                 'resume_distance': LaunchConfiguration('resume_distance'),
                 'scan_topic': '/scan',
                 'ultrasonic_topic': '/ultrasonic/ranges',
-                'cmd_topic': '/safety/cmd_vel',
+                'cmd_topic': TopicContract.SAFETY_CMD_VEL,
+                'sensor_timeout_sec': MotionTimeouts.SENSOR_FRESHNESS_SEC,
+                'command_timeout_sec': MotionTimeouts.TWIST_MUX_SOURCE_SEC,
+                'override': False,
+                'allow_degraded_motion': False,
             }
         ],
-    )
-
-    spin_assist_node = Node(
-        package='verter_admin',
-        executable='exploration_spin_assist_node',
-        name='exploration_spin_assist_node',
-        output='screen',
-        parameters=[
-            {
-                'odom_topic': '/odometry/filtered',
-                'cmd_topic': '/teleop_keyboard/cmd_vel',
-                'safety_topic': '/safety/cmd_vel',
-                'idle_duration_sec': 6.0,
-                'spin_speed': 0.2,
-                'spin_angle_rad': 3.14,
-                'spin_duration_sec': 0.0,
-                'cooldown_sec': 20.0,
-                'min_translation_after_spin_m': 0.20,
-            }
-        ],
-        condition=IfCondition(LaunchConfiguration('spin_assist_enabled')),
     )
 
     slam_toolbox_node = Node(
@@ -269,26 +227,6 @@ def generate_launch_description():
                     'use_respawn': 'false',
                     'log_level': 'info',
                 }.items(),
-            )
-        ],
-    )
-
-    initial_scan_spin = TimerAction(
-        period=8.0,
-        actions=[
-            Node(
-                package='verter_admin',
-                executable='initial_scan_spin_node',
-                name='initial_scan_spin_node',
-                output='screen',
-                parameters=[
-                    {
-                        'cmd_topic': '/teleop_keyboard/cmd_vel',
-                        'spin_angle_rad': LaunchConfiguration('initial_scan_spin_angle'),
-                        'angular_speed': LaunchConfiguration('initial_scan_spin_speed'),
-                    }
-                ],
-                condition=IfCondition(LaunchConfiguration('initial_scan_spin')),
             )
         ],
     )
@@ -319,10 +257,6 @@ def generate_launch_description():
             imu_esp32_port_arg,
             stop_distance_arg,
             resume_distance_arg,
-            spin_assist_enabled_arg,
-            initial_scan_spin_arg,
-            initial_scan_spin_angle_arg,
-            initial_scan_spin_speed_arg,
             micro_ros_agent_chassis,
             micro_ros_agent_imu,
             twist_mux_node,
@@ -332,12 +266,9 @@ def generate_launch_description():
             rplidar_node,
             laser_filter_node,
             range_converter_node,
-            range_to_laserscan_node,
             proximity_safety_node,
-            spin_assist_node,
             slam_toolbox_node,
             nav2_bringup,
-            initial_scan_spin,
             explore_lite,
         ]
     )

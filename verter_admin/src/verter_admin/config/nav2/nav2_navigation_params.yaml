@@ -192,7 +192,10 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.25
+      # URDF collision box: 0.580 x 0.554 (base_link), base_footprint shares XY center.
+      footprint: "[[0.29, 0.277], [0.29, -0.277], [-0.29, -0.277], [-0.29, 0.277]]"
+      # Target wall standoff ~= 10 cm from physical robot body.
+      footprint_padding: 0.10
       plugins: ["voxel_layer", "inflation_layer"]
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -233,7 +236,8 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_footprint
       use_sim_time: false
-      robot_radius: 0.25
+      footprint: "[[0.29, 0.277], [0.29, -0.277], [-0.29, -0.277], [-0.29, 0.277]]"
+      footprint_padding: 0.10
       resolution: 0.05
       track_unknown_space: true
       rolling_window: false
