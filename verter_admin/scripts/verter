@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# verter — CLI утилита для робота Verter
+#
+# Установка (один раз, из каталога verter_admin):
+#   chmod +x scripts/verter
+#   sudo ln -sf "$(pwd)/scripts/verter" /usr/local/bin/verter
+#
+# Использование:
+#   verter --save-map              # сохранить в ~/maps/map_YYYYMMDD_HHMMSS
+#   verter --save-map my_map       # сохранить в ~/maps/my_map
+#   verter --save-map ~/path/name  # сохранить по произвольному пути
+
+set -e
+
+# ---------------------------------------------------------------------------
+# Пути
+# ---------------------------------------------------------------------------
+_resolve_script_dir() {
+    local src="${BASH_SOURCE[0]}"
+    while [ -h "$src" ]; do
+        local dir
+        dir="$(cd -P "$(dirname "$src")" && pwd)"
+        src="$(readlink "$src")"
+        [[ "$src" != /* ]] && src="$dir/$src"
+    done
+    cd -P "$(dirname "$src")" && pwd
+}
+
+SCRIPT_DIR="$(_resolve_script_dir)"
+VERTER_WS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+VERTER_WS_SETUP="$VERTER_WS_DIR/install/setup.bash"
+
+# ---------------------------------------------------------------------------
+# ROS2 sourcing
+# ---------------------------------------------------------------------------
+_source_ros() {
+    if ! command -v ros2 &>/dev/null; then
+        source /opt/ros/humble/setup.bash 2>/dev/null || true
+    fi
+    if [ -f "$VERTER_WS_SETUP" ]; then
+        source "$VERTER_WS_SETUP" 2>/dev/null || true
+    fi
+    if ! command -v ros2 &>/dev/null; then
+        echo "Ошибка: ros2 не найден. Проверьте установку ROS2/окружение." >&2
+        exit 127
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# Команды
+# ---------------------------------------------------------------------------
+cmd_save_map() {
+    local name="${1:-}"
+    local path
+
+    if [ -z "$name" ]; then
+        path=~/maps/map_$(date +%Y%m%d_%H%M%S)
+    elif [[ "$name" == /* || "$name" == ~* ]]; then
+        path="$name"
+    else
+        path=~/maps/"$name"
+    fi
+
+    path="${path/#\~/$HOME}"   # раскрыть ~ если есть
+    mkdir -p "$(dirname "$path")"
+
+    echo "Сохранение карты → $path"
+    echo "(нужен запущенный SLAM Toolbox или Nav2)"
+    echo ""
+
+    _source_ros
+    set +e
+    ros2 run nav2_map_server map_saver_cli -f "$path"
+    local code=$?
+    set -e
+
+    if [ $code -eq 0 ]; then
+        echo ""
+        echo "Готово:"
+        ls -lh "${path}.yaml" "${path}.pgm" 2>/dev/null || true
+    else
+        echo ""
+        echo "Ошибка: не удалось сохранить карту (код $code)." >&2
+    fi
+    exit $code
+}
+
+cmd_help() {
+    echo "Использование: verter <команда> [аргументы]"
+    echo ""
+    echo "Команды:"
+    echo "  --save-map [name]   Сохранить текущую карту"
+    echo "                        без аргумента → ~/maps/map_YYYYMMDD_HHMMSS"
+    echo "                        verter --save-map my_map  → ~/maps/my_map"
+    echo "                        verter --save-map ~/path/name"
+    echo ""
+    echo "  --help              Показать эту справку"
+}
+
+# ---------------------------------------------------------------------------
+# Точка входа
+# ---------------------------------------------------------------------------
+case "${1:-}" in
+    --save-map)   cmd_save_map "${2:-}" ;;
+    --help|-h|"") cmd_help ;;
+    *)
+        echo "Неизвестная команда: $1"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac
