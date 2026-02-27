@@ -9,6 +9,8 @@
 #   verter --save-map              # сохранить в ~/maps/map_YYYYMMDD_HHMMSS
 #   verter --save-map my_map       # сохранить в ~/maps/my_map
 #   verter --save-map ~/path/name  # сохранить по произвольному пути
+#   verter --nav map.yaml          # запустить навигацию по карте (без RViz)
+#   verter --nav ~/maps/map.yaml   # полный путь до карты
 
 set -e
 
@@ -85,6 +87,38 @@ cmd_save_map() {
     exit $code
 }
 
+cmd_nav() {
+    local map_input="${1:-}"
+    shift || true
+
+    if [ -z "$map_input" ]; then
+        echo "Ошибка: укажите карту." >&2
+        echo "Пример: verter --nav /home/jetson/maps/map_20260227_142836.yaml" >&2
+        exit 2
+    fi
+
+    local map_path
+    if [[ "$map_input" == /* || "$map_input" == ~* ]]; then
+        map_path="$map_input"
+    else
+        map_path=~/maps/"$map_input"
+    fi
+
+    map_path="${map_path/#\~/$HOME}"
+    if [[ "$map_path" != *.yaml ]]; then
+        map_path="${map_path}.yaml"
+    fi
+
+    if [ ! -f "$map_path" ]; then
+        echo "Ошибка: файл карты не найден: $map_path" >&2
+        exit 2
+    fi
+
+    _source_ros
+    echo "Запуск навигации с картой: $map_path"
+    exec ros2 launch verter_admin navigation.launch.py map:="$map_path" "$@"
+}
+
 cmd_help() {
     echo "Использование: verter <команда> [аргументы]"
     echo ""
@@ -94,6 +128,11 @@ cmd_help() {
     echo "                        verter --save-map my_map  → ~/maps/my_map"
     echo "                        verter --save-map ~/path/name"
     echo ""
+    echo "  --nav <map.yaml>    Запустить navigation.launch.py (без RViz)"
+    echo "                        verter --nav map_20260227_142836"
+    echo "                        verter --nav /home/jetson/maps/map_20260227_142836.yaml"
+    echo "                        доп. аргументы передаются в ros2 launch"
+    echo ""
     echo "  --help              Показать эту справку"
 }
 
@@ -102,6 +141,7 @@ cmd_help() {
 # ---------------------------------------------------------------------------
 case "${1:-}" in
     --save-map)   cmd_save_map "${2:-}" ;;
+    --nav)        cmd_nav "${2:-}" "${@:3}" ;;
     --help|-h|"") cmd_help ;;
     *)
         echo "Неизвестная команда: $1"
