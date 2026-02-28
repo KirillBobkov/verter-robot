@@ -30,12 +30,17 @@ from verter_admin.contracts.motion import TopicContract
 class TeleopKeyboard(Node):
     """Нода телеоперирования через клавиатуру с плавным разгоном/торможением"""
 
+    HARD_MAX_LINEAR_SPEED = 0.15
+    HARD_MAX_ANGULAR_SPEED = 0.25
+    MIN_LINEAR_SPEED = 0.05
+    MIN_ANGULAR_SPEED = 0.1
+
     def __init__(self):
         super().__init__('teleop_keyboard')
 
         # Параметры скорости
-        self.declare_parameter('max_linear_speed', 0.2)  # м/с
-        self.declare_parameter('max_angular_speed', 0.2)  # рад/с
+        self.declare_parameter('max_linear_speed', self.HARD_MAX_LINEAR_SPEED)  # м/с
+        self.declare_parameter('max_angular_speed', self.HARD_MAX_ANGULAR_SPEED)  # рад/с
         self.declare_parameter('linear_acceleration', 0.3)  # м/с^2
         self.declare_parameter('angular_acceleration', 0.5)  # рад/с^2
         self.declare_parameter('linear_deceleration', 0.4)  # м/с^2 (торможение быстрее)
@@ -51,6 +56,7 @@ class TeleopKeyboard(Node):
         self.angular_deceleration = self.get_parameter('angular_deceleration').value
         self.update_rate = self.get_parameter('update_rate').value
         self.speed_step = self.get_parameter('speed_step').value
+        self._clamp_speed_limits()
 
         # Publisher для cmd_vel (через twist_mux)
         self.cmd_vel_pub = self.create_publisher(Twist, TopicContract.TELEOP_CMD_VEL, 10)
@@ -72,6 +78,26 @@ class TeleopKeyboard(Node):
         self.get_logger().info('Teleop Keyboard Node Started (smooth mode)')
         self.get_logger().info('Управление: W/A/S/D, Space - стоп, Q - выход, +/- - скорость')
         self.get_logger().info(f'Макс. скорость: {self.max_linear_speed:.2f} м/с, {self.max_angular_speed:.2f} рад/с')
+
+    def _clamp_speed_limits(self):
+        """Clamp runtime teleop speed limits to safe bounds."""
+        clamped_linear = max(
+            self.MIN_LINEAR_SPEED,
+            min(self.HARD_MAX_LINEAR_SPEED, float(self.max_linear_speed)),
+        )
+        clamped_angular = max(
+            self.MIN_ANGULAR_SPEED,
+            min(self.HARD_MAX_ANGULAR_SPEED, float(self.max_angular_speed)),
+        )
+
+        if clamped_linear != self.max_linear_speed or clamped_angular != self.max_angular_speed:
+            self.get_logger().warn(
+                'Teleop speed limits clamped to safe bounds: '
+                f'{clamped_linear:.2f} m/s, {clamped_angular:.2f} rad/s'
+            )
+
+        self.max_linear_speed = clamped_linear
+        self.max_angular_speed = clamped_angular
 
     def get_key_non_blocking(self, timeout=0.05):
         """Получить нажатую клавишу без блокировки"""
@@ -152,13 +178,14 @@ class TeleopKeyboard(Node):
                         self.get_logger().info('STOP')
 
                     elif key == '+' or key == '=':
-                        self.max_linear_speed = min(1.0, self.max_linear_speed + self.speed_step)
-                        self.max_angular_speed = min(2.0, self.max_angular_speed + self.speed_step * 2)
+                        self.max_linear_speed += self.speed_step
+                        self.max_angular_speed += self.speed_step * 2
+                        self._clamp_speed_limits()
                         self.get_logger().info(f'Max speed: {self.max_linear_speed:.2f} m/s')
 
                     elif key == '-' or key == '_':
-                        self.max_linear_speed = max(0.05, self.max_linear_speed - self.speed_step)
-                        self.max_angular_speed = max(0.1, self.max_angular_speed - self.speed_step * 2)
+                        self.max_linear_speed = max(self.MIN_LINEAR_SPEED, self.max_linear_speed - self.speed_step)
+                        self.max_angular_speed = max(self.MIN_ANGULAR_SPEED, self.max_angular_speed - self.speed_step * 2)
                         self.get_logger().info(f'Max speed: {self.max_linear_speed:.2f} m/s')
 
                     elif key == 'q' or key == 'Q' or key == '\x03':
@@ -187,6 +214,15 @@ class TeleopKeyboard(Node):
                     self.angular_acceleration,
                     self.angular_deceleration,
                     self.dt
+                )
+
+                self.current_linear = max(
+                    min(self.current_linear, self.max_linear_speed),
+                    -self.max_linear_speed,
+                )
+                self.current_angular = max(
+                    min(self.current_angular, self.max_angular_speed),
+                    -self.max_angular_speed,
                 )
 
                 # Публикуем команду

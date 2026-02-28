@@ -130,15 +130,11 @@ class ComputeOdometry:
             dt = 0.02
             large_dt = True
 
-        if self._state.source == OdometrySource.CMD_VEL:
-            self._state.x, self._state.y, self._state.theta = integrate_cmd_vel_pose(
-                x=self._state.x,
-                y=self._state.y,
-                theta=self._state.theta,
-                vx=self._state.vx,
-                vth=self._state.vth,
-                dt=dt,
-            )
+        # During CMD_VEL fallback: freeze position.
+        # Integrating from cmd_vel would cause double-counting when encoder
+        # returns (encoder delta already captures movement during the gap).
+        # High covariance (published by the ROS adapter) signals EKF to trust
+        # scan matching over odometry while position is frozen.
 
         self._state.last_time = now_sec
         self._state.current_time = now_sec

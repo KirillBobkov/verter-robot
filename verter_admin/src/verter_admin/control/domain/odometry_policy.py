@@ -23,7 +23,7 @@ class OdometryParameters:
     max_linear_velocity: float = 0.5
     max_angular_velocity: float = 1.0
     linear_scale: float = 1.0
-    angular_scale: float = 2.0
+    angular_scale: float = 1.0
     encoder_timeout: float = 1.0
 
     @property

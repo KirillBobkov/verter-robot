@@ -86,6 +86,12 @@ class OdometryNode(Node):
 
     def _publish_odometry(self):
         state = self._odometry.snapshot()
+        is_fallback = state.source == OdometrySource.CMD_VEL
+
+        # During CMD_VEL fallback position is frozen — inflate covariance so
+        # EKF reduces trust in odometry and defers to scan matching instead.
+        pose_xy_cov = 5.0 if is_fallback else 0.05
+        pose_yaw_cov = 5.0 if is_fallback else 0.15
 
         odom_msg = Odometry()
         odom_msg.header.stamp = self.get_clock().now().to_msg()
@@ -98,12 +104,12 @@ class OdometryNode(Node):
         odom_msg.pose.pose.orientation = self._euler_to_quaternion(0.0, 0.0, state.theta)
 
         odom_msg.pose.covariance = [
-            0.05, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.05, 0.0, 0.0, 0.0, 0.0,
+            pose_xy_cov, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.0, pose_xy_cov, 0.0, 0.0, 0.0, 0.0,
             0.0, 0.0, 1e6, 0.0, 0.0, 0.0,
             0.0, 0.0, 0.0, 1e6, 0.0, 0.0,
             0.0, 0.0, 0.0, 0.0, 1e6, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.15,
+            0.0, 0.0, 0.0, 0.0, 0.0, pose_yaw_cov,
         ]
 
         odom_msg.twist.twist.linear.x = state.vx
