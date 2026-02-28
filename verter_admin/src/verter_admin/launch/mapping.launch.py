@@ -96,9 +96,13 @@ def generate_launch_description():
     micro_ros_agent_chassis = ExecuteProcess(
         cmd=[
             'bash', '-c',
-            ['source ~/microros_ws/install/setup.bash && '
-             'exec ros2 run micro_ros_agent micro_ros_agent serial '
-             '--dev ', LaunchConfiguration('esp32_port'), ' -b 115200']
+            ['while true; do '
+             'source ~/microros_ws/install/setup.bash && '
+             'ros2 run micro_ros_agent micro_ros_agent serial '
+             '--dev ', LaunchConfiguration('esp32_port'), ' -b 115200; '
+             'echo "[micro_ros_agent chassis] exited, restarting in 2s..."; '
+             'sleep 2; '
+             'done']
         ],
         output='screen',
         sigterm_timeout='5',
@@ -113,9 +117,13 @@ def generate_launch_description():
     micro_ros_agent_imu = ExecuteProcess(
         cmd=[
             'bash', '-c',
-            ['source ~/microros_ws/install/setup.bash && '
-             'exec ros2 run micro_ros_agent micro_ros_agent serial '
-             '--dev ', LaunchConfiguration('imu_esp32_port'), ' -b 115200']
+            ['while true; do '
+             'source ~/microros_ws/install/setup.bash && '
+             'ros2 run micro_ros_agent micro_ros_agent serial '
+             '--dev ', LaunchConfiguration('imu_esp32_port'), ' -b 115200; '
+             'echo "[micro_ros_agent imu] exited, restarting in 2s..."; '
+             'sleep 2; '
+             'done']
         ],
         output='screen',
         sigterm_timeout='5',
