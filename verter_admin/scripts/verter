@@ -418,23 +418,18 @@ cmd_nav() {
 
     if [ -f "$dock_path" ]; then
         echo "Найдена док-позиция: $dock_path"
-        ros2 launch verter_admin navigation.launch.py map:="$map_path" "${launch_args[@]}" &
-        local nav_pid=$!
-
-        trap 'kill -INT "$nav_pid" 2>/dev/null || true' INT TERM
-
-        if _wait_for_node "/amcl" 35; then
-            _apply_dock_pose_file "$dock_path" || true
-        else
-            echo "Предупреждение: /amcl не поднялся за 35с, док-позиция не применена." >&2
-        fi
-
-        set +e
-        wait "$nav_pid"
-        local code=$?
-        set -e
-        trap - INT TERM
-        exit $code
+        # Ждём AMCL и применяем dock-позу в фоне — не держим launch в background.
+        # exec ros2 launch заменяет shell: Ctrl+C идёт напрямую в ros2 launch,
+        # который корректно завершает все дочерние процессы (micro_ros_agent и др.)
+        # через свой lifecycle — серийный порт освобождается правильно.
+        (
+            if _wait_for_node "/amcl" 35; then
+                _apply_dock_pose_file "$dock_path" || true
+            else
+                echo "Предупреждение: /amcl не поднялся за 35с, dock-позиция не применена." >&2
+            fi
+        ) &
+        exec ros2 launch verter_admin navigation.launch.py map:="$map_path" "${launch_args[@]}"
     fi
 
     echo "Док-позиция не найдена (${dock_path}) — запуск без автоприменения /initialpose."
