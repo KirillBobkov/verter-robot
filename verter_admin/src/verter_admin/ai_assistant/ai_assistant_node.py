@@ -22,14 +22,8 @@ class AIAssistantNode(Node):
         "— находить кабинеты и этажи;\n"
         "— узнавать правила записи и посещения;\n"
         "— понимать порядок действий в типовых ситуациях.\n\n"
-        "Ты используешь ТОЛЬКО информацию из подключённой базы знаний,\n"
-        "которая разделена на три логических файла:\n"
-        "1) общая информация о центре;\n"
-        "2) врачи, кабинеты и этажи;\n"
-        "3) запись на приём и правила.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
+        "Ты используешь ТОЛЬКО информацию из подключённой базы знаний.\n\n"
         "ОСНОВНЫЕ ПРАВИЛА РАБОТЫ\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
         "1. Ты не врач и не регистратор.\n"
         "Ты не даёшь медицинских рекомендаций, не расшифровываешь диагнозы,\n"
         "не оцениваешь анализы и не принимаешь решений о приёме пациентов.\n\n"
@@ -39,9 +33,7 @@ class AIAssistantNode(Node):
         "НЕ используй фразу «у меня нет информации».\n\n"
         "4. В сложных или неоднозначных ситуациях\n"
         "рекомендуй обратиться в регистратуру или к сотрудникам больницы.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
         "ПРАВИЛА ОТВЕТОВ\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
         "— Отвечай кратко, спокойно и доброжелательно.\n"
         "— Используй простые и понятные формулировки.\n"
         "— Если вопрос касается маршрута, всегда указывай этаж и номер кабинета.\n"
@@ -54,9 +46,7 @@ class AIAssistantNode(Node):
         "— Используй нейтральные формулировки:\n"
         "  «возможность приёма уточняется в регистратуре»,\n"
         "  «рекомендуется обратиться в регистратуру».\n\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
         "ПОВЕДЕНИЕ В ТИПОВЫХ СИТУАЦИЯХ\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
         "Если посетитель:\n"
         "— не уверен, к какому врачу записан;\n"
         "— не помнит кабинет или время приёма;\n"
@@ -68,9 +58,7 @@ class AIAssistantNode(Node):
         "— не отказываешь;\n"
         "— объясняешь общий порядок действий;\n"
         "— рекомендуешь обратиться в регистратуру.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
         "ТОН ОБЩЕНИЯ\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
         "Посетители могут быть взволнованы или торопиться.\n"
         "Говори спокойно, вежливо и поддерживающе.\n"
         "Помогай сделать следующий простой шаг.\n\n"
@@ -78,6 +66,16 @@ class AIAssistantNode(Node):
     )
 
     VECTOR_STORE_FILE = "vector_store_id.txt"
+
+    # Параметры Vector Store
+    VECTOR_STORE_NAME = "verter-medical-index"
+    VECTOR_STORE_EXPIRY_DAYS = 10
+    VECTOR_STORE_MAX_RESULTS = 10  # Увеличено для лучшего поиска по кабинетам
+    VECTOR_STORE_CREATE_TIMEOUT = 900
+
+    # Параметры модели
+    DEFAULT_TEMPERATURE = 0.3
+    DEFAULT_MAX_TOKENS = 350  # Увеличено для более подробных ответов
 
     def __init__(self):
         super().__init__('ai_assistant_node')
@@ -109,7 +107,7 @@ class AIAssistantNode(Node):
 
         self.folder_id = os.getenv("YANDEX_CLOUD_FOLDER", "")
         self.api_key = os.getenv("YANDEX_CLOUD_API_KEY", "")
-        self.model_name = os.getenv("YANDEX_CLOUD_MODEL", "aliceai-llm")
+        self.model_name = os.getenv("YANDEX_CLOUD_MODEL", "yandexgpt")
 
         if not self.folder_id or not self.api_key:
             raise RuntimeError("Не заданы YANDEX_CLOUD_FOLDER или YANDEX_CLOUD_API_KEY")
@@ -139,6 +137,12 @@ class AIAssistantNode(Node):
         return os.path.join(self._get_project_root(), self.VECTOR_STORE_FILE)
 
     def _get_or_create_vector_store(self):
+        """
+        Получает существующий или создаёт новый Vector Store индекс.
+
+        ВАЖНО: При изменении датасета (chunks.jsonl) необходимо удалить
+        файл vector_store_id.txt для пересоздания индекса с актуальными данными.
+        """
 
         path = self._get_vector_store_file_path()
 
@@ -152,14 +156,18 @@ class AIAssistantNode(Node):
 
         file_ids = self._upload_files()
 
+        # Создаём поисковый индекс с настройками согласно документации
         vector_store = self.client.vector_stores.create(
-            name="verter-medical-index",
+            name=self.VECTOR_STORE_NAME,
+            metadata={"type": "medical-center", "source": "dataset"},
+            # Время жизни индекса - после последней активности
+            expires_after={"anchor": "last_active_at", "days": self.VECTOR_STORE_EXPIRY_DAYS},
             file_ids=file_ids
         )
 
         vector_store_id = vector_store.id
 
-        deadline = time.time() + 900
+        deadline = time.time() + self.VECTOR_STORE_CREATE_TIMEOUT
         while True:
             status = self.client.vector_stores.retrieve(vector_store_id).status
             if status == "completed":
@@ -185,18 +193,38 @@ class AIAssistantNode(Node):
             return os.path.join(os.path.dirname(__file__), 'dataset')
 
     def _upload_files(self):
-
+        """
+        Загружает файлы датасета в Vector Store.
+        Поддерживает два формата:
+        - JSONL с prechunked данными (формат chunks)
+        - Обычные файлы (автоматическая обработка)
+        """
         dataset_path = self._get_dataset_path()
         paths = sorted([p for p in pathlib.Path(dataset_path).iterdir() if p.is_file()])
 
         file_ids = []
 
         for path in paths:
+            # Определяем формат файла
+            is_chunks_file = path.suffix == '.jsonl' and 'chunks' in path.name
+
             with open(path, "rb") as f:
-                uploaded = self.client.files.create(
-                    file=f,
-                    purpose="assistants"
-                )
+                if is_chunks_file:
+                    # Загрузка prechunked данных согласно документации Yandex Cloud
+                    uploaded = self.client.files.create(
+                        file=(path.name, f, "application/jsonlines"),
+                        purpose="assistants",
+                        extra_body={"format": "chunks"}
+                    )
+                    self.get_logger().info(f"Загружен chunks файл: {path.name}")
+                else:
+                    # Обычная загрузка файла
+                    uploaded = self.client.files.create(
+                        file=f,
+                        purpose="assistants"
+                    )
+                    self.get_logger().info(f"Загружен файл: {path.name}")
+
             file_ids.append(uploaded.id)
 
         return file_ids
@@ -231,12 +259,19 @@ class AIAssistantNode(Node):
                 tools=[
                     {
                         "type": "file_search",
-                        "vector_store_ids": [self.vector_store_id]
+                        "vector_store_ids": [self.vector_store_id],
+                        "max_num_results": self.VECTOR_STORE_MAX_RESULTS,
+                        "ranking_options": {
+                            "ranker_type": "default"
+                        }
                     }
                 ],
-                temperature=0.3,
-                max_output_tokens=180
+                temperature=self.DEFAULT_TEMPERATURE,
+                max_output_tokens=self.DEFAULT_MAX_TOKENS
             )
+
+            # Логирование найденных чанков для диагностики
+            self._log_search_results(response, question)
 
             answer = self._extract_text(response)
 
@@ -262,6 +297,25 @@ class AIAssistantNode(Node):
                 return response.output[0].content[0].text
             except Exception:
                 return None
+
+    def _log_search_results(self, response, question):
+        """
+        Логирует найденные чанки для диагностики.
+        Помогает понять, нашёлся ли релевантный контент в Vector Store.
+        """
+        self.get_logger().info(f"Вопрос: {question}")
+
+        try:
+            # Структура ответа Yandex Cloud: output -> file_search_call -> results
+            for item in response.output:
+                if hasattr(item, 'type') and item.type == 'file_search_call':
+                    self.get_logger().info(f"Найдено чанков: {len(item.results)}")
+                    for i, result in enumerate(item.results[:3]):  # Логируем первые 3
+                        score = getattr(result, 'score', 0)
+                        text = getattr(result, 'text', '')[:100]  # Первые 100 символов
+                        self.get_logger().info(f"  [{i+1}] score={score:.3f}: {text}...")
+        except Exception as e:
+            self.get_logger().debug(f"Не удалось извлечь результаты поиска: {e}")
 
     # ================================
     # DIALOG CONTROL
