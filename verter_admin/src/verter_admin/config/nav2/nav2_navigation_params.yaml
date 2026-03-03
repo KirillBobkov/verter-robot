@@ -141,9 +141,9 @@ controller_server:
     odom_topic: /odometry/filtered
 
     progress_checker:
-      plugin: "nav2_controller::SimpleProgressChecker"
+      plugin: "nav2_controller::RotationShieldedProgressChecker"
       required_movement_radius: 0.3
-      movement_time_allowance: 10.0
+      movement_time_allowance: 20.0
 
     general_goal_checker:
       stateful: True
