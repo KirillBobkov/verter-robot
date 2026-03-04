@@ -117,7 +117,8 @@ def generate_launch_description():
     micro_ros_agent_chassis = ExecuteProcess(
         cmd=[
             'bash', '-c',
-            ['while true; do '
+            ['trap "kill 0; exit" TERM INT; '
+             'while true; do '
              'source ~/microros_ws/install/setup.bash && '
              'ros2 run micro_ros_agent micro_ros_agent serial '
              '--dev ', LaunchConfiguration('esp32_port'), ' -b 115200; '
@@ -133,7 +134,8 @@ def generate_launch_description():
     micro_ros_agent_imu = ExecuteProcess(
         cmd=[
             'bash', '-c',
-            ['while true; do '
+            ['trap "kill 0; exit" TERM INT; '
+             'while true; do '
              'source ~/microros_ws/install/setup.bash && '
              'ros2 run micro_ros_agent micro_ros_agent serial '
              '--dev ', LaunchConfiguration('imu_esp32_port'), ' -b 115200; '

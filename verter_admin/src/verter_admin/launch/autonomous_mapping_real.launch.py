@@ -82,6 +82,7 @@ def generate_launch_description():
             'bash',
             '-c',
             [
+                'trap "kill 0; exit" TERM INT; '
                 'while true; do '
                 'source ~/microros_ws/install/setup.bash && '
                 'ros2 run micro_ros_agent micro_ros_agent serial '
@@ -103,6 +104,7 @@ def generate_launch_description():
             'bash',
             '-c',
             [
+                'trap "kill 0; exit" TERM INT; '
                 'while true; do '
                 'source ~/microros_ws/install/setup.bash && '
                 'ros2 run micro_ros_agent micro_ros_agent serial '
