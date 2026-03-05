@@ -44,11 +44,14 @@
     <h2>Save Waypoint</h2>
     <label>Name <input id="save-name" type="text" placeholder="e.g. kitchen" /></label>
     <div class="row">
-      <label style="flex:1">X (m) <input id="save-x" type="number" step="0.01" value="0.0" /></label>
-      <label style="flex:1">Y (m) <input id="save-y" type="number" step="0.01" value="0.0" /></label>
-      <label style="flex:1">Theta (rad) <input id="save-theta" type="number" step="0.01" value="0.0" /></label>
+      <label style="flex:1">X (m) <input id="save-x" type="number" step="0.001" value="0.0" /></label>
+      <label style="flex:1">Y (m) <input id="save-y" type="number" step="0.001" value="0.0" /></label>
+      <label style="flex:1">Theta (rad) <input id="save-theta" type="number" step="0.001" value="0.0" /></label>
     </div>
-    <button onclick="saveWaypoint()">Save Waypoint</button>
+    <div class="row">
+      <button onclick="saveWaypoint()">Save Waypoint</button>
+      <button class="secondary" onclick="fillCurrentPose()">Use Current Pose</button>
+    </div>
   </section>
 
   <!-- Navigate / Delete -->
@@ -166,6 +169,25 @@
           row.insertCell().textContent = res.theta[i].toFixed(4);
         });
       });
+    }
+
+    function fillCurrentPose() {
+      const topic = new ROSLIB.Topic({
+        ros, name: '/amcl_pose',
+        messageType: 'geometry_msgs/msg/PoseWithCovarianceStamped',
+      });
+      log('Fetching current pose from /amcl_pose...');
+      const handler = (msg) => {
+        topic.unsubscribe(handler);
+        const p = msg.pose.pose;
+        const q = p.orientation;
+        const yaw = Math.atan2(2*(q.w*q.z + q.x*q.y), 1 - 2*(q.y*q.y + q.z*q.z));
+        document.getElementById('save-x').value = p.position.x.toFixed(3);
+        document.getElementById('save-y').value = p.position.y.toFixed(3);
+        document.getElementById('save-theta').value = yaw.toFixed(3);
+        log(`Pose filled: x=${p.position.x.toFixed(3)}, y=${p.position.y.toFixed(3)}, theta=${yaw.toFixed(3)}`);
+      };
+      topic.subscribe(handler);
     }
 
     function startPatrol() {

@@ -107,6 +107,18 @@ def generate_launch_description():
         output='screen',
     )
 
+    lifecycle_manager_node = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_waypoint',
+        output='screen',
+        parameters=[{
+            'use_sim_time': False,
+            'autostart': True,
+            'node_names': ['waypoint_manager'],
+        }],
+    )
+
     # -------------------------------------------------------------------------
     # Launch description
     # -------------------------------------------------------------------------
@@ -120,4 +132,5 @@ def generate_launch_description():
         waypoint_manager_node,
         web_server_node,
         rosbridge_node,
+        lifecycle_manager_node,
     ])
