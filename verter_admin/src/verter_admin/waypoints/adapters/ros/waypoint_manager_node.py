@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 import os
 import threading
+import traceback
 from typing import List, Optional
 
 import rclpy
@@ -192,113 +193,137 @@ class WaypointManagerNode(LifecycleNode):
 
     def on_configure(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info('WaypointManagerNode: configuring')
-
-        waypoints_file = self.get_parameter('waypoints_file').value
-        warn = self.get_parameter('patrol_warn_threshold').value
-        fault = self.get_parameter('patrol_fault_threshold').value
-        action_server = self.get_parameter('nav2_action_server').value
-
-        # Domain
-        self._store = WaypointStore()
-        self._yaml_store = YamlStore(waypoints_file)
-        self._policy = PatrolPolicy(warn_threshold=warn, fault_threshold=fault)
-
-        # Load persisted waypoints.
-        # If YAML is malformed/unreadable, continue with an empty store so
-        # service endpoints are still available and the error is visible in logs.
         try:
-            data = self._yaml_store.load()
+            waypoints_file = self.get_parameter('waypoints_file').value
+            warn = self.get_parameter('patrol_warn_threshold').value
+            fault = self.get_parameter('patrol_fault_threshold').value
+
+            # Domain
+            self.get_logger().info('WaypointManagerNode: configure step domain-init')
+            self._store = WaypointStore()
+            self._yaml_store = YamlStore(waypoints_file)
+            self._policy = PatrolPolicy(warn_threshold=warn, fault_threshold=fault)
+
+            # Load persisted waypoints.
+            # If YAML is malformed/unreadable, continue with an empty store so
+            # service endpoints are still available and the error is visible in logs.
+            self.get_logger().info('WaypointManagerNode: configure step yaml-load')
+            try:
+                data = self._yaml_store.load()
+            except Exception as exc:
+                self.get_logger().error(
+                    f'Failed to load waypoints from {waypoints_file}: {exc}. '
+                    'Starting with an empty waypoint store.'
+                )
+                data = {}
+
+            if data:
+                self._store.load_from_dict(data)
+                self.get_logger().info(
+                    f'Loaded {len(self._store.list_all())} waypoints from {waypoints_file}'
+                )
+
+            # Publisher: /waypoints/markers — TRANSIENT_LOCAL, RELIABLE, depth=1
+            self.get_logger().info('WaypointManagerNode: configure step marker-publisher')
+            self._marker_pub = self.create_publisher(
+                MarkerArray, '/waypoints/markers', _QOS_TRANSIENT_RELIABLE_1
+            )
+
+            # Subscriber: /amcl_pose — TRANSIENT_LOCAL, RELIABLE, depth=5 (C3/U7)
+            self.get_logger().info('WaypointManagerNode: configure step amcl-subscription')
+            self._amcl_sub = self.create_subscription(
+                PoseWithCovarianceStamped,
+                '/amcl_pose',
+                self._amcl_pose_cb,
+                _QOS_TRANSIENT_RELIABLE_5,
+            )
+
+            # 6 services (created here so they are accessible in INACTIVE state;
+            # SI-5 guard inside each callback ensures requests are rejected until active)
+            self.get_logger().info('WaypointManagerNode: configure step services')
+            self._services = [
+                self.create_service(SaveWaypoint, '/save_waypoint', self._save_waypoint_cb),
+                self.create_service(
+                    NavigateToWaypoint, '/navigate_to_waypoint', self._navigate_to_waypoint_cb
+                ),
+                self.create_service(DeleteWaypoint, '/delete_waypoint', self._delete_waypoint_cb),
+                self.create_service(ListWaypoints, '/list_waypoints', self._list_waypoints_cb),
+                self.create_service(Trigger, '/start_patrol', self._start_patrol_cb),
+                self.create_service(Trigger, '/stop_patrol', self._stop_patrol_cb),
+            ]
+
+            self._active = False
+            self.get_logger().info('WaypointManagerNode: configure complete')
+            return TransitionCallbackReturn.SUCCESS
         except Exception as exc:
-            self.get_logger().error(
-                f'Failed to load waypoints from {waypoints_file}: {exc}. '
-                'Starting with an empty waypoint store.'
-            )
-            data = {}
-
-        if data:
-            self._store.load_from_dict(data)
-            self.get_logger().info(
-                f'Loaded {len(self._store.list_all())} waypoints from {waypoints_file}'
-            )
-
-        # Publisher: /waypoints/markers — TRANSIENT_LOCAL, RELIABLE, depth=1
-        self._marker_pub = self.create_publisher(
-            MarkerArray, '/waypoints/markers', _QOS_TRANSIENT_RELIABLE_1
-        )
-
-        # Subscriber: /amcl_pose — TRANSIENT_LOCAL, RELIABLE, depth=5 (C3/U7)
-        self._amcl_sub = self.create_subscription(
-            PoseWithCovarianceStamped,
-            '/amcl_pose',
-            self._amcl_pose_cb,
-            _QOS_TRANSIENT_RELIABLE_5,
-        )
-
-        # 6 services (created here so they are accessible in INACTIVE state;
-        # SI-5 guard inside each callback ensures requests are rejected until active)
-        self._services = [
-            self.create_service(SaveWaypoint, '/save_waypoint', self._save_waypoint_cb),
-            self.create_service(
-                NavigateToWaypoint, '/navigate_to_waypoint', self._navigate_to_waypoint_cb
-            ),
-            self.create_service(DeleteWaypoint, '/delete_waypoint', self._delete_waypoint_cb),
-            self.create_service(ListWaypoints, '/list_waypoints', self._list_waypoints_cb),
-            self.create_service(Trigger, '/start_patrol', self._start_patrol_cb),
-            self.create_service(Trigger, '/stop_patrol', self._stop_patrol_cb),
-        ]
-
-        self._active = False
-        return TransitionCallbackReturn.SUCCESS
+            self.get_logger().error(f'WaypointManagerNode: configure failed: {exc}')
+            self.get_logger().error(traceback.format_exc())
+            return TransitionCallbackReturn.FAILURE
 
     def on_activate(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info('WaypointManagerNode: activating')
-        action_server = self.get_parameter('nav2_action_server').value
-        self._action_client = ActionClient(self, NavigateToPose, action_server)
-        self._action_port = _Nav2ActionClientPort(self._action_client, self.get_logger())
-        self._patrol_use_case = PatrolUseCase(
-            store=self._store,
-            policy=self._policy,
-            action_client=self._action_port,
-        )
-        self._active = True
-        self._publish_markers()
-        return TransitionCallbackReturn.SUCCESS
+        try:
+            action_server = self.get_parameter('nav2_action_server').value
+            self._action_client = ActionClient(self, NavigateToPose, action_server)
+            self._action_port = _Nav2ActionClientPort(self._action_client, self.get_logger())
+            self._patrol_use_case = PatrolUseCase(
+                store=self._store,
+                policy=self._policy,
+                action_client=self._action_port,
+            )
+            self._active = True
+            self._publish_markers()
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.get_logger().error(f'WaypointManagerNode: activate failed: {exc}')
+            self.get_logger().error(traceback.format_exc())
+            return TransitionCallbackReturn.FAILURE
 
     def on_deactivate(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info('WaypointManagerNode: deactivating')
-        self._active = False
-        self._stop_patrol_internal()
-        if self._action_port is not None:
-            self._action_port.cancel_goal()
-        if self._action_client is not None:
-            self._action_client.destroy()
-            self._action_client = None
-        self._action_port = None
-        self._patrol_use_case = None
-        return TransitionCallbackReturn.SUCCESS
+        try:
+            self._active = False
+            self._stop_patrol_internal()
+            if self._action_port is not None:
+                self._action_port.cancel_goal()
+            if self._action_client is not None:
+                self._action_client.destroy()
+                self._action_client = None
+            self._action_port = None
+            self._patrol_use_case = None
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.get_logger().error(f'WaypointManagerNode: deactivate failed: {exc}')
+            self.get_logger().error(traceback.format_exc())
+            return TransitionCallbackReturn.FAILURE
 
     def on_cleanup(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info('WaypointManagerNode: cleanup')
-        for srv in self._services:
-            self.destroy_service(srv)
-        self._services = []
-        if self._marker_pub is not None:
-            self.destroy_publisher(self._marker_pub)
-            self._marker_pub = None
-        if self._amcl_sub is not None:
-            self.destroy_subscription(self._amcl_sub)
-            self._amcl_sub = None
-        if self._action_client is not None:
-            self._action_client.destroy()
-            self._action_client = None
-        # Reset domain objects (R7: on_cleanup fully resets PatrolPolicy)
-        self._store = None
-        self._policy = None
-        self._yaml_store = None
-        self._patrol_use_case = None
-        self._action_port = None
-        self._current_pose = None
-        return TransitionCallbackReturn.SUCCESS
+        try:
+            for srv in self._services:
+                self.destroy_service(srv)
+            self._services = []
+            if self._marker_pub is not None:
+                self.destroy_publisher(self._marker_pub)
+                self._marker_pub = None
+            if self._amcl_sub is not None:
+                self.destroy_subscription(self._amcl_sub)
+                self._amcl_sub = None
+            if self._action_client is not None:
+                self._action_client.destroy()
+                self._action_client = None
+            # Reset domain objects (R7: on_cleanup fully resets PatrolPolicy)
+            self._store = None
+            self._policy = None
+            self._yaml_store = None
+            self._patrol_use_case = None
+            self._action_port = None
+            self._current_pose = None
+            return TransitionCallbackReturn.SUCCESS
+        except Exception as exc:
+            self.get_logger().error(f'WaypointManagerNode: cleanup failed: {exc}')
+            self.get_logger().error(traceback.format_exc())
+            return TransitionCallbackReturn.FAILURE
 
     # ------------------------------------------------------------------
     # Service callbacks — SI-5 guard applied in every callback
@@ -470,8 +495,11 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
-        node.destroy_node()
-        rclpy.shutdown()
+        try:
+            node.destroy_node()
+        finally:
+            if rclpy.ok():
+                rclpy.shutdown()
 
 
 if __name__ == '__main__':
