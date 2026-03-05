@@ -211,15 +211,6 @@ class WaypointManagerNode(LifecycleNode):
                 f'Loaded {len(self._store.list_all())} waypoints from {waypoints_file}'
             )
 
-        # ROS resources: action client (C1 — sole actuator interface)
-        self._action_client = ActionClient(self, NavigateToPose, action_server)
-        self._action_port = _Nav2ActionClientPort(self._action_client, self.get_logger())
-        self._patrol_use_case = PatrolUseCase(
-            store=self._store,
-            policy=self._policy,
-            action_client=self._action_port,
-        )
-
         # Publisher: /waypoints/markers — TRANSIENT_LOCAL, RELIABLE, depth=1
         self._marker_pub = self.create_publisher(
             MarkerArray, '/waypoints/markers', _QOS_TRANSIENT_RELIABLE_1
@@ -251,6 +242,14 @@ class WaypointManagerNode(LifecycleNode):
 
     def on_activate(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info('WaypointManagerNode: activating')
+        action_server = self.get_parameter('nav2_action_server').value
+        self._action_client = ActionClient(self, NavigateToPose, action_server)
+        self._action_port = _Nav2ActionClientPort(self._action_client, self.get_logger())
+        self._patrol_use_case = PatrolUseCase(
+            store=self._store,
+            policy=self._policy,
+            action_client=self._action_port,
+        )
         self._active = True
         self._publish_markers()
         return TransitionCallbackReturn.SUCCESS
@@ -258,10 +257,14 @@ class WaypointManagerNode(LifecycleNode):
     def on_deactivate(self, state: State) -> TransitionCallbackReturn:
         self.get_logger().info('WaypointManagerNode: deactivating')
         self._active = False
-        # Stop patrol loop and cancel active Nav2 goals (brief §MUST cancel on deactivate)
         self._stop_patrol_internal()
         if self._action_port is not None:
             self._action_port.cancel_goal()
+        if self._action_client is not None:
+            self._action_client.destroy()
+            self._action_client = None
+        self._action_port = None
+        self._patrol_use_case = None
         return TransitionCallbackReturn.SUCCESS
 
     def on_cleanup(self, state: State) -> TransitionCallbackReturn:
@@ -450,8 +453,10 @@ class WaypointManagerNode(LifecycleNode):
 def main(args=None):
     rclpy.init(args=args)
     node = WaypointManagerNode()
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:

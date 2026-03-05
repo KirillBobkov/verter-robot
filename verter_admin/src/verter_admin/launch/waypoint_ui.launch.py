@@ -116,6 +116,7 @@ def generate_launch_description():
             'use_sim_time': False,
             'autostart': True,
             'node_names': ['waypoint_manager'],
+            'bond_timeout': 0.0,
         }],
     )
 
