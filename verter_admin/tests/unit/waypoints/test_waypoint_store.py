@@ -71,3 +71,34 @@ def test_to_dict_empty_store(store):
 
 def test_list_all_empty(store):
     assert store.list_all() == []
+
+
+def test_load_from_legacy_waypoints_list_schema(store):
+    store.load_from_dict(
+        {
+            'waypoints': [
+                {'name': 'legacy_a', 'x': 1.0, 'y': 2.0, 'yaw': 0.5},
+                {'name': 'legacy_b', 'x': 3.0, 'y': 4.0, 'theta': 1.5},
+            ]
+        }
+    )
+    names = [wp.name for wp in store.list_all()]
+    assert names == ['legacy_a', 'legacy_b']
+    assert store.get('legacy_a').theta == 0.5
+    assert store.get('legacy_b').theta == 1.5
+
+
+def test_load_from_dict_skips_invalid_entries(store):
+    store.load_from_dict(
+        {
+            'waypoints': [
+                {'x': 1.0, 'y': 2.0, 'yaw': 0.5},  # missing name
+                {'name': 'bad1', 'y': 2.0, 'yaw': 0.5},  # missing x
+                {'name': 'bad2', 'x': 1.0, 'yaw': 0.5},  # missing y
+                {'name': 'bad3', 'x': 1.0, 'y': 2.0},  # missing yaw/theta
+                {'name': 'ok', 'x': 7.0, 'y': 8.0, 'yaw': 0.0},
+            ]
+        }
+    )
+    names = [wp.name for wp in store.list_all()]
+    assert names == ['ok']

@@ -54,15 +54,61 @@ class WaypointStore:
         return list(self._waypoints.values())
 
     def load_from_dict(self, data: dict) -> None:
-        """Replace the in-memory store from a deserialised YAML dict."""
+        """Replace the in-memory store from deserialised YAML.
+
+        Supported schemas:
+        - Current: {"name": {"x": ..., "y": ..., "theta": ...}, ...}
+        - Legacy: {"waypoints": [{"name": ..., "x": ..., "y": ..., "yaw": ...}, ...]}
+        """
         self._waypoints = {}
-        for name, fields in data.items():
+        for name, fields in self._iter_serialized_waypoints(data):
             self._waypoints[name] = Waypoint(
                 name=name,
                 x=float(fields['x']),
                 y=float(fields['y']),
                 theta=float(fields['theta']),
             )
+
+    def _iter_serialized_waypoints(self, data):
+        """Yield (name, fields) in a normalized {'x','y','theta'} representation."""
+        if not isinstance(data, dict):
+            return []
+
+        # Legacy schema: top-level 'waypoints' list with {'name', 'x', 'y', 'yaw'/'theta'}.
+        legacy = data.get('waypoints')
+        if isinstance(legacy, list):
+            items = []
+            for entry in legacy:
+                if not isinstance(entry, dict):
+                    continue
+                name = entry.get('name')
+                if not name:
+                    continue
+                theta = entry.get('theta', entry.get('yaw'))
+                if theta is None:
+                    continue
+                if 'x' not in entry or 'y' not in entry:
+                    continue
+                items.append(
+                    (
+                        str(name),
+                        {'x': entry['x'], 'y': entry['y'], 'theta': theta},
+                    )
+                )
+            return items
+
+        # Current schema: map of waypoint_name -> {'x', 'y', 'theta'}.
+        items = []
+        for name, fields in data.items():
+            if not isinstance(fields, dict):
+                continue
+            if 'x' not in fields or 'y' not in fields:
+                continue
+            theta = fields.get('theta', fields.get('yaw'))
+            if theta is None:
+                continue
+            items.append((str(name), {'x': fields['x'], 'y': fields['y'], 'theta': theta}))
+        return items
 
     def to_dict(self) -> dict:
         """Serialise the store to a YAML-compatible dict."""
