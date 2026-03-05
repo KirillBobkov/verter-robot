@@ -24,7 +24,7 @@ import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
-from launch_ros.actions import LifecycleNode, Node
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -60,11 +60,10 @@ def generate_launch_description():
     # WaypointManagerNode — LifecycleNode (L3/HMI, SI-5/SI-6 enforced inside)
     # -------------------------------------------------------------------------
 
-    waypoint_manager_node = LifecycleNode(
+    waypoint_manager_node = Node(
         package='verter_admin',
         executable='waypoint_manager_node',
         name='waypoint_manager',
-        namespace='',
         parameters=[{
             # C10: os.path.expanduser applied to the default above;
             # if caller passes an absolute path it is used as-is.
@@ -107,19 +106,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    lifecycle_manager_node = Node(
-        package='nav2_lifecycle_manager',
-        executable='lifecycle_manager',
-        name='lifecycle_manager_waypoint',
-        output='screen',
-        parameters=[{
-            'use_sim_time': False,
-            'autostart': True,
-            'node_names': ['waypoint_manager'],
-            'bond_timeout': 0.0,
-        }],
-    )
-
     # -------------------------------------------------------------------------
     # Launch description
     # -------------------------------------------------------------------------
@@ -133,5 +119,4 @@ def generate_launch_description():
         waypoint_manager_node,
         web_server_node,
         rosbridge_node,
-        lifecycle_manager_node,
     ])
