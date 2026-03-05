@@ -203,8 +203,18 @@ class WaypointManagerNode(LifecycleNode):
         self._yaml_store = YamlStore(waypoints_file)
         self._policy = PatrolPolicy(warn_threshold=warn, fault_threshold=fault)
 
-        # Load persisted waypoints
-        data = self._yaml_store.load()
+        # Load persisted waypoints.
+        # If YAML is malformed/unreadable, continue with an empty store so
+        # service endpoints are still available and the error is visible in logs.
+        try:
+            data = self._yaml_store.load()
+        except Exception as exc:
+            self.get_logger().error(
+                f'Failed to load waypoints from {waypoints_file}: {exc}. '
+                'Starting with an empty waypoint store.'
+            )
+            data = {}
+
         if data:
             self._store.load_from_dict(data)
             self.get_logger().info(
