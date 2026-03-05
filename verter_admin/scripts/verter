@@ -424,6 +424,9 @@ cmd_nav() {
         # через свой lifecycle — серийный порт освобождается правильно.
         (
             if _wait_for_node "/amcl" 35; then
+                # Ждём пока AMCL перейдёт в ACTIVE и подпишется на /initialpose.
+                # Нода появляется в списке раньше чем lifecycle manager её активирует.
+                sleep 5
                 _apply_dock_pose_file "$dock_path" || true
             else
                 echo "Предупреждение: /amcl не поднялся за 35с, dock-позиция не применена." >&2
