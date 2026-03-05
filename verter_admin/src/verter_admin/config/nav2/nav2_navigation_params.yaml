@@ -141,9 +141,9 @@ controller_server:
     odom_topic: /odometry/filtered
 
     progress_checker:
-      plugin: "nav2_controller::RotationShieldedProgressChecker"
+      plugin: "nav2_controller::SimpleProgressChecker"
       required_movement_radius: 0.3
-      movement_time_allowance: 20.0
+      movement_time_allowance: 30.0
 
     general_goal_checker:
       stateful: True
@@ -200,7 +200,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 8.0
-        inflation_radius: 0.30
+        inflation_radius: 0.40
       voxel_layer:
         plugin: "nav2_costmap_2d::VoxelLayer"
         enabled: True
@@ -264,7 +264,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 8.0
-        inflation_radius: 0.30
+        inflation_radius: 0.40
       always_send_full_costmap: True
 
 # ============================================================================
