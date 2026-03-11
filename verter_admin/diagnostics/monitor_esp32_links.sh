@@ -27,6 +27,7 @@ IMU_DEV="/dev/esp32_imu"
 OUT_BASE="${1:-$HOME/esp32-debug}"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 OUT_DIR="$OUT_BASE/run_$STAMP"
+PIDS=""
 
 mkdir -p "$OUT_DIR"
 
