@@ -90,8 +90,11 @@
   </section>
 
   <script>
-    // Derive rosbridge host from window.location.hostname so no hard-coded IPs (R10/C10)
-    const ROSBRIDGE_PORT = 9090;
+    // Derive rosbridge host from window.location.hostname so no hard-coded IPs (R10/C10).
+    // Optional override via URL query param: ?rosbridge_port=9095
+    const _rosbridgePortRaw = new URLSearchParams(window.location.search).get('rosbridge_port');
+    const _rosbridgePortParsed = Number.parseInt(_rosbridgePortRaw || '9090', 10);
+    const ROSBRIDGE_PORT = Number.isFinite(_rosbridgePortParsed) ? _rosbridgePortParsed : 9090;
     const ROSBRIDGE_HOST = window.location.hostname || 'localhost';
 
     const ros = new ROSLIB.Ros({ url: `ws://${ROSBRIDGE_HOST}:${ROSBRIDGE_PORT}` });

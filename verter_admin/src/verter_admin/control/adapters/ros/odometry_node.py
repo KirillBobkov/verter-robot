@@ -2,6 +2,7 @@
 
 """ROS adapter for odometry use-case."""
 
+from dataclasses import replace
 import math
 import time
 
@@ -25,9 +26,19 @@ class OdometryNode(Node):
         self.publish_tf = self.get_parameter('publish_tf').value
 
         self._params = OdometryParameters()
+        self.declare_parameter('encoder_timeout', self._params.encoder_timeout)
+        self.declare_parameter('encoder_warn_gap', 0.2)
+        self._params = replace(
+            self._params,
+            encoder_timeout=float(self.get_parameter('encoder_timeout').value),
+        )
+        self._encoder_warn_gap = float(self.get_parameter('encoder_warn_gap').value)
+
         now_sec = time.time()
         self._odometry = ComputeOdometry(self._params, now_sec)
         self._last_log_time = now_sec
+        self._last_encoder_host_time: float | None = None
+        self._last_encoder_device_time: float | None = None
 
         self.odom_publisher = self.create_publisher(Odometry, '/odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -43,6 +54,10 @@ class OdometryNode(Node):
         self.get_logger().info('Подписчик создан для топика /cmd_vel')
         self.get_logger().info('Подписчик создан для топика /wheel_encoders')
         self.get_logger().info(f'Таймер одометрии запущен с частотой {update_frequency} Гц')
+        self.get_logger().info(
+            f'Порог таймаута энкодеров: {self._params.encoder_timeout:.3f} сек '
+            f'(warn gap: {self._encoder_warn_gap:.3f} сек)'
+        )
         self.get_logger().info('=' * 80)
         self.get_logger().info('Нода одометрии успешно инициализирована!')
         self.get_logger().info('Начальная позиция: x=0.0, y=0.0, theta=0.0')
@@ -62,21 +77,42 @@ class OdometryNode(Node):
         if len(msg.data) < 3:
             return
 
+        now_sec = time.time()
+        device_stamp_sec = float(msg.data[2]) / 1000.0
+        host_gap = None
+        device_gap = None
+
+        if self._last_encoder_host_time is not None:
+            host_gap = now_sec - self._last_encoder_host_time
+        if self._last_encoder_device_time is not None and device_stamp_sec >= self._last_encoder_device_time:
+            device_gap = device_stamp_sec - self._last_encoder_device_time
+
         event = self._odometry.on_encoder(
             left_steps=int(msg.data[0]),
             right_steps=int(msg.data[1]),
-            now_sec=time.time(),
+            now_sec=now_sec,
         )
 
         if event.switched_to_encoder:
             self.get_logger().info('Переключение на энкодерную одометрию (closed-loop)')
         elif event.restored_encoder:
-            self.get_logger().info('Восстановление энкодерной одометрии (closed-loop)')
+            suffix = self._format_encoder_gap_suffix(host_gap, device_gap)
+            self.get_logger().info(f'Восстановление энкодерной одометрии (closed-loop{suffix})')
+
+        if host_gap is not None and host_gap > self._encoder_warn_gap:
+            suffix = self._format_encoder_gap_suffix(host_gap, device_gap)
+            self.get_logger().warn(f'Редкий пакет /wheel_encoders{suffix}')
+
+        self._last_encoder_host_time = now_sec
+        self._last_encoder_device_time = device_stamp_sec
 
     def update_odometry_callback(self):
         event = self._odometry.on_tick(now_sec=time.time())
         if event.switched_to_cmd_vel:
-            self.get_logger().warn('Таймаут данных энкодеров - переключение на cmd_vel (open-loop)')
+            self.get_logger().warn(
+                'Таймаут данных энкодеров - переключение на cmd_vel (open-loop); '
+                f'gap={event.encoder_gap_sec:.3f}s'
+            )
         if event.large_dt:
             self.get_logger().warn('Большой временной интервал: >1.000 сек. Сбрасываем.')
 
@@ -151,6 +187,17 @@ class OdometryNode(Node):
         transform.transform.translation.z = 0.0
         transform.transform.rotation = self._euler_to_quaternion(0.0, 0.0, state.theta)
         self.tf_broadcaster.sendTransform(transform)
+
+    @staticmethod
+    def _format_encoder_gap_suffix(host_gap: float | None, device_gap: float | None) -> str:
+        parts: list[str] = []
+        if host_gap is not None:
+            parts.append(f'host_gap={host_gap:.3f}s')
+        if device_gap is not None:
+            parts.append(f'esp_gap={device_gap:.3f}s')
+        if not parts:
+            return ''
+        return '; ' + ', '.join(parts)
 
     @staticmethod
     def _euler_to_quaternion(roll: float, pitch: float, yaw: float) -> Quaternion:

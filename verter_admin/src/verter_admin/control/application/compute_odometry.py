@@ -24,6 +24,7 @@ class OdometryEvent:
     restored_encoder: bool = False
     switched_to_cmd_vel: bool = False
     large_dt: bool = False
+    encoder_gap_sec: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ class ComputeOdometry:
         delta_right = right_steps - int(self._state.last_right_steps)
         dt = now_sec - float(self._state.last_encoder_callback_time)
 
-        if dt <= 0 or dt > 1.0:
+        if dt <= 0:
             self._state.last_left_steps = left_steps
             self._state.last_right_steps = right_steps
             self._state.last_encoder_callback_time = now_sec
@@ -103,14 +104,22 @@ class ComputeOdometry:
             return OdometryEvent(restored_encoder=restored_encoder)
 
         delta_distance, delta_theta = compute_encoder_delta(delta_left, delta_right, self._params)
-        self._state.vx = delta_distance / dt
-        self._state.vth = delta_theta / dt
-        self._state.vy = 0.0
 
         avg_theta = self._state.theta + delta_theta / 2.0
         self._state.x += delta_distance * math.cos(avg_theta)
         self._state.y += delta_distance * math.sin(avg_theta)
         self._state.theta = normalize_angle(self._state.theta + delta_theta)
+
+        if dt > 1.0:
+            # Large gaps make instantaneous velocity unreliable, but the
+            # encoder delta still represents real motion and must not be lost.
+            self._state.vx = 0.0
+            self._state.vth = 0.0
+            self._state.vy = 0.0
+        else:
+            self._state.vx = delta_distance / dt
+            self._state.vth = delta_theta / dt
+            self._state.vy = 0.0
 
         self._state.last_left_steps = left_steps
         self._state.last_right_steps = right_steps
@@ -119,8 +128,10 @@ class ComputeOdometry:
 
     def on_tick(self, now_sec: float) -> OdometryEvent:
         switched_to_cmd_vel = False
+        encoder_gap_sec = 0.0
         if self._state.source == OdometrySource.ENCODER:
-            if now_sec - self._state.last_encoder_time > self._params.encoder_timeout:
+            encoder_gap_sec = now_sec - self._state.last_encoder_time
+            if encoder_gap_sec > self._params.encoder_timeout:
                 self._state.source = OdometrySource.CMD_VEL
                 switched_to_cmd_vel = True
 
@@ -141,6 +152,7 @@ class ComputeOdometry:
         return OdometryEvent(
             switched_to_cmd_vel=switched_to_cmd_vel,
             large_dt=large_dt,
+            encoder_gap_sec=encoder_gap_sec,
         )
 
     def snapshot(self) -> OdometrySnapshot:
