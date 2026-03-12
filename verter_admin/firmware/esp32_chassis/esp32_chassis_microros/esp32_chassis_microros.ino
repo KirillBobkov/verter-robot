@@ -199,6 +199,11 @@ void updateEncoder(WheelControl* wheel) {
   if (diff > 2048) diff -= 4096;
   else if (diff < -2048) diff += 4096;
 
+  // Reject I2C corrupted reads: at max motor speed (~3.3 rev/s)
+  // and typical loop ~20ms, max plausible diff ≈ 270 steps.
+  // 350 covers up to ~30ms loop at max speed.
+  if (diff > 350 || diff < -350) return;
+
   if (wheel->useWire1) {
     wheel->totalSteps += diff;
   } else {

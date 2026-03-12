@@ -105,6 +105,15 @@ class ComputeOdometry:
 
         delta_distance, delta_theta = compute_encoder_delta(delta_left, delta_right, self._params)
 
+        # Reject physically impossible deltas (defense in depth against
+        # I2C corruption that slipped past the ESP32 filter).
+        max_delta = self._params.max_linear_velocity * max(dt, 0.02) * 1.5
+        if abs(delta_distance) > max_delta or abs(delta_theta) > 1.0:
+            self._state.last_left_steps = left_steps
+            self._state.last_right_steps = right_steps
+            self._state.last_encoder_callback_time = now_sec
+            return OdometryEvent(restored_encoder=restored_encoder)
+
         avg_theta = self._state.theta + delta_theta / 2.0
         self._state.x += delta_distance * math.cos(avg_theta)
         self._state.y += delta_distance * math.sin(avg_theta)
