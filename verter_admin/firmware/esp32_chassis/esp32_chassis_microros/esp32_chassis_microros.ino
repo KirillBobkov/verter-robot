@@ -5,7 +5,9 @@
  *
  * Топики:
  * - Подписка: /cmd_vel (geometry_msgs/Twist)
- * - Публикация: /wheel_encoders (std_msgs/Int64MultiArray) [left, right, timestamp_ms]
+ * - Публикация: /wheel_encoders (std_msgs/Int64MultiArray)
+ *   [left, right, timestamp_ms, pwm_left, pwm_right, vel_left_x10000,
+ *    vel_right_x10000, loop_dt_ms]
  *
  * Железо:
  * - Cytron MD10C драйвер (PWM + DIR)
@@ -133,6 +135,8 @@ unsigned long lastCmdTime = 0;
 int velocityLeftPWM = 0;
 int velocityRightPWM = 0;
 unsigned long lastEncoderPublish = 0;
+unsigned long lastLoopTime = 0;
+unsigned long lastLoopDtMs = 0;
 
 // ============================================================================
 // MOTOR CONTROL
@@ -366,6 +370,7 @@ void setup() {
   set_microros_transports();
 
   delay(2000);
+  lastLoopTime = millis();
 
   allocator = rcl_get_default_allocator();
 
@@ -396,10 +401,10 @@ void setup() {
     "/wheel_encoders"
   ));
 
-  // Init encoder message (3 base + 4 debug)
-  encoder_msg.data.capacity = 7;
-  encoder_msg.data.size = 7;
-  encoder_msg.data.data = (int64_t*)malloc(7 * sizeof(int64_t));
+  // Init encoder message (3 base + 5 debug)
+  encoder_msg.data.capacity = 8;
+  encoder_msg.data.size = 8;
+  encoder_msg.data.data = (int64_t*)malloc(8 * sizeof(int64_t));
 
   // Executor
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
@@ -412,6 +417,8 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
+  lastLoopDtMs = now - lastLoopTime;
+  lastLoopTime = now;
 
   // Read encoders
   updateEncoder(&leftWheel);
@@ -445,6 +452,7 @@ void loop() {
     encoder_msg.data.data[4] = velocityRightPWM;                         // текущий PWM правый
     encoder_msg.data.data[5] = (int64_t)(leftPID.actualVelocity * 10000);  // actual vel * 10000
     encoder_msg.data.data[6] = (int64_t)(rightPID.actualVelocity * 10000); // actual vel * 10000
+    encoder_msg.data.data[7] = lastLoopDtMs;                            // dt главного loop() в мс
     RCSOFTCHECK(rcl_publish(&encoder_pub, &encoder_msg, NULL));
   }
 

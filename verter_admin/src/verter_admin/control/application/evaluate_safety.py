@@ -6,7 +6,7 @@ from verter_admin.control.domain import (
     SafetyDecision,
     SafetyState,
     VelocityCommand,
-    clamp_forward_motion,
+    clamp_linear_motion,
 )
 
 
@@ -52,7 +52,7 @@ class EvaluateSafety:
                 safety_active=True,
                 state=SafetyState.FAULT,
                 state_reason='obstacle stop active',
-                publish_command=clamp_forward_motion(source),
+                publish_command=clamp_linear_motion(source),
                 obstacle_triggered=obstacle_triggered,
                 recovery_gate_opened=recovery_gate_opened,
             )
@@ -85,4 +85,3 @@ class EvaluateSafety:
             obstacle_triggered=obstacle_triggered,
             recovery_gate_opened=recovery_gate_opened,
         )
-

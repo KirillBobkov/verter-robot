@@ -19,7 +19,7 @@ from verter_admin.contracts.motion import MotionTimeouts, TopicContract
 
 
 class ProximitySafetyNode(Node):
-    """Blocks forward motion when obstacle is too close."""
+    """Blocks linear motion when obstacle is too close."""
 
     def __init__(self):
         super().__init__('proximity_safety_node')
@@ -237,7 +237,7 @@ class ProximitySafetyNode(Node):
             )
         if decision.obstacle_triggered:
             self.get_logger().warn(
-                f'Obstacle too close: nearest={nearest:.3f} m, blocking forward'
+                f'Obstacle too close: nearest={nearest:.3f} m, blocking linear motion'
             )
 
         self.safety_active = decision.safety_active
@@ -261,4 +261,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-

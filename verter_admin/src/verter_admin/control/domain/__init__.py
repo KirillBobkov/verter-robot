@@ -4,6 +4,7 @@ from .safety_policy import (
     SafetyDecision,
     SafetyState,
     VelocityCommand,
+    clamp_linear_motion,
     clamp_forward_motion,
     select_source_command,
 )
@@ -21,6 +22,7 @@ __all__ = [
     'SafetyDecision',
     'SafetyState',
     'VelocityCommand',
+    'clamp_linear_motion',
     'clamp_forward_motion',
     'select_source_command',
     'OdometryParameters',

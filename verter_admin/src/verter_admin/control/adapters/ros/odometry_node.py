@@ -79,6 +79,7 @@ class OdometryNode(Node):
 
         now_sec = time.time()
         device_stamp_sec = float(msg.data[2]) / 1000.0
+        loop_dt_ms = int(msg.data[7]) if len(msg.data) >= 8 else None
         host_gap = None
         device_gap = None
 
@@ -96,11 +97,11 @@ class OdometryNode(Node):
         if event.switched_to_encoder:
             self.get_logger().info('Переключение на энкодерную одометрию (closed-loop)')
         elif event.restored_encoder:
-            suffix = self._format_encoder_gap_suffix(host_gap, device_gap)
+            suffix = self._format_encoder_gap_suffix(host_gap, device_gap, loop_dt_ms)
             self.get_logger().info(f'Восстановление энкодерной одометрии (closed-loop{suffix})')
 
         if host_gap is not None and host_gap > self._encoder_warn_gap:
-            suffix = self._format_encoder_gap_suffix(host_gap, device_gap)
+            suffix = self._format_encoder_gap_suffix(host_gap, device_gap, loop_dt_ms)
             self.get_logger().warn(f'Редкий пакет /wheel_encoders{suffix}')
 
         self._last_encoder_host_time = now_sec
@@ -189,12 +190,18 @@ class OdometryNode(Node):
         self.tf_broadcaster.sendTransform(transform)
 
     @staticmethod
-    def _format_encoder_gap_suffix(host_gap: float | None, device_gap: float | None) -> str:
+    def _format_encoder_gap_suffix(
+        host_gap: float | None,
+        device_gap: float | None,
+        loop_dt_ms: int | None,
+    ) -> str:
         parts: list[str] = []
         if host_gap is not None:
             parts.append(f'host_gap={host_gap:.3f}s')
         if device_gap is not None:
             parts.append(f'esp_gap={device_gap:.3f}s')
+        if loop_dt_ms is not None:
+            parts.append(f'loop_dt={loop_dt_ms}ms')
         if not parts:
             return ''
         return '; ' + ', '.join(parts)

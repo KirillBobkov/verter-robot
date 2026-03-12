@@ -61,3 +61,11 @@ def clamp_forward_motion(command: VelocityCommand) -> VelocityCommand:
         angular_z=command.angular_z,
     )
 
+
+def clamp_linear_motion(command: VelocityCommand) -> VelocityCommand:
+    """Block any linear motion, preserve in-place rotation for escape."""
+
+    return VelocityCommand(
+        linear_x=0.0,
+        angular_z=command.angular_z,
+    )
