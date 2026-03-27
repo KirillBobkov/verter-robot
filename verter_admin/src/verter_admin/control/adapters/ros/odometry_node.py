@@ -80,6 +80,10 @@ class OdometryNode(Node):
         now_sec = time.time()
         device_stamp_sec = float(msg.data[2]) / 1000.0
         loop_dt_ms = int(msg.data[7]) if len(msg.data) >= 8 else None
+        read_left_ms = int(msg.data[8]) if len(msg.data) >= 9 else None
+        read_right_ms = int(msg.data[9]) if len(msg.data) >= 10 else None
+        spin_ms = int(msg.data[10]) if len(msg.data) >= 11 else None
+        prev_publish_ms = int(msg.data[11]) if len(msg.data) >= 12 else None
         host_gap = None
         device_gap = None
 
@@ -97,11 +101,27 @@ class OdometryNode(Node):
         if event.switched_to_encoder:
             self.get_logger().info('Переключение на энкодерную одометрию (closed-loop)')
         elif event.restored_encoder:
-            suffix = self._format_encoder_gap_suffix(host_gap, device_gap, loop_dt_ms)
+            suffix = self._format_encoder_gap_suffix(
+                host_gap,
+                device_gap,
+                loop_dt_ms,
+                read_left_ms,
+                read_right_ms,
+                spin_ms,
+                prev_publish_ms,
+            )
             self.get_logger().info(f'Восстановление энкодерной одометрии (closed-loop{suffix})')
 
         if host_gap is not None and host_gap > self._encoder_warn_gap:
-            suffix = self._format_encoder_gap_suffix(host_gap, device_gap, loop_dt_ms)
+            suffix = self._format_encoder_gap_suffix(
+                host_gap,
+                device_gap,
+                loop_dt_ms,
+                read_left_ms,
+                read_right_ms,
+                spin_ms,
+                prev_publish_ms,
+            )
             self.get_logger().warn(f'Редкий пакет /wheel_encoders{suffix}')
 
         self._last_encoder_host_time = now_sec
@@ -194,6 +214,10 @@ class OdometryNode(Node):
         host_gap: float | None,
         device_gap: float | None,
         loop_dt_ms: int | None,
+        read_left_ms: int | None = None,
+        read_right_ms: int | None = None,
+        spin_ms: int | None = None,
+        prev_publish_ms: int | None = None,
     ) -> str:
         parts: list[str] = []
         if host_gap is not None:
@@ -202,6 +226,14 @@ class OdometryNode(Node):
             parts.append(f'esp_gap={device_gap:.3f}s')
         if loop_dt_ms is not None:
             parts.append(f'loop_dt={loop_dt_ms}ms')
+        if read_left_ms is not None:
+            parts.append(f'i2c_l={read_left_ms}ms')
+        if read_right_ms is not None:
+            parts.append(f'i2c_r={read_right_ms}ms')
+        if spin_ms is not None:
+            parts.append(f'spin={spin_ms}ms')
+        if prev_publish_ms is not None:
+            parts.append(f'pub_prev={prev_publish_ms}ms')
         if not parts:
             return ''
         return '; ' + ', '.join(parts)

@@ -7,7 +7,8 @@
  * - Подписка: /cmd_vel (geometry_msgs/Twist)
  * - Публикация: /wheel_encoders (std_msgs/Int64MultiArray)
  *   [left, right, timestamp_ms, pwm_left, pwm_right, vel_left_x10000,
- *    vel_right_x10000, loop_dt_ms]
+ *    vel_right_x10000, loop_dt_ms, read_left_ms, read_right_ms,
+ *    spin_ms, prev_publish_ms]
  *
  * Железо:
  * - Cytron MD10C драйвер (PWM + DIR)
@@ -24,6 +25,7 @@
 #include <rcl/error_handling.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
+#include <rmw/qos_profiles.h>
 #include <geometry_msgs/msg/twist.h>
 #include <std_msgs/msg/int64_multi_array.h>
 #include <Wire.h>
@@ -137,6 +139,10 @@ int velocityRightPWM = 0;
 unsigned long lastEncoderPublish = 0;
 unsigned long lastLoopTime = 0;
 unsigned long lastLoopDtMs = 0;
+unsigned long lastReadLeftDtMs = 0;
+unsigned long lastReadRightDtMs = 0;
+unsigned long lastSpinDtMs = 0;
+unsigned long lastPublishDtMs = 0;
 
 // ============================================================================
 // MOTOR CONTROL
@@ -400,16 +406,21 @@ void setup() {
   ));
 
   // Publisher: /wheel_encoders
-  RCCHECK(rclc_publisher_init_default(
+  // Sensor telemetry should prefer freshness over reliable delivery retries
+  // that can stall the main loop on a noisy serial micro-ROS transport.
+  rmw_qos_profile_t wheel_encoders_qos = rmw_qos_profile_sensor_data;
+  wheel_encoders_qos.depth = 10;
+  RCCHECK(rclc_publisher_init(
     &encoder_pub, &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int64MultiArray),
-    "/wheel_encoders"
+    "/wheel_encoders",
+    &wheel_encoders_qos
   ));
 
-  // Init encoder message (3 base + 5 debug)
-  encoder_msg.data.capacity = 8;
-  encoder_msg.data.size = 8;
-  encoder_msg.data.data = (int64_t*)malloc(8 * sizeof(int64_t));
+  // Init encoder message (3 base + 9 debug)
+  encoder_msg.data.capacity = 12;
+  encoder_msg.data.size = 12;
+  encoder_msg.data.data = (int64_t*)malloc(12 * sizeof(int64_t));
 
   // Executor
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
@@ -422,15 +433,22 @@ void setup() {
 
 void loop() {
   unsigned long now = millis();
+  unsigned long stageStart = 0;
   lastLoopDtMs = now - lastLoopTime;
   lastLoopTime = now;
 
   // Read encoders
+  stageStart = millis();
   updateEncoder(&leftWheel);
+  lastReadLeftDtMs = millis() - stageStart;
+  stageStart = millis();
   updateEncoder(&rightWheel);
+  lastReadRightDtMs = millis() - stageStart;
 
   // Process micro-ROS callbacks
+  stageStart = millis();
   RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+  lastSpinDtMs = millis() - stageStart;
 
   // PID control
   if (velocityMode) {
@@ -458,7 +476,13 @@ void loop() {
     encoder_msg.data.data[5] = (int64_t)(leftPID.actualVelocity * 10000);  // actual vel * 10000
     encoder_msg.data.data[6] = (int64_t)(rightPID.actualVelocity * 10000); // actual vel * 10000
     encoder_msg.data.data[7] = lastLoopDtMs;                            // dt главного loop() в мс
+    encoder_msg.data.data[8] = lastReadLeftDtMs;                        // чтение левого AS5600
+    encoder_msg.data.data[9] = lastReadRightDtMs;                       // чтение правого AS5600
+    encoder_msg.data.data[10] = lastSpinDtMs;                           // spin_some executor
+    encoder_msg.data.data[11] = lastPublishDtMs;                        // publish предыдущего пакета
+    stageStart = millis();
     RCSOFTCHECK(rcl_publish(&encoder_pub, &encoder_msg, NULL));
+    lastPublishDtMs = millis() - stageStart;
   }
 
   delay(1);
