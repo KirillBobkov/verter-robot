@@ -127,9 +127,10 @@ struct WheelControl {
   bool useWire1;
 };
 
-// I2C шины перепутаны физически
-WheelControl leftWheel = {0, 0, true};    // useWire1 = true
-WheelControl rightWheel = {0, 0, false};  // useWire1 = false
+// Левый энкодер на Wire (I2C0, SDA=21, SCL=22)
+// Правый энкодер на Wire1_custom (I2C1, SDA=32, SCL=4)
+WheelControl leftWheel = {0, 0, false};   // useWire1 = false → Wire (21,22)
+WheelControl rightWheel = {0, 0, true};   // useWire1 = true  → Wire1_custom (32,4)
 
 // Velocity mode
 bool velocityMode = false;
@@ -187,7 +188,10 @@ int16_t readAngle(WheelControl* wheel) {
 
   wire->beginTransmission(AS5600_ADDRESS);
   wire->write(RAW_ANGLE_REG);
-  if (wire->endTransmission(false) != 0) return -1;
+  // true = STOP вместо REPEATED START.
+  // ESP32 I2C_NUM_0 зависает на repeated start (известный баг кремния).
+  // AS5600 нормально работает через STOP + новый START.
+  if (wire->endTransmission(true) != 0) return -1;
 
   if (wire->requestFrom((uint8_t)AS5600_ADDRESS, (uint8_t)2) == 2) {
     int16_t angle = wire->read() << 8;
@@ -369,15 +373,16 @@ void setup() {
   // I2C
   Wire.begin(I2C0_SDA, I2C0_SCL);
   Wire.setClock(400000);
+  Wire.setTimeOut(20);
   Wire1_custom.begin(I2C1_SDA, I2C1_SCL);
   Wire1_custom.setClock(400000);
+  Wire1_custom.setTimeOut(20);
 
   delay(100);
   leftWheel.prevAngle = readAngle(&leftWheel);
   rightWheel.prevAngle = readAngle(&rightWheel);
 
-  // micro-ROS Serial transport (использует default_transport.cpp)
-  // Serial.begin() вызывается внутри set_microros_transports()
+  // micro-ROS Serial transport
   set_microros_transports();
 
   delay(2000);
