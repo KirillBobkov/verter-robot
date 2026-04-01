@@ -33,6 +33,12 @@
 #include <Wire.h>
 #include <iarduino_Position_BMX055.h>
 
+// Переопределяем baud rate micro-ROS транспорта (weak-символ из библиотеки)
+extern "C" bool arduino_transport_open(struct uxrCustomTransport * transport) {
+  Serial.begin(921600);
+  return true;
+}
+
 // ESP32 LED
 #define LED_PIN 2
 

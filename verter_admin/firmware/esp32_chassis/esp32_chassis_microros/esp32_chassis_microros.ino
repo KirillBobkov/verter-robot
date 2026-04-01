@@ -30,6 +30,17 @@
 #include <std_msgs/msg/int64_multi_array.h>
 #include <Wire.h>
 
+// Forward declarations — Arduino IDE генерирует прототипы функций
+// ДО определения структур, поэтому без этих строк не компилируется
+struct WheelControl;
+struct PIDState;
+
+// Переопределяем baud rate micro-ROS транспорта (weak-символ из библиотеки)
+extern "C" bool arduino_transport_open(struct uxrCustomTransport * transport) {
+  Serial.begin(921600);
+  return true;
+}
+
 // ESP32 не имеет LED_PIN по умолчанию
 #define LED_PIN 2
 
