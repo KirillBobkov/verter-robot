@@ -48,13 +48,13 @@ extern "C" bool arduino_transport_open(struct uxrCustomTransport * transport) {
 // PIN CONFIGURATION (согласно реальной пайке)
 // ============================================================================
 
-// Левый мотор (Cytron PWM+DIR)
-#define MOTOR_L_PWM   18
-#define MOTOR_L_DIR   25
+// Левый мотор (Cytron PWM+DIR) — проверка: моторы могут быть перекрёстно подключены
+#define MOTOR_L_PWM   19
+#define MOTOR_L_DIR   27
 
 // Правый мотор (Cytron PWM+DIR)
-#define MOTOR_R_PWM   19
-#define MOTOR_R_DIR   27
+#define MOTOR_R_PWM   18
+#define MOTOR_R_DIR   25
 
 // Левый энкодер AS5600 (I2C1 - Wire1) - перепутаны физически
 #define I2C0_SDA      21
@@ -225,10 +225,13 @@ void updateEncoder(WheelControl* wheel) {
   // 350 covers up to ~30ms loop at max speed.
   if (diff > 350 || diff < -350) return;
 
+  // Проверено вручную:
+  //   Левое колесо вперёд → diff > 0 → totalSteps += diff
+  //   Правое колесо вперёд → diff < 0 → totalSteps -= diff (инверсия)
   if (wheel->useWire1) {
-    wheel->totalSteps += diff;
+    wheel->totalSteps -= diff;  // правый энкодер (Wire1_custom)
   } else {
-    wheel->totalSteps -= diff;
+    wheel->totalSteps += diff;  // левый энкодер (Wire)
   }
   wheel->prevAngle = angle;
 }
