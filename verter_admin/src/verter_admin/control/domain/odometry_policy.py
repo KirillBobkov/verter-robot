@@ -16,7 +16,7 @@ class OdometrySource(Enum):
 class OdometryParameters:
     """Robot and policy constants for odometry integration."""
 
-    wheel_circumference: float = 0.59
+    wheel_circumference: float = 0.576
     gear_ratio: float = 4.0007
     encoder_resolution: int = 4096
     wheel_base: float = 0.374

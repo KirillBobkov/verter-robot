@@ -35,10 +35,36 @@
 struct WheelControl;
 struct PIDState;
 
-// Переопределяем baud rate micro-ROS транспорта (weak-символ из библиотеки)
+// Переопределяем micro-ROS транспорт (weak-символы из библиотеки)
 extern "C" bool arduino_transport_open(struct uxrCustomTransport * transport) {
+  Serial.setRxBufferSize(4096);  // увеличиваем RX буфер (дефолт 256)
   Serial.begin(921600);
   return true;
+}
+
+// Ограничиваем таймаут чтения — DDS иногда ставит 1000мс
+extern "C" size_t arduino_transport_read(struct uxrCustomTransport * transport,
+    uint8_t *buf, size_t len, int timeout, uint8_t *errcode) {
+  (void)errcode;
+  Serial.setTimeout(timeout > 10 ? 10 : timeout);
+  return Serial.readBytes((char *)buf, len);
+}
+
+// Неблокирующая запись — если TX буфер полный, отбрасываем вместо блокировки
+extern "C" size_t arduino_transport_write(struct uxrCustomTransport * transport,
+    const uint8_t *buf, size_t len, uint8_t *errcode) {
+  (void)errcode;
+  size_t available = Serial.availableForWrite();
+  if (available < len) {
+    // Буфер полный — ждём не более 5мс
+    unsigned long start = millis();
+    while (Serial.availableForWrite() < len && (millis() - start) < 5) {
+      delayMicroseconds(100);
+    }
+    available = Serial.availableForWrite();
+    if (available < len) return 0;  // отбросить пакет вместо блокировки на 1с
+  }
+  return Serial.write(buf, len);
 }
 
 // ESP32 не имеет LED_PIN по умолчанию
@@ -78,7 +104,7 @@ extern "C" bool arduino_transport_open(struct uxrCustomTransport * transport) {
 // ПАРАМЕТРЫ РОБОТА
 // ============================================================================
 
-const float WHEEL_CIRCUMFERENCE = 0.59;
+const float WHEEL_CIRCUMFERENCE = 0.576;
 const float GEAR_RATIO = 4.0007;
 const float WHEEL_BASE = 0.374;
 
@@ -162,10 +188,10 @@ unsigned long lastPublishDtMs = 0;
 
 void setMotorLeft(int pwm) {
   if (pwm > 0) {
-    digitalWrite(MOTOR_L_DIR, HIGH);
+    digitalWrite(MOTOR_L_DIR, LOW);
     ledcWrite(PWM_CHANNEL_L, min(pwm, MAX_PWM));
   } else if (pwm < 0) {
-    digitalWrite(MOTOR_L_DIR, LOW);
+    digitalWrite(MOTOR_L_DIR, HIGH);
     ledcWrite(PWM_CHANNEL_L, min(-pwm, MAX_PWM));
   } else {
     ledcWrite(PWM_CHANNEL_L, 0);
@@ -173,12 +199,11 @@ void setMotorLeft(int pwm) {
 }
 
 void setMotorRight(int pwm) {
-  // Правый мотор инвертирован
   if (pwm > 0) {
-    digitalWrite(MOTOR_R_DIR, LOW);
+    digitalWrite(MOTOR_R_DIR, HIGH);
     ledcWrite(PWM_CHANNEL_R, min(pwm, MAX_PWM));
   } else if (pwm < 0) {
-    digitalWrite(MOTOR_R_DIR, HIGH);
+    digitalWrite(MOTOR_R_DIR, LOW);
     ledcWrite(PWM_CHANNEL_R, min(-pwm, MAX_PWM));
   } else {
     ledcWrite(PWM_CHANNEL_R, 0);
