@@ -78,6 +78,7 @@ class OdometryNode(Node):
         self._last_encoder_telemetry: EncoderTelemetry | None = None
         self._last_encoder_seq: int | None = None
         self._last_encoder_boot_id: int | None = None
+        self._last_encoder_issue_cause: str | None = None
         self._encoder_timeout_count = 0
         self._encoder_rare_packet_count = 0
         self._encoder_seq_gap_total = 0
@@ -122,10 +123,10 @@ class OdometryNode(Node):
         event = self._odometry.on_cmd_vel(float(msg.linear.x), float(msg.angular.z))
         if event.movement_started:
             self.get_logger().info(
-                f'Начало движения: cmd_vx={msg.linear.x:.3f} м/с, cmd_vth={msg.angular.z:.3f} рад/с'
+                f'[MOVE] start cmd_vx={msg.linear.x:.3f} m/s, cmd_vth={msg.angular.z:.3f} rad/s'
             )
         elif event.movement_stopped:
-            self.get_logger().info('Остановка')
+            self.get_logger().info('[MOVE] stop')
 
     def encoder_callback(self, msg: Int64MultiArray):
         if len(msg.data) < 3:
@@ -134,6 +135,7 @@ class OdometryNode(Node):
         now_sec = time.time()
         device_stamp_sec = float(msg.data[2]) / 1000.0
         telemetry = self._parse_encoder_telemetry(msg)
+        previous_telemetry = self._last_encoder_telemetry
         host_gap = None
         device_gap = None
 
@@ -142,7 +144,21 @@ class OdometryNode(Node):
         if self._last_encoder_device_time is not None and device_stamp_sec >= self._last_encoder_device_time:
             device_gap = device_stamp_sec - self._last_encoder_device_time
 
-        seq_gap = self._track_encoder_stream(telemetry, host_gap, device_gap)
+        seq_gap = self._track_encoder_stream(
+            telemetry,
+            host_gap,
+            device_gap,
+            previous_telemetry=previous_telemetry,
+        )
+        issue_cause = self._infer_encoder_issue_cause(
+            telemetry,
+            previous_telemetry,
+            seq_gap=seq_gap,
+            host_gap=host_gap,
+            device_gap=device_gap,
+        )
+        if issue_cause is not None:
+            self._last_encoder_issue_cause = issue_cause
 
         event = self._odometry.on_encoder(
             left_steps=int(msg.data[0]),
@@ -157,7 +173,9 @@ class OdometryNode(Node):
                 host_gap,
                 device_gap,
                 telemetry,
+                previous_telemetry=previous_telemetry,
                 seq_gap=seq_gap,
+                cause=issue_cause,
             )
             self.get_logger().info(f'Восстановление энкодерной одометрии (closed-loop{suffix})')
 
@@ -167,7 +185,9 @@ class OdometryNode(Node):
                 host_gap,
                 device_gap,
                 telemetry,
+                previous_telemetry=previous_telemetry,
                 seq_gap=seq_gap,
+                cause=issue_cause,
             )
             self.get_logger().warn(f'Редкий пакет /wheel_encoders{suffix}')
 
@@ -317,6 +337,7 @@ class OdometryNode(Node):
         telemetry: EncoderTelemetry,
         host_gap: float | None,
         device_gap: float | None,
+        previous_telemetry: EncoderTelemetry | None = None,
     ) -> int | None:
         seq_gap = None
 
@@ -329,23 +350,45 @@ class OdometryNode(Node):
                 )
             elif telemetry.boot_id != self._last_encoder_boot_id:
                 self._encoder_restart_count += 1
-                suffix = self._format_encoder_gap_suffix(host_gap, device_gap, telemetry)
+                suffix = self._format_encoder_gap_suffix(
+                    host_gap,
+                    device_gap,
+                    telemetry,
+                    previous_telemetry=previous_telemetry,
+                    cause='esp_restart',
+                )
                 self.get_logger().error(
                     'Поток /wheel_encoders перезапущен на ESP32; '
                     f'boot_id={self._last_encoder_boot_id}->{telemetry.boot_id}{suffix}'
                 )
                 self._last_encoder_seq = None
+                self._last_encoder_issue_cause = 'esp_restart'
 
         if telemetry.sequence is not None and self._last_encoder_seq is not None:
             same_boot = telemetry.boot_id is None or telemetry.boot_id == self._last_encoder_boot_id
             if same_boot and telemetry.sequence > self._last_encoder_seq + 1:
                 seq_gap = telemetry.sequence - self._last_encoder_seq - 1
                 self._encoder_seq_gap_total += seq_gap
-                suffix = self._format_encoder_gap_suffix(host_gap, device_gap, telemetry, seq_gap=seq_gap)
+                suffix = self._format_encoder_gap_suffix(
+                    host_gap,
+                    device_gap,
+                    telemetry,
+                    previous_telemetry=previous_telemetry,
+                    seq_gap=seq_gap,
+                    cause='packet_drop',
+                )
                 self.get_logger().error(f'Пропуск пакетов /wheel_encoders{suffix}')
+                self._last_encoder_issue_cause = 'packet_drop'
             elif same_boot and telemetry.sequence <= self._last_encoder_seq:
-                suffix = self._format_encoder_gap_suffix(host_gap, device_gap, telemetry)
+                suffix = self._format_encoder_gap_suffix(
+                    host_gap,
+                    device_gap,
+                    telemetry,
+                    previous_telemetry=previous_telemetry,
+                    cause='non_monotonic_seq',
+                )
                 self.get_logger().warn(f'Немонотонная последовательность /wheel_encoders{suffix}')
+                self._last_encoder_issue_cause = 'non_monotonic_seq'
 
         if telemetry.boot_id is not None:
             self._last_encoder_boot_id = telemetry.boot_id
@@ -360,20 +403,23 @@ class OdometryNode(Node):
             f'seq_loss={self._encoder_seq_gap_total}',
             f'restarts={self._encoder_restart_count}',
         ]
+        if self._last_encoder_issue_cause is not None:
+            parts.insert(0, f'cause={self._last_encoder_issue_cause}')
         if self._last_encoder_telemetry is not None:
-            parts.append(f'last_payload={self._last_encoder_telemetry.payload_len}')
             if self._last_encoder_telemetry.sequence is not None:
                 parts.append(f'last_seq={self._last_encoder_telemetry.sequence}')
             if self._last_encoder_telemetry.boot_id is not None:
                 parts.append(f'last_boot={self._last_encoder_telemetry.boot_id}')
-            if self._last_encoder_telemetry.reset_reason is not None:
-                parts.append(f'last_reset={self._last_encoder_telemetry.reset_reason}')
             if self._last_encoder_telemetry.loop_dt_ms is not None:
-                parts.append(f'last_loop_dt={self._last_encoder_telemetry.loop_dt_ms}ms')
-            if self._last_encoder_telemetry.spin_ms is not None:
-                parts.append(f'last_spin={self._last_encoder_telemetry.spin_ms}ms')
-            if self._last_encoder_telemetry.prev_publish_ms is not None:
-                parts.append(f'last_pub={self._last_encoder_telemetry.prev_publish_ms}ms')
+                parts.append(f'loop={self._last_encoder_telemetry.loop_dt_ms}ms')
+            if self._last_encoder_telemetry.read_left_ms is not None and self._last_encoder_telemetry.read_left_ms >= 20:
+                parts.append(f'i2c_l={self._last_encoder_telemetry.read_left_ms}ms')
+            if self._last_encoder_telemetry.read_right_ms is not None and self._last_encoder_telemetry.read_right_ms >= 20:
+                parts.append(f'i2c_r={self._last_encoder_telemetry.read_right_ms}ms')
+            if self._last_encoder_telemetry.spin_ms is not None and self._last_encoder_telemetry.spin_ms >= 20:
+                parts.append(f'spin={self._last_encoder_telemetry.spin_ms}ms')
+            if self._last_encoder_telemetry.prev_publish_ms is not None and self._last_encoder_telemetry.prev_publish_ms >= 20:
+                parts.append(f'pub={self._last_encoder_telemetry.prev_publish_ms}ms')
         return '; ' + ', '.join(parts)
 
     @staticmethod
@@ -382,78 +428,139 @@ class OdometryNode(Node):
             return None
         return int(data[index])
 
-    @staticmethod
+    def _counter_delta(
+        self,
+        telemetry: EncoderTelemetry | None,
+        previous_telemetry: EncoderTelemetry | None,
+        attr_name: str,
+    ) -> int | None:
+        if telemetry is None or previous_telemetry is None:
+            return None
+        if (
+            telemetry.boot_id is not None
+            and previous_telemetry.boot_id is not None
+            and telemetry.boot_id != previous_telemetry.boot_id
+        ):
+            return None
+
+        current_value = getattr(telemetry, attr_name)
+        previous_value = getattr(previous_telemetry, attr_name)
+        if current_value is None or previous_value is None:
+            return None
+
+        delta = current_value - previous_value
+        if delta <= 0:
+            return None
+        return delta
+
+    def _infer_encoder_issue_cause(
+        self,
+        telemetry: EncoderTelemetry | None,
+        previous_telemetry: EncoderTelemetry | None,
+        seq_gap: int | None,
+        host_gap: float | None,
+        device_gap: float | None,
+    ) -> str | None:
+        if telemetry is None:
+            return None
+        if seq_gap:
+            return 'packet_drop'
+        if telemetry.read_right_ms is not None and telemetry.read_right_ms >= 900:
+            return 'right_i2c_block'
+        if telemetry.read_left_ms is not None and telemetry.read_left_ms >= 900:
+            return 'left_i2c_block'
+        if (
+            self._counter_delta(telemetry, previous_telemetry, 'right_i2c_tx_fail_count')
+            or self._counter_delta(telemetry, previous_telemetry, 'right_i2c_short_read_count')
+        ):
+            return 'right_i2c_errors'
+        if (
+            self._counter_delta(telemetry, previous_telemetry, 'left_i2c_tx_fail_count')
+            or self._counter_delta(telemetry, previous_telemetry, 'left_i2c_short_read_count')
+        ):
+            return 'left_i2c_errors'
+        if telemetry.spin_ms is not None and telemetry.spin_ms >= 900:
+            return 'executor_block'
+        if telemetry.prev_publish_ms is not None and telemetry.prev_publish_ms >= 900:
+            return 'publish_block'
+        if (
+            self._counter_delta(telemetry, previous_telemetry, 'transport_write_drop_count')
+            or self._counter_delta(telemetry, previous_telemetry, 'transport_short_write_count')
+        ):
+            return 'serial_tx_issue'
+        if (
+            telemetry.loop_dt_ms is not None
+            and telemetry.loop_dt_ms >= 900
+            or self._counter_delta(telemetry, previous_telemetry, 'long_loop_count')
+        ):
+            return 'esp_loop_gap'
+        if host_gap is not None and device_gap is not None and host_gap >= 0.9 and device_gap >= 0.9:
+            return 'esp_or_transport_gap'
+        if host_gap is not None and host_gap >= 0.9:
+            return 'host_gap'
+        return None
+
     def _format_encoder_gap_suffix(
+        self,
         host_gap: float | None,
         device_gap: float | None,
         telemetry: EncoderTelemetry | None,
+        previous_telemetry: EncoderTelemetry | None = None,
         seq_gap: int | None = None,
+        cause: str | None = None,
     ) -> str:
         parts: list[str] = []
+        if cause is not None:
+            parts.append(f'cause={cause}')
         if host_gap is not None:
-            parts.append(f'host_gap={host_gap:.3f}s')
+            parts.append(f'host={host_gap:.3f}s')
         if device_gap is not None:
-            parts.append(f'esp_gap={device_gap:.3f}s')
+            parts.append(f'esp={device_gap:.3f}s')
         if telemetry is not None:
-            parts.append(f'payload={telemetry.payload_len}')
             if telemetry.sequence is not None:
                 parts.append(f'seq={telemetry.sequence}')
             if seq_gap is not None:
                 parts.append(f'seq_gap={seq_gap}')
             if telemetry.boot_id is not None:
                 parts.append(f'boot={telemetry.boot_id}')
-            if telemetry.reset_reason is not None:
-                parts.append(f'reset={telemetry.reset_reason}')
             if telemetry.loop_dt_ms is not None:
-                parts.append(f'loop_dt={telemetry.loop_dt_ms}ms')
-            if telemetry.read_left_ms is not None:
+                parts.append(f'loop={telemetry.loop_dt_ms}ms')
+            if telemetry.read_left_ms is not None and (
+                telemetry.read_left_ms >= 20 or cause in {'left_i2c_block', 'left_i2c_errors'}
+            ):
                 parts.append(f'i2c_l={telemetry.read_left_ms}ms')
-            if telemetry.read_right_ms is not None:
+            if telemetry.read_right_ms is not None and (
+                telemetry.read_right_ms >= 20 or cause in {'right_i2c_block', 'right_i2c_errors'}
+            ):
                 parts.append(f'i2c_r={telemetry.read_right_ms}ms')
-            if telemetry.spin_ms is not None:
+            if telemetry.spin_ms is not None and (
+                telemetry.spin_ms >= 20 or cause == 'executor_block'
+            ):
                 parts.append(f'spin={telemetry.spin_ms}ms')
-            if telemetry.prev_publish_ms is not None:
-                parts.append(f'pub_prev={telemetry.prev_publish_ms}ms')
-            if telemetry.cmd_age_ms is not None:
-                parts.append(f'cmd_age={telemetry.cmd_age_ms}ms')
-            if telemetry.velocity_mode is not None:
-                parts.append(f'vel_mode={int(telemetry.velocity_mode)}')
-            if telemetry.spin_rc not in (None, 0):
-                parts.append(f'spin_rc={telemetry.spin_rc}')
-            if telemetry.publish_rc not in (None, 0):
-                parts.append(f'pub_rc={telemetry.publish_rc}')
-            if telemetry.transport_write_drop_count:
-                parts.append(f'tx_drop={telemetry.transport_write_drop_count}')
-            if telemetry.transport_short_write_count:
-                parts.append(f'tx_short={telemetry.transport_short_write_count}')
-            if telemetry.transport_last_available not in (None, 0):
-                parts.append(f'tx_avail={telemetry.transport_last_available}')
-            if telemetry.transport_last_required not in (None, 0):
-                parts.append(f'tx_need={telemetry.transport_last_required}')
-            if telemetry.spin_error_count:
-                parts.append(f'spin_err={telemetry.spin_error_count}')
-            if telemetry.publish_error_count:
-                parts.append(f'pub_err={telemetry.publish_error_count}')
-            if telemetry.left_i2c_tx_fail_count:
-                parts.append(f'i2c_l_tx_fail={telemetry.left_i2c_tx_fail_count}')
-            if telemetry.left_i2c_short_read_count:
-                parts.append(f'i2c_l_short={telemetry.left_i2c_short_read_count}')
-            if telemetry.right_i2c_tx_fail_count:
-                parts.append(f'i2c_r_tx_fail={telemetry.right_i2c_tx_fail_count}')
-            if telemetry.right_i2c_short_read_count:
-                parts.append(f'i2c_r_short={telemetry.right_i2c_short_read_count}')
-            if telemetry.encoder_jump_reject_count:
-                parts.append(f'enc_jump_reject={telemetry.encoder_jump_reject_count}')
-            if telemetry.long_loop_count:
-                parts.append(f'long_loops={telemetry.long_loop_count}')
-            if telemetry.max_loop_dt_ms is not None:
-                parts.append(f'max_loop_dt={telemetry.max_loop_dt_ms}ms')
-            if telemetry.cmd_timeout_stop_count:
-                parts.append(f'cmd_to={telemetry.cmd_timeout_stop_count}')
-            if telemetry.free_heap_bytes is not None:
-                parts.append(f'heap={telemetry.free_heap_bytes}')
-            if telemetry.min_free_heap_bytes is not None:
-                parts.append(f'heap_min={telemetry.min_free_heap_bytes}')
+            if telemetry.prev_publish_ms is not None and (
+                telemetry.prev_publish_ms >= 20 or cause == 'publish_block'
+            ):
+                parts.append(f'pub={telemetry.prev_publish_ms}ms')
+            if telemetry.max_loop_dt_ms is not None and telemetry.max_loop_dt_ms >= 200:
+                parts.append(f'max_loop={telemetry.max_loop_dt_ms}ms')
+
+            counter_labels = (
+                ('right_i2c_tx_fail_count', 'i2c_r_tx'),
+                ('right_i2c_short_read_count', 'i2c_r_short'),
+                ('left_i2c_tx_fail_count', 'i2c_l_tx'),
+                ('left_i2c_short_read_count', 'i2c_l_short'),
+                ('transport_write_drop_count', 'tx_drop'),
+                ('transport_short_write_count', 'tx_short'),
+                ('spin_error_count', 'spin_err'),
+                ('publish_error_count', 'pub_err'),
+                ('encoder_jump_reject_count', 'enc_jump'),
+                ('long_loop_count', 'loops'),
+                ('cmd_timeout_stop_count', 'cmd_to'),
+            )
+            for attr_name, label in counter_labels:
+                delta = self._counter_delta(telemetry, previous_telemetry, attr_name)
+                if delta is not None:
+                    parts.append(f'{label}=+{delta}')
         if not parts:
             return ''
         return '; ' + ', '.join(parts)

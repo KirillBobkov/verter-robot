@@ -67,6 +67,11 @@ def generate_launch_description():
         default_value='/dev/esp32_imu',
         description='Serial port for ESP32 IMU (micro-ROS)',
     )
+    micro_ros_agent_extra_args_arg = DeclareLaunchArgument(
+        'micro_ros_agent_extra_args',
+        default_value='',
+        description='Optional extra args for micro_ros_agent, e.g. -v6',
+    )
     stop_distance_arg = DeclareLaunchArgument(
         'stop_distance',
         default_value='0.15',
@@ -88,7 +93,9 @@ def generate_launch_description():
                 'ros2 run micro_ros_agent micro_ros_agent serial '
                 '--dev ',
                 LaunchConfiguration('esp32_port'),
-                ' -b 921600 -v6; '
+                ' -b 921600 ',
+                LaunchConfiguration('micro_ros_agent_extra_args'),
+                '; '
                 'echo "[micro_ros_agent chassis] exited, restarting in 2s..."; '
                 'sleep 2; '
                 'done',
@@ -110,7 +117,9 @@ def generate_launch_description():
                 'ros2 run micro_ros_agent micro_ros_agent serial '
                 '--dev ',
                 LaunchConfiguration('imu_esp32_port'),
-                ' -b 921600 -v6; '
+                ' -b 921600 ',
+                LaunchConfiguration('micro_ros_agent_extra_args'),
+                '; '
                 'echo "[micro_ros_agent imu] exited, restarting in 2s..."; '
                 'sleep 2; '
                 'done',
@@ -265,6 +274,7 @@ def generate_launch_description():
             lidar_port_arg,
             esp32_port_arg,
             imu_esp32_port_arg,
+            micro_ros_agent_extra_args_arg,
             stop_distance_arg,
             resume_distance_arg,
             micro_ros_agent_chassis,
