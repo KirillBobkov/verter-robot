@@ -7,8 +7,17 @@
  * - Подписка: /cmd_vel (geometry_msgs/Twist)
  * - Публикация: /wheel_encoders (std_msgs/Int64MultiArray)
  *   [left, right, timestamp_ms, pwm_left, pwm_right, vel_left_x10000,
- *    vel_right_x10000, loop_dt_ms, read_left_ms, read_right_ms,
- *    spin_ms, prev_publish_ms]
+ *    vel_right_x10000, prev_loop_dt_ms, prev_read_left_ms,
+ *    prev_read_right_ms, prev_spin_ms, prev_publish_ms, seq, boot_id,
+ *    reset_reason, prev_spin_rc, prev_publish_rc,
+ *    transport_write_drop_count, transport_short_write_count,
+ *    transport_last_available, transport_last_required, spin_error_count,
+ *    publish_error_count, left_i2c_tx_fail_count,
+ *    left_i2c_short_read_count, right_i2c_tx_fail_count,
+ *    right_i2c_short_read_count, encoder_jump_reject_count,
+ *    long_loop_count, max_loop_dt_ms, cmd_timeout_stop_count,
+ *    prev_cmd_age_ms, free_heap_bytes, min_free_heap_bytes,
+ *    velocity_mode]
  *
  * Железо:
  * - Cytron MD10C драйвер (PWM + DIR)
@@ -20,6 +29,9 @@
  */
 
 #include <micro_ros_arduino.h>
+#include <WiFi.h>
+#include <esp_bt.h>
+#include <esp_system.h>
 #include <stdio.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
@@ -29,6 +41,11 @@
 #include <geometry_msgs/msg/twist.h>
 #include <std_msgs/msg/int64_multi_array.h>
 #include <Wire.h>
+
+static volatile uint32_t g_transport_write_drop_count = 0;
+static volatile uint32_t g_transport_short_write_count = 0;
+static volatile uint32_t g_transport_last_available = 0;
+static volatile uint32_t g_transport_last_required = 0;
 
 // Forward declarations — Arduino IDE генерирует прототипы функций
 // ДО определения структур, поэтому без этих строк не компилируется
@@ -62,9 +79,20 @@ extern "C" size_t arduino_transport_write(struct uxrCustomTransport * transport,
       delayMicroseconds(100);
     }
     available = Serial.availableForWrite();
-    if (available < len) return 0;  // отбросить пакет вместо блокировки на 1с
+    if (available < len) {
+      g_transport_write_drop_count++;
+      g_transport_last_available = available;
+      g_transport_last_required = len;
+      return 0;  // отбросить пакет вместо блокировки на 1с
+    }
   }
-  return Serial.write(buf, len);
+  size_t written = Serial.write(buf, len);
+  if (written < len) {
+    g_transport_short_write_count++;
+    g_transport_last_available = available;
+    g_transport_last_required = len;
+  }
+  return written;
 }
 
 // ESP32 не имеет LED_PIN по умолчанию
@@ -111,7 +139,7 @@ const float WHEEL_BASE = 0.374;
 const float MAX_VELOCITY = 0.5;
 const int MAX_PWM = 200;
 const int MIN_PWM = 25;
-const unsigned long CMD_TIMEOUT = 500;
+const unsigned long CMD_TIMEOUT = 1500;  // 1.5с — увеличено чтобы моторы не стопились при 1с keepalive XRCE-DDS
 
 const float ENCODER_RESOLUTION = 4096.0;
 const float METERS_PER_STEP = WHEEL_CIRCUMFERENCE / (ENCODER_RESOLUTION * GEAR_RATIO);
@@ -125,6 +153,8 @@ const unsigned long PID_INTERVAL = 50;
 const int MAX_PWM_CHANGE = 15;
 
 #define ENCODER_PUBLISH_MS 50
+#define LONG_LOOP_THRESHOLD_MS 200
+#define ENCODER_MSG_SIZE 35
 
 // ============================================================================
 // ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
@@ -164,6 +194,17 @@ struct WheelControl {
   bool useWire1;
 };
 
+struct LoopStats {
+  unsigned long loopDtMs;
+  unsigned long readLeftMs;
+  unsigned long readRightMs;
+  unsigned long spinMs;
+  unsigned long publishMs;
+  unsigned long cmdAgeMs;
+  int32_t spinRc;
+  int32_t publishRc;
+};
+
 // Левый энкодер на Wire (I2C0, SDA=21, SCL=22)
 // Правый энкодер на Wire1_custom (I2C1, SDA=32, SCL=4)
 WheelControl leftWheel = {0, 0, false};   // useWire1 = false → Wire (21,22)
@@ -181,6 +222,22 @@ unsigned long lastReadLeftDtMs = 0;
 unsigned long lastReadRightDtMs = 0;
 unsigned long lastSpinDtMs = 0;
 unsigned long lastPublishDtMs = 0;
+LoopStats currentLoopStats = {0, 0, 0, 0, 0, 0, 0, 0};
+LoopStats previousLoopStats = {0, 0, 0, 0, 0, 0, 0, 0};
+RTC_DATA_ATTR uint32_t rtcBootCounter = 0;
+uint32_t bootId = 0;
+int32_t bootResetReason = 0;
+uint32_t packetSequence = 0;
+uint32_t spinErrorCount = 0;
+uint32_t publishErrorCount = 0;
+uint32_t leftI2cTxFailCount = 0;
+uint32_t leftI2cShortReadCount = 0;
+uint32_t rightI2cTxFailCount = 0;
+uint32_t rightI2cShortReadCount = 0;
+uint32_t encoderJumpRejectCount = 0;
+uint32_t longLoopCount = 0;
+uint32_t maxLoopDtMs = 0;
+uint32_t cmdTimeoutStopCount = 0;
 
 // ============================================================================
 // MOTOR CONTROL
@@ -219,7 +276,11 @@ void stopMotors() {
 // ENCODERS
 // ============================================================================
 
-int16_t readAngle(WheelControl* wheel) {
+int16_t readAngle(
+  WheelControl* wheel,
+  uint32_t* txFailCount,
+  uint32_t* shortReadCount
+) {
   TwoWire* wire = wheel->useWire1 ? &Wire1_custom : &Wire;
 
   wire->beginTransmission(AS5600_ADDRESS);
@@ -227,18 +288,26 @@ int16_t readAngle(WheelControl* wheel) {
   // true = STOP вместо REPEATED START.
   // ESP32 I2C_NUM_0 зависает на repeated start (известный баг кремния).
   // AS5600 нормально работает через STOP + новый START.
-  if (wire->endTransmission(true) != 0) return -1;
+  if (wire->endTransmission(true) != 0) {
+    (*txFailCount)++;
+    return -1;
+  }
 
   if (wire->requestFrom((uint8_t)AS5600_ADDRESS, (uint8_t)2) == 2) {
     int16_t angle = wire->read() << 8;
     angle |= wire->read();
     return angle & 0x0FFF;
   }
+  (*shortReadCount)++;
   return -1;
 }
 
-void updateEncoder(WheelControl* wheel) {
-  int16_t angle = readAngle(wheel);
+void updateEncoder(
+  WheelControl* wheel,
+  uint32_t* txFailCount,
+  uint32_t* shortReadCount
+) {
+  int16_t angle = readAngle(wheel, txFailCount, shortReadCount);
   if (angle == -1) return;
 
   int16_t diff = angle - wheel->prevAngle;
@@ -248,7 +317,10 @@ void updateEncoder(WheelControl* wheel) {
   // Reject I2C corrupted reads: at max motor speed (~3.3 rev/s)
   // and typical loop ~20ms, max plausible diff ≈ 270 steps.
   // 350 covers up to ~30ms loop at max speed.
-  if (diff > 350 || diff < -350) return;
+  if (diff > 350 || diff < -350) {
+    encoderJumpRejectCount++;
+    return;
+  }
 
   // Проверено вручную:
   //   Левое колесо вперёд → diff > 0 → totalSteps += diff
@@ -396,6 +468,13 @@ void errorLoop() {
 // ============================================================================
 
 void setup() {
+  bootId = ++rtcBootCounter;
+  bootResetReason = static_cast<int32_t>(esp_reset_reason());
+
+  // Отключаем WiFi и Bluetooth — их FreeRTOS задачи периодически блокируют CPU на ~1с
+  WiFi.mode(WIFI_OFF);
+  esp_bt_controller_disable();
+
   // LED
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
@@ -418,8 +497,8 @@ void setup() {
   Wire1_custom.setTimeOut(20);
 
   delay(100);
-  leftWheel.prevAngle = readAngle(&leftWheel);
-  rightWheel.prevAngle = readAngle(&rightWheel);
+  leftWheel.prevAngle = readAngle(&leftWheel, &leftI2cTxFailCount, &leftI2cShortReadCount);
+  rightWheel.prevAngle = readAngle(&rightWheel, &rightI2cTxFailCount, &rightI2cShortReadCount);
 
   // micro-ROS Serial transport
   set_microros_transports();
@@ -461,10 +540,10 @@ void setup() {
     &wheel_encoders_qos
   ));
 
-  // Init encoder message (3 base + 9 debug)
-  encoder_msg.data.capacity = 12;
-  encoder_msg.data.size = 12;
-  encoder_msg.data.data = (int64_t*)malloc(12 * sizeof(int64_t));
+  // Init encoder message (base fields + extended diagnostics)
+  encoder_msg.data.capacity = ENCODER_MSG_SIZE;
+  encoder_msg.data.size = ENCODER_MSG_SIZE;
+  encoder_msg.data.data = (int64_t*)malloc(ENCODER_MSG_SIZE * sizeof(int64_t));
 
   // Executor
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
@@ -480,19 +559,34 @@ void loop() {
   unsigned long stageStart = 0;
   lastLoopDtMs = now - lastLoopTime;
   lastLoopTime = now;
+  currentLoopStats.loopDtMs = lastLoopDtMs;
+  currentLoopStats.readLeftMs = 0;
+  currentLoopStats.readRightMs = 0;
+  currentLoopStats.spinMs = 0;
+  currentLoopStats.publishMs = 0;
+  currentLoopStats.cmdAgeMs = 0;
+  currentLoopStats.spinRc = 0;
+  currentLoopStats.publishRc = 0;
 
   // Read encoders
   stageStart = millis();
-  updateEncoder(&leftWheel);
+  updateEncoder(&leftWheel, &leftI2cTxFailCount, &leftI2cShortReadCount);
   lastReadLeftDtMs = millis() - stageStart;
+  currentLoopStats.readLeftMs = lastReadLeftDtMs;
   stageStart = millis();
-  updateEncoder(&rightWheel);
+  updateEncoder(&rightWheel, &rightI2cTxFailCount, &rightI2cShortReadCount);
   lastReadRightDtMs = millis() - stageStart;
+  currentLoopStats.readRightMs = lastReadRightDtMs;
 
   // Process micro-ROS callbacks
   stageStart = millis();
-  RCSOFTCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10)));
+  rcl_ret_t spinRc = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
   lastSpinDtMs = millis() - stageStart;
+  currentLoopStats.spinMs = lastSpinDtMs;
+  currentLoopStats.spinRc = static_cast<int32_t>(spinRc);
+  if (spinRc != RCL_RET_OK) {
+    spinErrorCount++;
+  }
 
   // PID control
   if (velocityMode) {
@@ -507,7 +601,9 @@ void loop() {
     resetPID(&leftPID);
     resetPID(&rightPID);
     stopMotors();
+    cmdTimeoutStopCount++;
   }
+  currentLoopStats.cmdAgeMs = velocityMode ? (millis() - lastCmdTime) : 0;
 
   // Publish encoders
   if (now - lastEncoderPublish >= ENCODER_PUBLISH_MS) {
@@ -519,15 +615,51 @@ void loop() {
     encoder_msg.data.data[4] = velocityRightPWM;                         // текущий PWM правый
     encoder_msg.data.data[5] = (int64_t)(leftPID.actualVelocity * 10000);  // actual vel * 10000
     encoder_msg.data.data[6] = (int64_t)(rightPID.actualVelocity * 10000); // actual vel * 10000
-    encoder_msg.data.data[7] = lastLoopDtMs;                            // dt главного loop() в мс
-    encoder_msg.data.data[8] = lastReadLeftDtMs;                        // чтение левого AS5600
-    encoder_msg.data.data[9] = lastReadRightDtMs;                       // чтение правого AS5600
-    encoder_msg.data.data[10] = lastSpinDtMs;                           // spin_some executor
-    encoder_msg.data.data[11] = lastPublishDtMs;                        // publish предыдущего пакета
+    encoder_msg.data.data[7] = previousLoopStats.loopDtMs;              // dt завершённого предыдущего loop()
+    encoder_msg.data.data[8] = previousLoopStats.readLeftMs;            // чтение левого AS5600
+    encoder_msg.data.data[9] = previousLoopStats.readRightMs;           // чтение правого AS5600
+    encoder_msg.data.data[10] = previousLoopStats.spinMs;               // spin_some executor
+    encoder_msg.data.data[11] = previousLoopStats.publishMs;            // publish предыдущего пакета
+    encoder_msg.data.data[12] = ++packetSequence;                       // последовательность пакетов
+    encoder_msg.data.data[13] = bootId;                                 // boot id в RTC памяти
+    encoder_msg.data.data[14] = bootResetReason;                        // esp_reset_reason()
+    encoder_msg.data.data[15] = previousLoopStats.spinRc;               // rc spin_some
+    encoder_msg.data.data[16] = previousLoopStats.publishRc;            // rc publish
+    encoder_msg.data.data[17] = g_transport_write_drop_count;           // transport write dropped
+    encoder_msg.data.data[18] = g_transport_short_write_count;          // partial transport writes
+    encoder_msg.data.data[19] = g_transport_last_available;             // availableForWrite() at anomaly
+    encoder_msg.data.data[20] = g_transport_last_required;              // bytes required at anomaly
+    encoder_msg.data.data[21] = spinErrorCount;                         // non-OK spin rc count
+    encoder_msg.data.data[22] = publishErrorCount;                      // non-OK publish rc count
+    encoder_msg.data.data[23] = leftI2cTxFailCount;                     // left endTransmission failures
+    encoder_msg.data.data[24] = leftI2cShortReadCount;                  // left short reads
+    encoder_msg.data.data[25] = rightI2cTxFailCount;                    // right endTransmission failures
+    encoder_msg.data.data[26] = rightI2cShortReadCount;                 // right short reads
+    encoder_msg.data.data[27] = encoderJumpRejectCount;                 // implausible encoder diffs
+    encoder_msg.data.data[28] = longLoopCount;                          // loop_dt > threshold count
+    encoder_msg.data.data[29] = maxLoopDtMs;                            // maximum observed loop dt
+    encoder_msg.data.data[30] = cmdTimeoutStopCount;                    // motor safety timeout count
+    encoder_msg.data.data[31] = previousLoopStats.cmdAgeMs;             // age of last /cmd_vel in previous loop
+    encoder_msg.data.data[32] = ESP.getFreeHeap();                      // current free heap
+    encoder_msg.data.data[33] = ESP.getMinFreeHeap();                   // min free heap watermark
+    encoder_msg.data.data[34] = velocityMode ? 1 : 0;                   // current velocity mode flag
     stageStart = millis();
-    RCSOFTCHECK(rcl_publish(&encoder_pub, &encoder_msg, NULL));
+    rcl_ret_t publishRc = rcl_publish(&encoder_pub, &encoder_msg, NULL);
     lastPublishDtMs = millis() - stageStart;
+    currentLoopStats.publishMs = lastPublishDtMs;
+    currentLoopStats.publishRc = static_cast<int32_t>(publishRc);
+    if (publishRc != RCL_RET_OK) {
+      publishErrorCount++;
+    }
   }
+
+  if (currentLoopStats.loopDtMs > LONG_LOOP_THRESHOLD_MS) {
+    longLoopCount++;
+  }
+  if (currentLoopStats.loopDtMs > maxLoopDtMs) {
+    maxLoopDtMs = currentLoopStats.loopDtMs;
+  }
+  previousLoopStats = currentLoopStats;
 
   delay(1);
 }
