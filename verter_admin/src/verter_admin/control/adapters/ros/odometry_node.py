@@ -22,6 +22,10 @@ class EncoderTelemetry:
     """Decoded debug payload from /wheel_encoders."""
 
     payload_len: int
+    left_pwm: int | None = None
+    right_pwm: int | None = None
+    left_velocity_mps: float | None = None
+    right_velocity_mps: float | None = None
     loop_dt_ms: int | None = None
     read_left_ms: int | None = None
     read_right_ms: int | None = None
@@ -79,6 +83,13 @@ class OdometryNode(Node):
         self._last_encoder_seq: int | None = None
         self._last_encoder_boot_id: int | None = None
         self._last_encoder_issue_cause: str | None = None
+        self._last_cmd_linear_x = 0.0
+        self._last_cmd_angular_z = 0.0
+        self._move_debug_until_sec = 0.0
+        self._last_move_debug_log_time = 0.0
+        self._last_direction_mismatch_log_time = 0.0
+        self._last_raw_left_steps: int | None = None
+        self._last_raw_right_steps: int | None = None
         self._encoder_timeout_count = 0
         self._encoder_rare_packet_count = 0
         self._encoder_seq_gap_total = 0
@@ -120,12 +131,18 @@ class OdometryNode(Node):
         self.get_logger().info('=' * 80)
 
     def cmd_vel_callback(self, msg: Twist):
+        now_sec = time.time()
+        self._last_cmd_linear_x = float(msg.linear.x)
+        self._last_cmd_angular_z = float(msg.angular.z)
         event = self._odometry.on_cmd_vel(float(msg.linear.x), float(msg.angular.z))
         if event.movement_started:
+            self._move_debug_until_sec = now_sec + 2.5
+            self._last_move_debug_log_time = 0.0
             self.get_logger().info(
                 f'[MOVE] start cmd_vx={msg.linear.x:.3f} m/s, cmd_vth={msg.angular.z:.3f} rad/s'
             )
         elif event.movement_stopped:
+            self._move_debug_until_sec = 0.0
             self.get_logger().info('[MOVE] stop')
 
     def encoder_callback(self, msg: Int64MultiArray):
@@ -136,6 +153,14 @@ class OdometryNode(Node):
         device_stamp_sec = float(msg.data[2]) / 1000.0
         telemetry = self._parse_encoder_telemetry(msg)
         previous_telemetry = self._last_encoder_telemetry
+        left_steps = int(msg.data[0])
+        right_steps = int(msg.data[1])
+        raw_delta_left_steps = None
+        raw_delta_right_steps = None
+        if self._last_raw_left_steps is not None:
+            raw_delta_left_steps = left_steps - self._last_raw_left_steps
+        if self._last_raw_right_steps is not None:
+            raw_delta_right_steps = right_steps - self._last_raw_right_steps
         host_gap = None
         device_gap = None
 
@@ -161,9 +186,16 @@ class OdometryNode(Node):
             self._last_encoder_issue_cause = issue_cause
 
         event = self._odometry.on_encoder(
-            left_steps=int(msg.data[0]),
-            right_steps=int(msg.data[1]),
+            left_steps=left_steps,
+            right_steps=right_steps,
             now_sec=now_sec,
+        )
+        self._log_motion_diagnostics(
+            now_sec,
+            telemetry,
+            raw_delta_left_steps,
+            raw_delta_right_steps,
+            issue_cause,
         )
 
         if event.switched_to_encoder:
@@ -194,6 +226,8 @@ class OdometryNode(Node):
         self._last_encoder_host_time = now_sec
         self._last_encoder_device_time = device_stamp_sec
         self._last_encoder_telemetry = telemetry
+        self._last_raw_left_steps = left_steps
+        self._last_raw_right_steps = right_steps
 
     def update_odometry_callback(self):
         event = self._odometry.on_tick(now_sec=time.time())
@@ -284,6 +318,10 @@ class OdometryNode(Node):
         velocity_mode_raw = self._msg_int(msg.data, 34)
         telemetry = EncoderTelemetry(
             payload_len=payload_len,
+            left_pwm=self._msg_int(msg.data, 3),
+            right_pwm=self._msg_int(msg.data, 4),
+            left_velocity_mps=self._msg_velocity(msg.data, 5),
+            right_velocity_mps=self._msg_velocity(msg.data, 6),
             loop_dt_ms=self._msg_int(msg.data, 7),
             read_left_ms=self._msg_int(msg.data, 8),
             read_right_ms=self._msg_int(msg.data, 9),
@@ -302,6 +340,10 @@ class OdometryNode(Node):
 
         return EncoderTelemetry(
             payload_len=payload_len,
+            left_pwm=telemetry.left_pwm,
+            right_pwm=telemetry.right_pwm,
+            left_velocity_mps=telemetry.left_velocity_mps,
+            right_velocity_mps=telemetry.right_velocity_mps,
             loop_dt_ms=telemetry.loop_dt_ms,
             read_left_ms=telemetry.read_left_ms,
             read_right_ms=telemetry.read_right_ms,
@@ -428,6 +470,159 @@ class OdometryNode(Node):
             return None
         return int(data[index])
 
+    @staticmethod
+    def _msg_velocity(data, index: int) -> float | None:
+        raw_value = OdometryNode._msg_int(data, index)
+        if raw_value is None:
+            return None
+        return float(raw_value) / 10000.0
+
+    @staticmethod
+    def _sign(value: float | int, threshold: float = 1e-6) -> int:
+        if value > threshold:
+            return 1
+        if value < -threshold:
+            return -1
+        return 0
+
+    def _max_loop_increased(
+        self,
+        telemetry: EncoderTelemetry | None,
+        previous_telemetry: EncoderTelemetry | None,
+    ) -> bool:
+        if telemetry is None or telemetry.max_loop_dt_ms is None:
+            return False
+        if previous_telemetry is None or previous_telemetry.max_loop_dt_ms is None:
+            return False
+        return telemetry.max_loop_dt_ms > previous_telemetry.max_loop_dt_ms
+
+    def _format_motion_debug_suffix(
+        self,
+        telemetry: EncoderTelemetry | None,
+        raw_delta_left_steps: int | None,
+        raw_delta_right_steps: int | None,
+        include_odom: bool = True,
+    ) -> str:
+        state = self._odometry.snapshot()
+        parts = [
+            f'cmd_vx={self._last_cmd_linear_x:.3f}',
+            f'cmd_vth={self._last_cmd_angular_z:.3f}',
+        ]
+        if include_odom:
+            parts.extend(
+                [
+                    f'odom_vx={state.vx:.3f}',
+                    f'odom_vth={state.vth:.3f}',
+                ]
+            )
+        if raw_delta_left_steps is not None:
+            parts.append(f'dL={raw_delta_left_steps}')
+        if raw_delta_right_steps is not None:
+            parts.append(f'dR={raw_delta_right_steps}')
+        if telemetry is not None:
+            if telemetry.left_pwm is not None:
+                parts.append(f'pwm_l={telemetry.left_pwm}')
+            if telemetry.right_pwm is not None:
+                parts.append(f'pwm_r={telemetry.right_pwm}')
+            if telemetry.left_velocity_mps is not None:
+                parts.append(f'vel_l={telemetry.left_velocity_mps:.3f}')
+            if telemetry.right_velocity_mps is not None:
+                parts.append(f'vel_r={telemetry.right_velocity_mps:.3f}')
+            if telemetry.sequence is not None:
+                parts.append(f'seq={telemetry.sequence}')
+        return ', '.join(parts)
+
+    def _infer_direction_mismatch(
+        self,
+        telemetry: EncoderTelemetry | None,
+        raw_delta_left_steps: int | None,
+        raw_delta_right_steps: int | None,
+    ) -> str | None:
+        expected_forward = self._sign(self._last_cmd_linear_x, 0.05)
+        if expected_forward == 0:
+            return None
+
+        state = self._odometry.snapshot()
+        odom_sign = self._sign(state.vx, 0.05)
+        left_vel_sign = self._sign(telemetry.left_velocity_mps, 0.05) if telemetry and telemetry.left_velocity_mps is not None else 0
+        right_vel_sign = self._sign(telemetry.right_velocity_mps, 0.05) if telemetry and telemetry.right_velocity_mps is not None else 0
+        left_delta_sign = self._sign(raw_delta_left_steps, 2.0) if raw_delta_left_steps is not None else 0
+        right_delta_sign = self._sign(raw_delta_right_steps, 2.0) if raw_delta_right_steps is not None else 0
+        left_pwm_sign = self._sign(telemetry.left_pwm, 5.0) if telemetry and telemetry.left_pwm is not None else 0
+        right_pwm_sign = self._sign(telemetry.right_pwm, 5.0) if telemetry and telemetry.right_pwm is not None else 0
+
+        reverse_feedback = (
+            left_pwm_sign == expected_forward
+            and right_pwm_sign == expected_forward
+            and left_vel_sign == -expected_forward
+            and right_vel_sign == -expected_forward
+        )
+        reverse_deltas = (
+            left_delta_sign == -expected_forward
+            and right_delta_sign == -expected_forward
+        )
+
+        if reverse_feedback:
+            return 'closed_loop_polarity_mismatch'
+        if reverse_deltas and odom_sign == -expected_forward:
+            return 'encoder_direction_reversed'
+        if odom_sign == -expected_forward:
+            return 'odom_reverse_vs_cmd'
+        return None
+
+    def _log_motion_diagnostics(
+        self,
+        now_sec: float,
+        telemetry: EncoderTelemetry | None,
+        raw_delta_left_steps: int | None,
+        raw_delta_right_steps: int | None,
+        issue_cause: str | None,
+    ) -> None:
+        mismatch_cause = self._infer_direction_mismatch(
+            telemetry,
+            raw_delta_left_steps,
+            raw_delta_right_steps,
+        )
+        if mismatch_cause is not None and now_sec - self._last_direction_mismatch_log_time >= 0.5:
+            self._last_direction_mismatch_log_time = now_sec
+            self.get_logger().error(
+                f'[MOVECHK] {mismatch_cause}; '
+                + self._format_motion_debug_suffix(
+                    telemetry,
+                    raw_delta_left_steps,
+                    raw_delta_right_steps,
+                )
+            )
+            return
+
+        if issue_cause == 'packet_drop':
+            if now_sec - self._last_move_debug_log_time >= 0.5:
+                self._last_move_debug_log_time = now_sec
+                self.get_logger().warn(
+                    f'[MOVECHK] packet_drop context; '
+                    + self._format_motion_debug_suffix(
+                        telemetry,
+                        raw_delta_left_steps,
+                        raw_delta_right_steps,
+                    )
+                )
+            return
+
+        if now_sec > self._move_debug_until_sec:
+            return
+        if now_sec - self._last_move_debug_log_time < 0.35:
+            return
+
+        self._last_move_debug_log_time = now_sec
+        self.get_logger().info(
+            f'[MOVECHK] start window; '
+            + self._format_motion_debug_suffix(
+                telemetry,
+                raw_delta_left_steps,
+                raw_delta_right_steps,
+            )
+        )
+
     def _counter_delta(
         self,
         telemetry: EncoderTelemetry | None,
@@ -541,8 +736,27 @@ class OdometryNode(Node):
                 telemetry.prev_publish_ms >= 20 or cause == 'publish_block'
             ):
                 parts.append(f'pub={telemetry.prev_publish_ms}ms')
-            if telemetry.max_loop_dt_ms is not None and telemetry.max_loop_dt_ms >= 200:
+            if (
+                telemetry.max_loop_dt_ms is not None
+                and (
+                    cause == 'esp_loop_gap'
+                    or self._max_loop_increased(telemetry, previous_telemetry)
+                )
+            ):
                 parts.append(f'max_loop={telemetry.max_loop_dt_ms}ms')
+            if cause == 'packet_drop':
+                if telemetry.cmd_age_ms is not None:
+                    parts.append(f'cmd_age={telemetry.cmd_age_ms}ms')
+                if telemetry.velocity_mode is not None:
+                    parts.append(f'vel_mode={int(telemetry.velocity_mode)}')
+                if telemetry.left_pwm is not None:
+                    parts.append(f'pwm_l={telemetry.left_pwm}')
+                if telemetry.right_pwm is not None:
+                    parts.append(f'pwm_r={telemetry.right_pwm}')
+                if telemetry.left_velocity_mps is not None:
+                    parts.append(f'vel_l={telemetry.left_velocity_mps:.3f}')
+                if telemetry.right_velocity_mps is not None:
+                    parts.append(f'vel_r={telemetry.right_velocity_mps:.3f}')
 
             counter_labels = (
                 ('right_i2c_tx_fail_count', 'i2c_r_tx'),
