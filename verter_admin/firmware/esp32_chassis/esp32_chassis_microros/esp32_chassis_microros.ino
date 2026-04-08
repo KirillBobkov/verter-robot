@@ -143,7 +143,7 @@ const int RIGHT_ENCODER_FORWARD_SIGN = 1;
 
 const float WHEEL_CIRCUMFERENCE = 0.576;
 const float GEAR_RATIO = 4.0007;
-const float WHEEL_BASE = 0.378;
+const float WHEEL_BASE = 0.380;
 
 const float MAX_VELOCITY = 0.5;
 const int MAX_PWM = 200;

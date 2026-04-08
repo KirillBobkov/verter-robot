@@ -19,7 +19,7 @@ class OdometryParameters:
     wheel_circumference: float = 0.576
     gear_ratio: float = 4.0007
     encoder_resolution: int = 4096
-    wheel_base: float = 0.378
+    wheel_base: float = 0.380
     max_linear_velocity: float = 0.5
     max_angular_velocity: float = 1.0
     linear_scale: float = 1.0
