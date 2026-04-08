@@ -132,9 +132,18 @@ extern "C" size_t arduino_transport_write(struct uxrCustomTransport * transport,
 // ПАРАМЕТРЫ РОБОТА
 // ============================================================================
 
+// Калибровка направления.
+// Положительный /cmd_vel.x должен означать:
+// - оба мотора крутят колёса вперёд;
+// - оба totalSteps растут.
+const uint8_t LEFT_MOTOR_FORWARD_DIR_LEVEL = LOW;
+const uint8_t RIGHT_MOTOR_FORWARD_DIR_LEVEL = HIGH;
+const int LEFT_ENCODER_FORWARD_SIGN = -1;
+const int RIGHT_ENCODER_FORWARD_SIGN = 1;
+
 const float WHEEL_CIRCUMFERENCE = 0.576;
 const float GEAR_RATIO = 4.0007;
-const float WHEEL_BASE = 0.374;
+const float WHEEL_BASE = 0.378;
 
 const float MAX_VELOCITY = 0.5;
 const int MAX_PWM = 200;
@@ -245,10 +254,10 @@ uint32_t cmdTimeoutStopCount = 0;
 
 void setMotorLeft(int pwm) {
   if (pwm > 0) {
-    digitalWrite(MOTOR_L_DIR, LOW);
+    digitalWrite(MOTOR_L_DIR, LEFT_MOTOR_FORWARD_DIR_LEVEL);
     ledcWrite(PWM_CHANNEL_L, min(pwm, MAX_PWM));
   } else if (pwm < 0) {
-    digitalWrite(MOTOR_L_DIR, HIGH);
+    digitalWrite(MOTOR_L_DIR, !LEFT_MOTOR_FORWARD_DIR_LEVEL);
     ledcWrite(PWM_CHANNEL_L, min(-pwm, MAX_PWM));
   } else {
     ledcWrite(PWM_CHANNEL_L, 0);
@@ -257,10 +266,10 @@ void setMotorLeft(int pwm) {
 
 void setMotorRight(int pwm) {
   if (pwm > 0) {
-    digitalWrite(MOTOR_R_DIR, HIGH);
+    digitalWrite(MOTOR_R_DIR, RIGHT_MOTOR_FORWARD_DIR_LEVEL);
     ledcWrite(PWM_CHANNEL_R, min(pwm, MAX_PWM));
   } else if (pwm < 0) {
-    digitalWrite(MOTOR_R_DIR, LOW);
+    digitalWrite(MOTOR_R_DIR, !RIGHT_MOTOR_FORWARD_DIR_LEVEL);
     ledcWrite(PWM_CHANNEL_R, min(-pwm, MAX_PWM));
   } else {
     ledcWrite(PWM_CHANNEL_R, 0);
@@ -322,13 +331,11 @@ void updateEncoder(
     return;
   }
 
-  // Проверено вручную:
-  //   Левое колесо вперёд → diff > 0 → totalSteps += diff
-  //   Правое колесо вперёд → diff < 0 → totalSteps -= diff (инверсия)
+  // Нормализуем знак так, чтобы движение вперёд всегда увеличивало totalSteps.
   if (wheel->useWire1) {
-    wheel->totalSteps -= diff;  // правый энкодер (Wire1_custom)
+    wheel->totalSteps += RIGHT_ENCODER_FORWARD_SIGN * diff;  // правый энкодер
   } else {
-    wheel->totalSteps += diff;  // левый энкодер (Wire)
+    wheel->totalSteps += LEFT_ENCODER_FORWARD_SIGN * diff;   // левый энкодер
   }
   wheel->prevAngle = angle;
 }
