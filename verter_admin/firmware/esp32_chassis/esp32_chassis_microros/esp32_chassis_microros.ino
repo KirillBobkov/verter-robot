@@ -127,6 +127,8 @@ extern "C" size_t arduino_transport_write(struct uxrCustomTransport * transport,
 // AS5600
 #define AS5600_ADDRESS  0x36
 #define RAW_ANGLE_REG   0x0C
+#define I2C_LEFT_CLOCK_HZ   400000
+#define I2C_RIGHT_CLOCK_HZ  100000
 
 // ============================================================================
 // ПАРАМЕТРЫ РОБОТА
@@ -143,7 +145,7 @@ const int RIGHT_ENCODER_FORWARD_SIGN = 1;
 
 const float WHEEL_CIRCUMFERENCE = 0.576;
 const float GEAR_RATIO = 4.0007;
-const float WHEEL_BASE = 0.380;
+const float WHEEL_BASE = 0.386;
 
 const float MAX_VELOCITY = 0.5;
 const int MAX_PWM = 200;
@@ -497,10 +499,10 @@ void setup() {
 
   // I2C
   Wire.begin(I2C0_SDA, I2C0_SCL);
-  Wire.setClock(400000);
+  Wire.setClock(I2C_LEFT_CLOCK_HZ);
   Wire.setTimeOut(20);
   Wire1_custom.begin(I2C1_SDA, I2C1_SCL);
-  Wire1_custom.setClock(400000);
+  Wire1_custom.setClock(I2C_RIGHT_CLOCK_HZ);
   Wire1_custom.setTimeOut(20);
 
   delay(100);
