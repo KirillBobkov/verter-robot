@@ -95,6 +95,12 @@ class OdometryNode(Node):
         self._encoder_seq_gap_total = 0
         self._encoder_restart_count = 0
         self._logged_legacy_encoder_format = False
+        # Dead-reckoning компенсация правого энкодера при I2C блокировках.
+        # Накапливается при каждом right_i2c_block, применяется ко всем
+        # последующим right_steps — так delta следующего пакета остаётся корректной.
+        # Сбрасывается при рестарте ESP32 (boot_id изменился).
+        self._right_steps_offset: int = 0
+        self._right_steps_dr_count: int = 0  # сколько раз применялась компенсация
 
         self.odom_publisher = self.create_publisher(Odometry, '/odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -169,6 +175,15 @@ class OdometryNode(Node):
         if self._last_encoder_device_time is not None and device_stamp_sec >= self._last_encoder_device_time:
             device_gap = device_stamp_sec - self._last_encoder_device_time
 
+        # Сброс dead-reckoning оффсета при рестарте ESP32 (totalSteps обнуляется).
+        is_esp_restart = (
+            telemetry.boot_id is not None
+            and self._last_encoder_boot_id is not None
+            and telemetry.boot_id != self._last_encoder_boot_id
+        )
+        if is_esp_restart:
+            self._right_steps_offset = 0
+
         seq_gap = self._track_encoder_stream(
             telemetry,
             host_gap,
@@ -185,9 +200,32 @@ class OdometryNode(Node):
         if issue_cause is not None:
             self._last_encoder_issue_cause = issue_cause
 
+        # Dead-reckoning компенсация: при right_i2c_block правый энкодер
+        # не накопил шаги за время зависания (~1с). Оцениваем пропущенные
+        # шаги через скорость из предыдущего пакета × device_gap.
+        # Оффсет накапливается и применяется ко всем следующим пакетам,
+        # поэтому delta следующего пакета остаётся корректной (оффсет вычтется).
+        if issue_cause == 'right_i2c_block' and device_gap is not None:
+            prev_right_vel = (
+                previous_telemetry.right_velocity_mps
+                if previous_telemetry is not None
+                else None
+            )
+            if prev_right_vel is not None and abs(prev_right_vel) > 0.01:
+                meters_per_step = self._params.meters_per_step
+                estimated_delta = round(prev_right_vel * device_gap / meters_per_step)
+                if estimated_delta != 0:
+                    self._right_steps_offset += estimated_delta
+                    self._right_steps_dr_count += 1
+                    self.get_logger().debug(
+                        f'[DR] right_i2c_block: +{estimated_delta} steps компенсация '
+                        f'(vel={prev_right_vel:.3f} m/s, gap={device_gap:.3f}s, '
+                        f'offset={self._right_steps_offset}, n={self._right_steps_dr_count})'
+                    )
+
         event = self._odometry.on_encoder(
             left_steps=left_steps,
-            right_steps=right_steps,
+            right_steps=right_steps + self._right_steps_offset,
             now_sec=now_sec,
         )
         self._log_motion_diagnostics(

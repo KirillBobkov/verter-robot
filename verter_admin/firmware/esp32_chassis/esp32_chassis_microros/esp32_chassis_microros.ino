@@ -41,6 +41,7 @@
 #include <geometry_msgs/msg/twist.h>
 #include <std_msgs/msg/int64_multi_array.h>
 #include <Wire.h>
+#include "driver/i2c.h"  // ESP-IDF: i2c_set_timeout() для обхода бага arduino-esp32 v2.x
 
 static volatile uint32_t g_transport_write_drop_count = 0;
 static volatile uint32_t g_transport_short_write_count = 0;
@@ -203,6 +204,7 @@ struct WheelControl {
   int16_t prevAngle;
   long totalSteps;
   bool useWire1;
+  unsigned long lastReadSuccessTime;  // millis() последнего успешного readAngle()
 };
 
 struct LoopStats {
@@ -218,8 +220,8 @@ struct LoopStats {
 
 // Левый энкодер на Wire (I2C0, SDA=21, SCL=22)
 // Правый энкодер на Wire1_custom (I2C1, SDA=32, SCL=4)
-WheelControl leftWheel = {0, 0, false};   // useWire1 = false → Wire (21,22)
-WheelControl rightWheel = {0, 0, true};   // useWire1 = true  → Wire1_custom (32,4)
+WheelControl leftWheel = {0, 0, false, 0};   // useWire1 = false → Wire (21,22)
+WheelControl rightWheel = {0, 0, true, 0};   // useWire1 = true  → Wire1_custom (32,4)
 
 // Velocity mode
 bool velocityMode = false;
@@ -245,6 +247,7 @@ uint32_t leftI2cTxFailCount = 0;
 uint32_t leftI2cShortReadCount = 0;
 uint32_t rightI2cTxFailCount = 0;
 uint32_t rightI2cShortReadCount = 0;
+uint32_t rightI2cBusRecoveryCount = 0;
 uint32_t encoderJumpRejectCount = 0;
 uint32_t longLoopCount = 0;
 uint32_t maxLoopDtMs = 0;
@@ -287,6 +290,24 @@ void stopMotors() {
 // ENCODERS
 // ============================================================================
 
+// Восстановление I2C шины правого энкодера после зависания.
+// Вызывается после каждого неудачного чтения Wire1_custom.
+// Wire1_custom.end() + begin() перезапускает ESP-IDF I2C драйвер,
+// сбрасывая состояние периферии и отпуская застрявший SDA.
+void i2cRightBusRecovery() {
+  Wire1_custom.end();
+  delayMicroseconds(500);
+  Wire1_custom.begin(I2C1_SDA, I2C1_SCL);
+  Wire1_custom.setClock(I2C_RIGHT_CLOCK_HZ);
+  Wire1_custom.setTimeOut(20);
+  // Повторяем hardware timeout: arduino-esp32 v2.x игнорирует setTimeOut(<1000мс).
+  // i2c_set_timeout() ограничивает clock-stretching таймаут на уровне APB регистра.
+  // ~2.5мс при 80МГц APB. Не заменяет FreeRTOS таймаут полностью, но уменьшает
+  // типичный hang с 1000мс до clock-stretch-bounded значения.
+  i2c_set_timeout(I2C_NUM_1, 200000);
+  rightI2cBusRecoveryCount++;
+}
+
 int16_t readAngle(
   WheelControl* wheel,
   uint32_t* txFailCount,
@@ -319,15 +340,36 @@ void updateEncoder(
   uint32_t* shortReadCount
 ) {
   int16_t angle = readAngle(wheel, txFailCount, shortReadCount);
-  if (angle == -1) return;
+  if (angle == -1) {
+    // Правый энкодер: зависание I2C.
+    // Wire.end()+begin() сбрасывает ESP-IDF драйвер и отпускает застрявший SDA.
+    // Без recovery следующий read снова блокирует на ~1000мс.
+    if (wheel->useWire1) {
+      i2cRightBusRecovery();
+    }
+    return;
+  }
+
+  unsigned long now = millis();
+  unsigned long elapsed = now - wheel->lastReadSuccessTime;
+  wheel->lastReadSuccessTime = now;
+
+  // Если с последнего успешного чтения прошло > 100мс — энкодерный вал
+  // при макс. скорости (~3.5 об/с) мог совершить полный оборот (4096 шагов).
+  // Diff через 12-bit абсолютный угол бессмысленен — просто синхронизируем
+  // prevAngle. Потерянные шаги компенсирует ROS-сторона через dead-reckoning.
+  if (elapsed > 100) {
+    wheel->prevAngle = angle;
+    return;
+  }
 
   int16_t diff = angle - wheel->prevAngle;
   if (diff > 2048) diff -= 4096;
   else if (diff < -2048) diff += 4096;
 
-  // Reject I2C corrupted reads: at max motor speed (~3.3 rev/s)
-  // and typical loop ~20ms, max plausible diff ≈ 270 steps.
-  // 350 covers up to ~30ms loop at max speed.
+  // Reject I2C corrupted reads: при макс. скорости мотора (~3.3 об/с)
+  // и типичном loop ~20мс, макс. правдоподобный diff ≈ 270 шагов.
+  // 350 покрывает до ~30мс loop при макс. скорости.
   if (diff > 350 || diff < -350) {
     encoderJumpRejectCount++;
     return;
@@ -350,6 +392,16 @@ void calculateWheelVelocity(PIDState* pid, long currentSteps) {
   unsigned long now = millis();
   unsigned long dt = now - pid->lastTime;
   if (dt == 0) return;
+
+  // После I2C блока (dt ≫ нормы): deltaSteps ≈ 0 из-за замороженного энкодера,
+  // actualVelocity получится ≈ 0 → PID думает колесо стоит → резкий скачок PWM.
+  // Пропускаем расчёт скорости: сохраняем lastSteps/lastTime для корректного
+  // следующего dt, но оставляем actualVelocity от прошлой нормальной итерации.
+  if (dt > 200) {
+    pid->lastSteps = currentSteps;
+    pid->lastTime = now;
+    return;
+  }
 
   long deltaSteps = currentSteps - pid->lastSteps;
   float deltaMeters = deltaSteps * METERS_PER_STEP;
@@ -504,10 +556,16 @@ void setup() {
   Wire1_custom.begin(I2C1_SDA, I2C1_SCL);
   Wire1_custom.setClock(I2C_RIGHT_CLOCK_HZ);
   Wire1_custom.setTimeOut(20);
+  // arduino-esp32 v2.x игнорирует setTimeOut(<1000мс) — баг #5934.
+  // i2c_set_timeout() устанавливает clock-stretch таймаут на уровне APB регистра.
+  // Ограничивает зависание на случай clock-stretching AS5600. ~2.5мс при 80МГц.
+  i2c_set_timeout(I2C_NUM_1, 200000);
 
   delay(100);
   leftWheel.prevAngle = readAngle(&leftWheel, &leftI2cTxFailCount, &leftI2cShortReadCount);
   rightWheel.prevAngle = readAngle(&rightWheel, &rightI2cTxFailCount, &rightI2cShortReadCount);
+  leftWheel.lastReadSuccessTime = millis();
+  rightWheel.lastReadSuccessTime = millis();
 
   // micro-ROS Serial transport
   set_microros_transports();
