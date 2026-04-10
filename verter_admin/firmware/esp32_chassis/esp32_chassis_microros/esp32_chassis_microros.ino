@@ -595,16 +595,11 @@ void setup() {
     "/cmd_vel"
   ));
 
-  // Publisher: /wheel_encoders
-  // Sensor telemetry should prefer freshness over reliable delivery retries
-  // that can stall the main loop on a noisy serial micro-ROS transport.
-  rmw_qos_profile_t wheel_encoders_qos = rmw_qos_profile_sensor_data;
-  wheel_encoders_qos.depth = 10;
-  RCCHECK(rclc_publisher_init(
+  // Publisher: /wheel_encoders (reliable QoS — меньше потерь пакетов)
+  RCCHECK(rclc_publisher_init_default(
     &encoder_pub, &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int64MultiArray),
-    "/wheel_encoders",
-    &wheel_encoders_qos
+    "/wheel_encoders"
   ));
 
   // Init encoder message (base fields + extended diagnostics)
