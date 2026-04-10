@@ -595,11 +595,16 @@ void setup() {
     "/cmd_vel"
   ));
 
-  // Publisher: /wheel_encoders (reliable QoS — меньше потерь пакетов)
-  RCCHECK(rclc_publisher_init_default(
+  // Publisher: /wheel_encoders (best-effort — publish не блокирует loop).
+  // RELIABLE на serial micro-ROS вызывает блокировку rcl_publish() на ~1с
+  // при CPU load (ждёт ACK от agent через XRCE-DDS reliable stream).
+  rmw_qos_profile_t wheel_qos = rmw_qos_profile_sensor_data;
+  wheel_qos.depth = 5;
+  RCCHECK(rclc_publisher_init(
     &encoder_pub, &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int64MultiArray),
-    "/wheel_encoders"
+    "/wheel_encoders",
+    &wheel_qos
   ));
 
   // Init encoder message (base fields + extended diagnostics)

@@ -10,7 +10,7 @@ import rclpy
 from geometry_msgs.msg import Quaternion, TransformStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Int64MultiArray
 from tf2_ros import TransformBroadcaster
 from verter_admin.control.application import ComputeOdometry
@@ -94,12 +94,19 @@ class OdometryNode(Node):
         self.odom_publisher = self.create_publisher(Odometry, '/odom', 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
+        # BEST_EFFORT — совпадает с ESP32 publisher (sensor_data profile).
+        # RELIABLE на serial micro-ROS блокирует ESP32 publish на ~1с при CPU load.
+        wheel_encoders_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=5,
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+        )
         self.create_subscription(Twist, '/cmd_vel', self.cmd_vel_callback, 10)
         self.create_subscription(
             Int64MultiArray,
             '/wheel_encoders',
             self.encoder_callback,
-            10,
+            wheel_encoders_qos,
         )
 
         update_frequency = 50.0
