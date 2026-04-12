@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Python RPLiDAR Express scan node using pyserial + raw os.read().
+"""Python RPLiDAR Express scan node using pyserial.
 
-Workaround for tegra-xusb + cp210x poll/select incompatibility that
-prevents the C++ rplidar_ros SDK from reading scan data on this Jetson.
-pyserial uses blocking reads (VTIME > 0) which work correctly here.
+Workaround for tegra-xusb + cp210x incompatibility:
+  - C++ rplidar_ros SDK: poll/select fails → no scan data.
+  - tcsetattr(TCSANOW) after initial read flushes rx buffer → os.read() blocks.
+  - Fix: use pyserial ser.read() (VMIN=0, VTIME=timeout) throughout.
+    84-byte Express packets arrive fast enough that this works reliably.
 
 Express scan protocol (cmd 0x82):
   - 84-byte response packets, each holding 16 "cabins" (32 measurements).
@@ -19,10 +21,7 @@ Parameters:
   range_max    (float) 6.0 m
   inverted     (bool)  false
 """
-import fcntl
 import math
-import os
-import termios
 import threading
 import time
 
@@ -73,29 +72,28 @@ class RPLidarNode(Node):
     # Low-level I/O
 
     @staticmethod
-    def _read_n(fd: int, n: int) -> bytes:
-        """Read exactly n bytes from fd (blocking)."""
-        buf = bytearray()
-        while len(buf) < n:
-            chunk = os.read(fd, n - len(buf))
-            if not chunk:
-                raise RuntimeError('lidar: unexpected EOF on read')
-            buf.extend(chunk)
-        return bytes(buf)
+    def _resync_pyserial(ser) -> bytes:
+        """Byte-by-byte resync using pyserial (avoids raw os.read issues).
 
-    def _resync(self, fd: int) -> bytes:
-        """Read byte-by-byte until Express packet sync found.
-
-        Express packets always start with high nibble 0xA (byte 0) and
-        0x5 (byte 1).  Returns a complete 84-byte packet.
+        Express packets start with high nibble 0xA (byte 0) and 0x5 (byte 1).
+        Returns a complete 84-byte packet.
         """
-        b0 = self._read_n(fd, 1)[0]
-        b1 = self._read_n(fd, 1)[0]
+        b0 = ser.read(1)
+        b1 = ser.read(1)
+        if not b0 or not b1:
+            raise RuntimeError('lidar: resync read timeout')
+        b0, b1 = b0[0], b1[0]
         for _ in range(_PACKET_SIZE * 8):
             if (b0 >> 4) == 0xA and (b1 >> 4) == 0x5:
-                rest = self._read_n(fd, _PACKET_SIZE - 2)
+                rest = ser.read(_PACKET_SIZE - 2)
+                if len(rest) < _PACKET_SIZE - 2:
+                    raise RuntimeError('lidar: resync short read')
                 return bytes([b0, b1]) + rest
-            b0, b1 = b1, self._read_n(fd, 1)[0]
+            b0 = b1
+            b = ser.read(1)
+            if not b:
+                raise RuntimeError('lidar: resync read timeout')
+            b1 = b[0]
         raise RuntimeError('lidar: express resync failed')
 
     # ------------------------------------------------------------------
@@ -205,35 +203,28 @@ class RPLidarNode(Node):
                         f'(data_type=0x{desc[6]:02x})'
                     )
 
-                # Read first packet via pyserial (timeout=3s still active) to
-                # confirm data flow BEFORE switching to raw blocking I/O.
+                # On tegra-xusb + cp210x, tcsetattr(TCSANOW) flushes the rx
+                # buffer — subsequent os.read() blocks even though the lidar
+                # is streaming.  pyserial's ser.read() (VMIN=0, VTIME=timeout)
+                # works correctly for 84-byte Express packets, so we use it
+                # throughout without switching to raw blocking I/O.
                 first_pkt = ser.read(_PACKET_SIZE)
                 if len(first_pkt) < _PACKET_SIZE:
                     raise RuntimeError(
                         f'Express scan: no data after descriptor '
-                        f'(got {len(first_pkt)}/{_PACKET_SIZE} bytes) — '
-                        f'firmware may not fully support Express mode'
+                        f'(got {len(first_pkt)}/{_PACKET_SIZE} bytes)'
                     )
                 self.get_logger().info(
                     f'Express scan started. '
                     f'First packet sync: 0x{first_pkt[0]:02x} 0x{first_pkt[1]:02x}'
-                    f' (expected 0xAx 0x5x)'
                 )
 
-                # Switch to blocking I/O (clear O_NONBLOCK, VMIN=1 VTIME=0)
-                flags = fcntl.fcntl(ser.fd, fcntl.F_GETFL)
-                fcntl.fcntl(ser.fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
-                attr = termios.tcgetattr(ser.fd)
-                attr[6][termios.VMIN]  = 1
-                attr[6][termios.VTIME] = 0
-                termios.tcsetattr(ser.fd, termios.TCSANOW, attr)
-
-                # Validate sync on first packet; resync if needed
+                # Validate sync; byte-level resync via pyserial if needed
                 if (first_pkt[0] >> 4) == 0xA and (first_pkt[1] >> 4) == 0x5:
                     pkt = first_pkt
                 else:
                     self.get_logger().warn('Bad sync on first Express packet — resyncing')
-                    pkt = self._resync(ser.fd)
+                    pkt = self._resync_pyserial(ser)
 
                 prev_start = None
                 prev_cabins = None
@@ -260,11 +251,15 @@ class RPLidarNode(Node):
                     prev_start = start_deg
                     prev_cabins = cabins
 
-                    # Read next packet; resync if sync bytes are wrong
-                    pkt = self._read_n(ser.fd, _PACKET_SIZE)
+                    # Read next packet via pyserial (avoids tcsetattr flush bug)
+                    pkt = ser.read(_PACKET_SIZE)
+                    if len(pkt) < _PACKET_SIZE:
+                        raise RuntimeError(
+                            f'Express: short read {len(pkt)}/{_PACKET_SIZE}'
+                        )
                     if (pkt[0] >> 4) != 0xA or (pkt[1] >> 4) != 0x5:
                         self.get_logger().warn('Express sync lost — resyncing')
-                        pkt = self._resync(ser.fd)
+                        pkt = self._resync_pyserial(ser)
                         prev_cabins = None
                         prev_start = None
 
