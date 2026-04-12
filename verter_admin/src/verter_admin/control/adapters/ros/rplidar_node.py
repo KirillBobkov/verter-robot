@@ -231,25 +231,44 @@ class RPLidarNode(Node):
                 scan = []
                 last_scan_t = 0.0
                 scan_time = 1.0 / 10.0
+                _pkt_count = 0
+                _new_scan_count = 0
+                _last_log = time.monotonic()
 
                 while self._running and rclpy.ok():
                     new_scan, start_deg, cabins = self._parse_packet(pkt)
+                    _pkt_count += 1
 
                     # Decode previous packet now that we have the next start angle
                     if prev_cabins is not None:
                         pts = self._decode_cabins(prev_cabins, prev_start, start_deg)
                         scan.extend(pts)
 
-                    if new_scan and scan:
-                        now = time.monotonic()
-                        if last_scan_t > 0.0:
-                            scan_time = now - last_scan_t
-                        last_scan_t = now
-                        self._publish_scan(scan, scan_time)
-                        scan = []
+                    if new_scan:
+                        _new_scan_count += 1
+                        if scan:
+                            now = time.monotonic()
+                            if last_scan_t > 0.0:
+                                scan_time = now - last_scan_t
+                            last_scan_t = now
+                            self._publish_scan(scan, scan_time)
+                            scan = []
+                        else:
+                            self.get_logger().warn(
+                                f'[DBG] new_scan=True but scan empty (pkt #{_pkt_count})'
+                            )
 
                     prev_start = start_deg
                     prev_cabins = cabins
+
+                    now = time.monotonic()
+                    if now - _last_log > 2.0:
+                        self.get_logger().info(
+                            f'[DBG] pkts={_pkt_count} new_scans={_new_scan_count}'
+                            f' scan_buf={len(scan)} start={start_deg:.1f}° '
+                            f'b0=0x{pkt[0]:02x} b2b3=0x{pkt[2]:02x}{pkt[3]:02x}'
+                        )
+                        _last_log = now
 
                     # Read next packet via pyserial (avoids tcsetattr flush bug)
                     pkt = ser.read(_PACKET_SIZE)
