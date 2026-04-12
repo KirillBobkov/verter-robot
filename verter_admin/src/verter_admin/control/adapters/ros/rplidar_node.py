@@ -15,6 +15,7 @@ Parameters:
   range_max    (float) 6.0 m
   inverted     (bool)  false
 """
+import fcntl
 import math
 import os
 import termios
@@ -92,9 +93,13 @@ class RPLidarNode(Node):
                     raise RuntimeError(f'Bad scan descriptor: {desc.hex()}')
                 self.get_logger().info('Scan started.')
 
-                # Switch serial fd to VMIN=1, VTIME=0 (blocking kernel read,
-                # no poll/select). Bypasses the tegra-xusb + cp210x poll bug
-                # that prevents pyserial's timeout-based reads from working.
+                # Switch to true blocking I/O for scan packets.
+                # pyserial opens with O_NONBLOCK; on tegra-xusb+cp210x its
+                # own fcntl clear silently fails, so os.read() returns EAGAIN.
+                # Fix: explicitly clear O_NONBLOCK + set VMIN=1, VTIME=0 so
+                # the kernel blocks until at least 1 byte arrives (like cat).
+                flags = fcntl.fcntl(ser.fd, fcntl.F_GETFL)
+                fcntl.fcntl(ser.fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
                 attr = termios.tcgetattr(ser.fd)
                 attr[6][termios.VMIN]  = 1
                 attr[6][termios.VTIME] = 0
