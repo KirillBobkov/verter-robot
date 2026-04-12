@@ -198,12 +198,27 @@ class RPLidarNode(Node):
                 desc = ser.read(7)
                 if len(desc) < 7 or desc[0] != 0xA5 or desc[1] != 0x5A:
                     raise RuntimeError(f'Bad express descriptor: {desc.hex()}')
+                self.get_logger().info(f'Express descriptor: {desc.hex()}')
                 if desc[6] != 0x82:
                     raise RuntimeError(
                         f'Express scan unsupported by firmware '
                         f'(data_type=0x{desc[6]:02x})'
                     )
-                self.get_logger().info('Express scan started.')
+
+                # Read first packet via pyserial (timeout=3s still active) to
+                # confirm data flow BEFORE switching to raw blocking I/O.
+                first_pkt = ser.read(_PACKET_SIZE)
+                if len(first_pkt) < _PACKET_SIZE:
+                    raise RuntimeError(
+                        f'Express scan: no data after descriptor '
+                        f'(got {len(first_pkt)}/{_PACKET_SIZE} bytes) — '
+                        f'firmware may not fully support Express mode'
+                    )
+                self.get_logger().info(
+                    f'Express scan started. '
+                    f'First packet sync: 0x{first_pkt[0]:02x} 0x{first_pkt[1]:02x}'
+                    f' (expected 0xAx 0x5x)'
+                )
 
                 # Switch to blocking I/O (clear O_NONBLOCK, VMIN=1 VTIME=0)
                 flags = fcntl.fcntl(ser.fd, fcntl.F_GETFL)
@@ -213,8 +228,12 @@ class RPLidarNode(Node):
                 attr[6][termios.VTIME] = 0
                 termios.tcsetattr(ser.fd, termios.TCSANOW, attr)
 
-                # Initial packet alignment
-                pkt = self._resync(ser.fd)
+                # Validate sync on first packet; resync if needed
+                if (first_pkt[0] >> 4) == 0xA and (first_pkt[1] >> 4) == 0x5:
+                    pkt = first_pkt
+                else:
+                    self.get_logger().warn('Bad sync on first Express packet — resyncing')
+                    pkt = self._resync(ser.fd)
 
                 prev_start = None
                 prev_cabins = None
