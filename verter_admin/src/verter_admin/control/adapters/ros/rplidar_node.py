@@ -81,6 +81,11 @@ class RPLidarNode(Node):
                     f'fw={info["firmware"]} hw={info["hardware"]} '
                     f'health={health[0]}'
                 )
+                # Full reset ensures clean state regardless of previous session.
+                self.get_logger().info('Resetting lidar MCU...')
+                lidar.reset()
+                time.sleep(2.5)
+                self.get_logger().info('Starting Express scan...')
                 for scan in lidar.iter_scans(scan_type='express', min_len=15):
                     if not self._running or not rclpy.ok():
                         break
