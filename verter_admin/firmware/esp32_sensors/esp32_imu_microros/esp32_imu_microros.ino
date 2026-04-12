@@ -211,6 +211,12 @@ void setup() {
 
   // Init support & node
   RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
+
+  // Синхронизация времени с micro_ros_agent (wall-clock).
+  // Без этого header.stamp будет в домене millis() (sec≈600),
+  // а EKF ожидает wall-clock (sec≈1775000000) и отбрасывает данные.
+  rmw_uros_sync_session(1000);
+
   RCCHECK(rclc_node_init_default(&node, "esp32_imu", "", &support));
 
   // Publisher: /imu/data
@@ -294,8 +300,16 @@ void initUltrasonicMessage() {
 // LOOP
 // ============================================================================
 
+static unsigned long lastTimeSync = 0;
+
 void loop() {
   unsigned long now = millis();
+
+  // Ре-синхронизация wall-clock каждые 60с (компенсация drift кварца ESP32)
+  if (now - lastTimeSync > 60000) {
+    rmw_uros_sync_session(100);
+    lastTimeSync = now;
+  }
 
   // Читаем IMU + магнитометр (I2C)
   sensorA.read(BMA_M_S);
@@ -327,8 +341,10 @@ void loop() {
   if (now - lastPublish >= IMU_PUBLISH_MS) {
     lastPublish = now;
 
-    imu_msg.header.stamp.sec = (int32_t)(now / 1000);
-    imu_msg.header.stamp.nanosec = (uint32_t)((now % 1000) * 1000000);
+    // Wall-clock время, синхронизированное с agent через rmw_uros_sync_session().
+    int64_t time_ns = rmw_uros_epoch_nanos();
+    imu_msg.header.stamp.sec = (int32_t)(time_ns / 1000000000LL);
+    imu_msg.header.stamp.nanosec = (uint32_t)(time_ns % 1000000000LL);
 
     imu_msg.angular_velocity.x = sensorG.axisX - gyroBiasX;
     imu_msg.angular_velocity.y = sensorG.axisY - gyroBiasY;

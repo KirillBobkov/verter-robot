@@ -1,210 +1,143 @@
 #!/usr/bin/env python3
-"""
-Launch файл для картографирования на реальном роботе Verter.
+"""Mapping launch — teleop + SLAM Toolbox (no Nav2).
 
-Компоненты:
-1. micro_ros_agent (chassis) - связь с ESP32 шасси (micro-ROS)
-2. micro_ros_agent (imu) - связь с ESP32 IMU (micro-ROS)
-3. twist_mux - мультиплексор команд скорости
-4. odometry_node - одометрия (энкодеры)
-5. robot_state_publisher - публикация TF из URDF
-6. rplidar_node - драйвер лидара
-7. laser_filter - фильтрация заднего сектора
-8. slam_toolbox - построение карты
+Stack:
+  micro_ros_agent (chassis)  — serial ↔ ESP32 chassis (wheel_encoders, cmd_vel)
+  micro_ros_agent (imu)      — serial ↔ ESP32 IMU (imu/data)
+  twist_mux                  — arbitrate cmd_vel sources by priority
+  odometry_node              — wheel encoders → /odom
+  ekf_node                   — /odom + /imu/data → /odometry/filtered + TF
+  robot_state_publisher      — URDF → /tf_static
+  rplidar_node               — Express mode (~10 Hz)
+  laser_filter               — strip back 180° + range limits → /scan
+  slam_toolbox               — async online mapping → /map
 
-Архитектура:
-                                    ┌─────────────┐
-  /teleop_keyboard/cmd_vel ────────>│             │
-  /nav2/cmd_vel ───────────────────>│  twist_mux  │──> /cmd_vel ──> ESP32 (micro-ROS)
-  /safety/cmd_vel ─────────────────>│             │                      │
-                                    └─────────────┘                      │
-                                                                         v
-  ESP32 /wheel_encoders ──> odometry_node ──> /odom ─┐
-                                                     ├──> EKF ──> /odometry/filtered + TF
-  ESP32 IMU ──> micro_ros_agent ──> /imu/data ──────┘      (odom->base_footprint)
-
-  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-  │   RPLidar   │───>│ /scan_raw   │───>│laser_filter │───> /scan
-  │   A1M8      │    └─────────────┘    │(remove back)│       │
-  └─────────────┘                       └─────────────┘       v
-                                                        ┌─────────────┐
-                                                        │ slam_toolbox│──> /map
-                                                        └─────────────┘
-
-Использование:
-    # На роботе:
-    ros2 launch verter_admin mapping.launch.py
-
-    # С другим портом ESP32:
-    ros2 launch verter_admin mapping.launch.py esp32_port:=/dev/ttyUSB2
-
-    # Управление (в другом терминале):
-    ros2 run verter_admin teleop_keyboard
+Usage:
+  ros2 launch verter_admin mapping.launch.py
+  ros2 launch verter_admin mapping.launch.py esp32_port:=/dev/ttyUSB0
 """
 
 import os
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
 from verter_admin.contracts.motion import TopicContract
 from verter_admin.control.infrastructure import build_twist_mux_parameters
 
 
-def generate_launch_description():
-    pkg_verter_admin = get_package_share_directory('verter_admin')
+def generate_launch_description() -> LaunchDescription:
+    pkg = get_package_share_directory('verter_admin')
 
-    # Пути к конфигурационным файлам
-    urdf_file = os.path.join(pkg_verter_admin, 'urdf', 'verter_robot_minimal.urdf')
-    slam_params_file = os.path.join(pkg_verter_admin, 'config', 'slam', 'slam_toolbox_params.yaml')
-    laser_filter_config = os.path.join(pkg_verter_admin, 'config', 'laser_filters', 'laser_filter.yaml')
-    ekf_config = os.path.join(pkg_verter_admin, 'config', 'robot_localization', 'ekf.yaml')
+    urdf_file          = os.path.join(pkg, 'urdf', 'verter_robot_minimal.urdf')
+    slam_params_file   = os.path.join(pkg, 'config', 'slam', 'slam_toolbox_params.yaml')
+    ekf_config         = os.path.join(pkg, 'config', 'robot_localization', 'ekf.yaml')
+    laser_filter_cfg   = os.path.join(pkg, 'config', 'laser_filters', 'laser_filter.yaml')
 
-    # Читаем URDF
-    with open(urdf_file, 'r') as f:
+    with open(urdf_file) as f:
         robot_description = f.read()
 
-    # =========================================================================
-    # АРГУМЕНТЫ
-    # =========================================================================
-
-    lidar_port_arg = DeclareLaunchArgument(
-        'lidar_port',
-        default_value='/dev/rplidar',
-        description='Serial port for RPLiDAR'
-    )
+    # ---- Launch arguments ------------------------------------------------------
 
     esp32_port_arg = DeclareLaunchArgument(
-        'esp32_port',
-        default_value='/dev/esp32_chassis',
-        description='Serial port for ESP32 chassis (micro-ROS)'
+        'esp32_port', default_value='/dev/esp32_chassis',
+        description='Serial port for ESP32 chassis micro-ROS agent',
+    )
+    imu_port_arg = DeclareLaunchArgument(
+        'imu_esp32_port', default_value='/dev/esp32_imu',
+        description='Serial port for ESP32 IMU micro-ROS agent',
+    )
+    lidar_port_arg = DeclareLaunchArgument(
+        'lidar_port', default_value='/dev/rplidar',
+        description='Serial port for RPLiDAR',
+    )
+    agent_extra_arg = DeclareLaunchArgument(
+        'micro_ros_agent_extra_args', default_value='',
+        description='Extra args for micro_ros_agent (e.g. -v6 for verbose)',
     )
 
-    imu_esp32_port_arg = DeclareLaunchArgument(
-        'imu_esp32_port',
-        default_value='/dev/esp32_imu',
-        description='Serial port for ESP32 IMU (micro-ROS)'
-    )
+    # ---- micro-ROS agents (auto-restart loops) ---------------------------------
 
-    micro_ros_agent_extra_args_arg = DeclareLaunchArgument(
-        'micro_ros_agent_extra_args',
-        default_value='',
-        description='Optional extra args for micro_ros_agent, e.g. -v6',
-    )
+    def micro_ros_agent(name: str, port_cfg: str) -> ExecuteProcess:
+        return ExecuteProcess(
+            cmd=[
+                'bash', '-c',
+                [
+                    'trap "kill 0; exit" TERM INT; '
+                    'while true; do '
+                    'source ~/microros_ws/install/setup.bash && '
+                    'ros2 run micro_ros_agent micro_ros_agent serial '
+                    '--dev ', LaunchConfiguration(port_cfg),
+                    ' -b 921600 ',
+                    LaunchConfiguration('micro_ros_agent_extra_args'),
+                    '; '
+                    f'echo "[micro_ros_agent {name}] exited, restarting in 2 s..."; '
+                    'sleep 2; done',
+                ],
+            ],
+            output='screen',
+            sigterm_timeout='5',
+            sigkill_timeout='10',
+        )
 
-    # =========================================================================
-    # MICRO-ROS AGENT (связь с ESP32)
-    # =========================================================================
-    # ESP32 напрямую подписан на /cmd_vel и публикует /wheel_encoders
-    # Agent обеспечивает serial ↔ DDS мост
+    micro_ros_chassis = micro_ros_agent('chassis', 'esp32_port')
+    micro_ros_imu     = micro_ros_agent('imu',     'imu_esp32_port')
 
-    micro_ros_agent_chassis = ExecuteProcess(
-        cmd=[
-            'bash', '-c',
-            ['trap "kill 0; exit" TERM INT; '
-             'while true; do '
-             'source ~/microros_ws/install/setup.bash && '
-             'ros2 run micro_ros_agent micro_ros_agent serial '
-             '--dev ', LaunchConfiguration('esp32_port'), ' -b 921600 ',
-             LaunchConfiguration('micro_ros_agent_extra_args'), '; '
-             'echo "[micro_ros_agent chassis] exited, restarting in 2s..."; '
-             'sleep 2; '
-             'done']
-        ],
-        output='screen',
-        sigterm_timeout='5',
-        sigkill_timeout='10',
-    )
+    # ---- Core nodes ------------------------------------------------------------
 
-    # =========================================================================
-    # MICRO-ROS AGENT (связь с ESP32 IMU)
-    # =========================================================================
-    # ESP32 IMU публикует /imu/data (sensor_msgs/Imu)
-
-    micro_ros_agent_imu = ExecuteProcess(
-        cmd=[
-            'bash', '-c',
-            ['trap "kill 0; exit" TERM INT; '
-             'while true; do '
-             'source ~/microros_ws/install/setup.bash && '
-             'ros2 run micro_ros_agent micro_ros_agent serial '
-             '--dev ', LaunchConfiguration('imu_esp32_port'), ' -b 921600 ',
-             LaunchConfiguration('micro_ros_agent_extra_args'), '; '
-             'echo "[micro_ros_agent imu] exited, restarting in 2s..."; '
-             'sleep 2; '
-             'done']
-        ],
-        output='screen',
-        sigterm_timeout='5',
-        sigkill_timeout='10',
-    )
-
-    # =========================================================================
-    # СИСТЕМА УПРАВЛЕНИЯ
-    # =========================================================================
-
-    # Twist Mux - мультиплексор команд скорости
-    twist_mux_node = Node(
+    twist_mux = Node(
         package='twist_mux',
         executable='twist_mux',
         name='twist_mux',
         parameters=[build_twist_mux_parameters()],
-        remappings=[
-            ('cmd_vel_out', TopicContract.FINAL_CMD_VEL),
-        ],
-        output='screen'
+        remappings=[('cmd_vel_out', TopicContract.FINAL_CMD_VEL)],
+        output='screen',
     )
 
-    # Odometry Node - одометрия на основе энкодеров ESP32
-    # TF отключена — её публикует EKF (robot_localization)
     odometry_node = Node(
         package='verter_admin',
         executable='odometry_node',
         name='odometry_node',
-        parameters=[{'publish_tf': False}],
-        output='screen'
+        parameters=[{'publish_tf': False}],   # EKF publishes odom→base_footprint TF
+        output='screen',
     )
 
-    # =========================================================================
-    # ROBOT STATE PUBLISHER (TF из URDF)
-    # =========================================================================
+    ekf_node = Node(
+        package='robot_localization',
+        executable='ekf_node',
+        name='ekf_filter_node',
+        parameters=[ekf_config],
+        output='screen',
+    )
 
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
-        name='robot_state_publisher',
+        parameters=[{'robot_description': robot_description, 'use_sim_time': False}],
         output='screen',
-        parameters=[{
-            'robot_description': robot_description,
-            'use_sim_time': False
-        }]
     )
 
-    # =========================================================================
-    # СЕНСОРЫ
-    # =========================================================================
+    # ---- LiDAR (delay 1 s to let serial devices settle) -----------------------
 
-    # RPLiDAR A1M8 - публикует в /scan_raw (до фильтрации)
-    # Задержка 3с + respawn при падении (USB иногда не готов при старте)
-    rplidar_node = TimerAction(
-        period=3.0,
+    rplidar = TimerAction(
+        period=1.0,
         actions=[
             Node(
                 package='rplidar_ros',
                 executable='rplidar_node',
                 name='rplidar_node',
                 parameters=[{
-                    'serial_port': LaunchConfiguration('lidar_port'),
-                    'frame_id': 'lidar_link',
-                    'scan_mode': 'Express',
+                    'serial_port':     LaunchConfiguration('lidar_port'),
+                    'frame_id':        'lidar_link',
+                    'scan_mode':       'Express',   # ~10 Hz on A1M8
                     'serial_baudrate': 115200,
-                    'inverted': False,
+                    'inverted':        False,
                     'angle_compensate': True,
                 }],
-                remappings=[
-                    ('scan', '/scan_raw'),
-                ],
+                remappings=[('scan', '/scan_raw')],
                 respawn=True,
                 respawn_delay=5.0,
                 output='screen',
@@ -212,89 +145,39 @@ def generate_launch_description():
         ],
     )
 
-    # Laser Filter - фильтрует задний сектор (корпус робота)
-    laser_filter_node = Node(
+    laser_filter = Node(
         package='laser_filters',
         executable='scan_to_scan_filter_chain',
         name='laser_filter',
-        parameters=[laser_filter_config],
-        remappings=[
-            ('scan', '/scan_raw'),
-            ('scan_filtered', '/scan'),
-        ],
-        output='screen'
-    )
-
-    # Range Converter - конвертирует Float32MultiArray от ESP32 в 7x Range
-    # Ультразвук используется в navigation.launch.py для Nav2, тут только для мониторинга
-    range_converter_node = Node(
-        package='verter_admin',
-        executable='range_converter_node',
-        name='range_converter_node',
-        output='screen'
-    )
-
-    # =========================================================================
-    # EKF (SENSOR FUSION: энкодеры + IMU)
-    # =========================================================================
-    # Объединяет данные энкодеров (/odom) и IMU (/imu/data)
-    # Публикует улучшенную одометрию и TF odom -> base_footprint
-
-    ekf_node = Node(
-        package='robot_localization',
-        executable='ekf_node',
-        name='ekf_filter_node',
+        parameters=[laser_filter_cfg],
+        remappings=[('scan', '/scan_raw'), ('scan_filtered', '/scan')],
         output='screen',
-        parameters=[ekf_config],
     )
 
-    # =========================================================================
-    # SLAM TOOLBOX
-    # =========================================================================
+    # ---- SLAM Toolbox ----------------------------------------------------------
 
-    slam_toolbox_node = Node(
+    slam_toolbox = Node(
         package='slam_toolbox',
         executable='async_slam_toolbox_node',
         name='slam_toolbox',
+        parameters=[slam_params_file, {'use_sim_time': False}],
         output='screen',
-        parameters=[
-            slam_params_file,
-            {'use_sim_time': False}
-        ]
     )
 
-    # =========================================================================
-    # LAUNCH DESCRIPTION
-    # =========================================================================
+    # ---- Launch description ----------------------------------------------------
 
     return LaunchDescription([
-        # Аргументы
-        lidar_port_arg,
         esp32_port_arg,
-        imu_esp32_port_arg,
-        micro_ros_agent_extra_args_arg,
-
-        # micro-ROS Agents
-        micro_ros_agent_chassis,
-        micro_ros_agent_imu,
-
-        # Система управления
-        twist_mux_node,
+        imu_port_arg,
+        lidar_port_arg,
+        agent_extra_arg,
+        micro_ros_chassis,
+        micro_ros_imu,
+        twist_mux,
         odometry_node,
-
-        # Sensor Fusion (EKF)
         ekf_node,
-
-        # TF
         robot_state_publisher,
-
-        # Сенсоры
-        rplidar_node,
-        laser_filter_node,
-
-        # Ультразвуковые датчики (ESP32 → Range)
-        range_converter_node,
-
-        # SLAM
-        slam_toolbox_node,
+        rplidar,
+        laser_filter,
+        slam_toolbox,
     ])

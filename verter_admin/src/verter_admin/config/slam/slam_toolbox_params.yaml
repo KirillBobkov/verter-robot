@@ -1,152 +1,78 @@
-# SLAM Toolbox Configuration for Verter Robot
+# SLAM Toolbox — async online mapping
 #
-# Robot parameters (calibrated):
-# - Wheel base: 0.374m (расстояние между колёсами)
-# - Wheel circumference: 0.59m (длина окружности колеса)
-# - Max velocity: 0.5 m/s
-# - Differential drive with encoder-based odometry
+# Robot:   Verter differential drive
+# LiDAR:   RPLiDAR A1M8 in Express mode (~10 Hz)
+# Odom:    Wheel encoders via odometry_node → EKF → /odometry/filtered
+# Scan:    /scan (laser_filter, front 180°, 0.20–6.0 m)
 #
-# Sensors:
-# - RPLiDAR A1M8: ~5.5 Hz, 360° (фильтруется до передних 180°)
-#   При 0.3 м/с робот сдвигается на ~5 см за один скан — motion distortion.
-#   Рекомендуемая скорость маппинга: 0.10–0.15 м/с.
-# - 7x HC-SR04 ultrasonic sensors (не используются SLAM)
+# Scan intake rate (Express @ 10 Hz, mapping speed ≤ 0.15 m/s):
+#   robot moves ~1.5 cm per scan  →  process every 3 cm / ~1.7°
 #
-# Рекомендации по маппингу:
-# - Линейная скорость: 0.10–0.15 м/с (меньше motion distortion)
-# - Повороты: медленно, ~0.2–0.3 рад/с (чтобы matcher успевал)
-# - Тупики: заезжать медленно, разворачиваться ПЛАВНО (не на месте)
-#   Лучше трёхточечный разворот чем вращение на месте — даёт больше
-#   промежуточных сканов для matcher.
-#
-# Frames:
-# - Scan topic: /scan (from laser_filter, передняя 180°)
-# - Base frame: base_footprint
-# - Odom frame: odom
-# - Lidar frame: lidar_link
+# Frames:  map → odom handled by SLAM toolbox (via /tf)
+#          odom → base_footprint published by EKF
+#          base_footprint → lidar_link from robot_state_publisher
 
 slam_toolbox:
   ros__parameters:
 
-    # ROS Parameters
-    odom_frame: odom
-    map_frame: map
-    base_frame: base_footprint
-    scan_topic: /scan
-    use_map_saver: true
-    mode: mapping  # Options: mapping, localization
-
-    # Map saving parameters
-    # Start from an empty map on boot; maps are saved explicitly.
-    map_file_name: ""
-    map_start_pose: [0.0, 0.0, 0.0]  # x, y, yaw
-
-    # Debugging
-    debug_logging: false
-    throttle_scans: 1  # Process every N scans (1 = all scans)
-
-    # TF Parameters
-    transform_publish_period: 0.05  # 20 Hz
-    tf_buffer_duration: 30.0
-    transform_timeout: 0.5
-    use_sim_time: false
-
-    # General Parameters
-    stack_size_to_use: 40000000
-
-    # ========================================================================
-    # КОГДА ОБНОВЛЯТЬ КАРТУ
-    # ========================================================================
-    # Реже = качественнее. Каждое обновление — это один скан, вставленный в карту.
-    # Шумный скан (motion distortion) портит карту.
-    # При 0.15 м/с за 0.15м робот двигается ~1с = ~5 сканов. Берём лучший.
-    minimum_travel_distance: 0.15  # Обновлять после 15 см (было 5 см — слишком часто)
-    minimum_travel_heading: 0.08   # Обновлять после ~4.6° поворота (было 8.5°).
-                                   # Чаще обновлять при вращении = matcher получает
-                                   # больше промежуточных сканов и не теряет угол.
-    map_update_interval: 2.0       # Публикация карты каждые 2с (было 1с)
-
-    # ========================================================================
-    # SCAN MATCHING — сопоставление сканов
-    # ========================================================================
-    scan_buffer_size: 10
-    scan_buffer_maximum_scan_distance: 10.0
-    link_match_minimum_response_fine: 0.1
-    link_scan_maximum_distance: 1.5
-
-    # ========================================================================
-    # CORRELATION — поиск совпадений между сканами
-    # ========================================================================
-    # search_space_dimension: область поиска (метры). Больше = лучше находит
-    # при большом дрифте, но дольше и больше шанс ложного совпадения.
-    # smear_deviation: размытие при сравнении. Меньше = строже, точнее стены.
-    correlation_search_space_dimension: 0.5    # Было 0.3 — увеличиваем для компенсации дрифта
-    correlation_search_space_resolution: 0.01
-    correlation_search_space_smear_deviation: 0.03  # Было 0.05 — строже, тоньше стены
-
-    # ========================================================================
-    # ДОВЕРИЕ: одометрия vs scan matching
-    # ========================================================================
-    # distance_variance_penalty: больше = больше доверие одометрии по расстоянию
-    # angle_variance_penalty: больше = больше доверие одометрии по углу
-    #
-    # Энкодеры дают хорошую линейную одометрию (откалиброваны), но yaw дрифтит.
-    # Поэтому: доверяем одометрии по дистанции, но scan matching по углу.
-    distance_variance_penalty: 0.8   # Было 0.5 — больше доверяем энкодерам по расстоянию
-    angle_variance_penalty: 0.3      # Было 0.6 — ещё меньше доверяем одометрии по углу.
-                                     # При разворотах одометрия накапливает ошибку,
-                                     # scan matching должен быть главным арбитром по yaw.
-
-    # ========================================================================
-    # ANGULAR SEARCH — поиск правильного угла при scan matching
-    # ========================================================================
-    # coarse_search_angle_offset: макс. угол поиска (рад). При развороте в тупике
-    # ошибка одометрии может накопиться до 40-60°. Было 0.349 (20°) — matcher
-    # терял ориентацию. Теперь 1.047 (60°) — покрывает даже худший случай.
-    # coarse_angle_resolution: шаг поиска. 0.0349 (2°) → 60 шагов при ±60°.
-    # На Jetson Orin Nano 6 cores это OK.
-    fine_search_angle_offset: 0.00349     # ~0.2° — точная подгонка
-    coarse_search_angle_offset: 1.047     # 60° (было 20°) — широкий поиск при развороте
-    coarse_angle_resolution: 0.0349       # 2° шаг грубого поиска
-    minimum_angle_penalty: 0.9
-    minimum_distance_penalty: 0.5
-    use_response_expansion: true
-
-    # ========================================================================
-    # LOOP CLOSURE — замыкание петель
-    # ========================================================================
-    # Когда робот возвращается в ранее посещённое место, SLAM корректирует
-    # всю карту. Это главный способ убрать накопленную ошибку.
-    do_loop_closing: true
-    loop_search_maximum_distance: 3.0
-    loop_match_minimum_chain_size: 6     # Было 10 — быстрее срабатывает loop closure
-    loop_match_maximum_variance_coarse: 3.0
-    loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine: 0.45
-
-    # Loop closure search space
-    loop_search_space_dimension: 8.0
-    loop_search_space_resolution: 0.05
-    loop_search_space_smear_deviation: 0.03
-
-    # ========================================================================
-    # ЛИДАР (RPLiDAR A1M8)
-    # ========================================================================
-    # 5.5 Hz, передняя 180° после laser_filter
-    # При 0.15 м/с motion distortion = ~2.7 см за скан (приемлемо)
-    # При 0.30 м/с motion distortion = ~5.4 см за скан (стены двоятся)
-    minimum_time_interval: 0.01
-    max_laser_range: 6.0
-    minimum_range: 0.20
-    range_threshold: 5.5
-
-    # ========================================================================
-    # SOLVER (Jetson Orin Nano, 6 cores)
-    # ========================================================================
+    # ---- Solver ----------------------------------------------------------------
     solver_plugin: solver_plugins::CeresSolver
     ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
     ceres_trust_strategy: LEVENBERG_MARQUARDT
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
-    num_threads: 6
+
+    # ---- Mode / frames ---------------------------------------------------------
+    mode: mapping
+    odom_frame:  odom
+    map_frame:   map
+    base_frame:  base_footprint
+    scan_topic:  /scan
+    use_map_saver: true
+
+    # ---- Map -------------------------------------------------------------------
+    resolution: 0.05           # 5 cm/cell
+    max_laser_range: 5.5       # slightly below laser_filter upper (6.0 m)
+    map_update_interval: 5.0   # seconds between map saves
+
+    # ---- Scan intake -----------------------------------------------------------
+    # At ≤ 0.15 m/s and 10 Hz:  robot moves ~1.5 cm per scan.
+    # Process a scan every 3 cm of travel or ~1.7° of rotation.
+    minimum_travel_distance: 0.03   # m
+    minimum_travel_heading:  0.03   # rad
+    minimum_time_interval:   0.05   # s  (cap at 20 Hz to avoid overloading CPU)
+
+    # ---- Scan buffer (for pose-graph linking) -----------------------------------
+    scan_buffer_size: 10
+    scan_buffer_maximum_scan_distance: 5.5
+
+    # ---- Scan matching ---------------------------------------------------------
+    use_scan_matching:   true
+    use_scan_barycenter: true
+    minimum_score: 0.5          # reject scans that match poorly (default 0.0 → too loose)
+
+    # ---- Scan linker (consecutive scan pair quality) ---------------------------
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 1.5
+
+    # ---- Loop closure ----------------------------------------------------------
+    do_loop_closure: true
+    loop_search_space_dimension: 8.0
+    loop_match_search_maximum_distance: 4.0
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_minimum_response_fine:   0.45
+
+    # ---- Pose graph ------------------------------------------------------------
+    distance_penalty_gain: 0.5
+    angle_penalty_gain:    1.0
+
+    # ---- TF / timing -----------------------------------------------------------
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0
+
+    # ---- Runtime ---------------------------------------------------------------
+    use_multicore: true
+    stack_size_to_use: 40000000
+    enable_interactive_mode: true   # allows pausing/resuming from RViz
+    debug_logging: false

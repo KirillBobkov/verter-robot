@@ -1,608 +1,156 @@
 #!/usr/bin/env python3
+"""ROS 2 adapter: /wheel_encoders → /odom + TF (odom → base_footprint).
 
-"""ROS adapter for odometry use-case."""
+Thin wrapper around ComputeOdometry.  All odometry math lives in the
+application/domain layers; this node handles only ROS message I/O.
 
-from dataclasses import dataclass, replace
+Published topics
+  /odom  (nav_msgs/Odometry, 50 Hz)
+
+Broadcast TF
+  odom → base_footprint  (50 Hz, disabled with parameter publish_tf:=false)
+
+Subscribed topics
+  /wheel_encoders  (std_msgs/Int64MultiArray, BEST_EFFORT)
+"""
+
 import math
-import time
 
 import rclpy
-from geometry_msgs.msg import Quaternion, TransformStamped, Twist
-from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Odometry
 from std_msgs.msg import Int64MultiArray
-from tf2_ros import TransformBroadcaster
-from verter_admin.control.application import ComputeOdometry
-from verter_admin.control.domain import OdometryParameters, OdometrySource
+import tf2_ros
+
+from verter_admin.control.application.compute_odometry import ComputeOdometry
+from verter_admin.control.domain.odometry_policy import OdometryParameters
+
+# Pose and twist covariance matrices (diagonal 6×6, row-major).
+# encoder_fresh=True  → small uncertainty (trust odometry).
+# encoder_fresh=False → large uncertainty (EKF falls back to scan matching).
+_SMALL = 1e-4
+_LARGE = 0.5
+_INF   = 1e6  # unused degrees of freedom (z, roll, pitch)
 
 
-@dataclass(frozen=True)
-class EncoderTelemetry:
-    """Decoded debug payload from /wheel_encoders."""
+def _pose_cov(fresh: bool) -> list[float]:
+    s = _SMALL if fresh else _LARGE
+    return [
+        s,    0,    0,    0,    0,    0,
+        0,    s,    0,    0,    0,    0,
+        0,    0, _INF,    0,    0,    0,
+        0,    0,    0, _INF,    0,    0,
+        0,    0,    0,    0, _INF,    0,
+        0,    0,    0,    0,    0,    s,
+    ]
 
-    payload_len: int
-    left_pwm: int | None = None
-    right_pwm: int | None = None
-    left_velocity_mps: float | None = None
-    right_velocity_mps: float | None = None
-    loop_dt_ms: int | None = None
-    read_left_ms: int | None = None
-    read_right_ms: int | None = None
-    spin_ms: int | None = None
-    prev_publish_ms: int | None = None
-    sequence: int | None = None
-    boot_id: int | None = None
-    reset_reason: int | None = None
-    spin_rc: int | None = None
-    publish_rc: int | None = None
-    transport_write_drop_count: int | None = None
-    transport_short_write_count: int | None = None
-    transport_last_available: int | None = None
-    transport_last_required: int | None = None
-    spin_error_count: int | None = None
-    publish_error_count: int | None = None
-    left_i2c_tx_fail_count: int | None = None
-    left_i2c_short_read_count: int | None = None
-    right_i2c_tx_fail_count: int | None = None
-    right_i2c_short_read_count: int | None = None
-    encoder_jump_reject_count: int | None = None
-    long_loop_count: int | None = None
-    max_loop_dt_ms: int | None = None
-    cmd_timeout_stop_count: int | None = None
-    cmd_age_ms: int | None = None
-    free_heap_bytes: int | None = None
-    min_free_heap_bytes: int | None = None
-    velocity_mode: bool | None = None
+
+def _twist_cov(fresh: bool) -> list[float]:
+    s = _SMALL if fresh else _LARGE
+    return [
+        s,    0,    0,    0,    0,    0,
+        0, _INF,    0,    0,    0,    0,
+        0,    0, _INF,    0,    0,    0,
+        0,    0,    0, _INF,    0,    0,
+        0,    0,    0,    0, _INF,    0,
+        0,    0,    0,    0,    0,    s,
+    ]
 
 
 class OdometryNode(Node):
-    """Publishes /odom (+ optional TF) from encoder or cmd_vel fallback."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__('odometry_node')
 
         self.declare_parameter('publish_tf', True)
-        self.publish_tf = self.get_parameter('publish_tf').value
+        self._publish_tf: bool = self.get_parameter('publish_tf').value
 
-        self._params = OdometryParameters()
-        self.declare_parameter('encoder_timeout', self._params.encoder_timeout)
-        self.declare_parameter('encoder_warn_gap', 0.2)
-        self._params = replace(
-            self._params,
-            encoder_timeout=float(self.get_parameter('encoder_timeout').value),
-        )
-        self._encoder_warn_gap = float(self.get_parameter('encoder_warn_gap').value)
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+        self._odometry = ComputeOdometry(OdometryParameters(), now_sec)
 
-        now_sec = time.time()
-        self._odometry = ComputeOdometry(self._params, now_sec)
-        self._last_log_time = now_sec
-        self._last_encoder_host_time: float | None = None
-        self._last_encoder_device_time: float | None = None
-        self._last_encoder_telemetry: EncoderTelemetry | None = None
-        self._last_encoder_seq: int | None = None
-        self._last_encoder_boot_id: int | None = None
-        self._last_encoder_issue_cause: str | None = None
-        self._last_raw_left_steps: int | None = None
-        self._last_raw_right_steps: int | None = None
-        self._encoder_timeout_count = 0
-        self._encoder_rare_packet_count = 0
-        self._encoder_seq_gap_total = 0
-        self._encoder_restart_count = 0
-        self._logged_legacy_encoder_format = False
-
-        self.odom_publisher = self.create_publisher(Odometry, '/odom', 10)
-        self.tf_broadcaster = TransformBroadcaster(self)
-
-        # BEST_EFFORT — совпадает с ESP32 publisher (sensor_data profile).
-        # RELIABLE на serial micro-ROS блокирует ESP32 publish на ~1с при CPU load.
-        wheel_encoders_qos = QoSProfile(
-            history=HistoryPolicy.KEEP_LAST,
-            depth=5,
+        # Match the BEST_EFFORT QoS used by the ESP32 publisher.
+        sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
         )
-        self.create_subscription(Twist, '/cmd_vel', self.cmd_vel_callback, 10)
-        self.create_subscription(
-            Int64MultiArray,
-            '/wheel_encoders',
-            self.encoder_callback,
-            wheel_encoders_qos,
+        self._enc_sub = self.create_subscription(
+            Int64MultiArray, '/wheel_encoders', self._on_encoders, sensor_qos
         )
 
-        update_frequency = 50.0
-        self.create_timer(1.0 / update_frequency, self.update_odometry_callback)
+        self._odom_pub = self.create_publisher(Odometry, '/odom', 10)
 
-        self.get_logger().info(
-            f'Одометрия: /odom @ {update_frequency}Hz, '
-            f'encoder_timeout={self._params.encoder_timeout:.1f}s, '
-            f'TF={"on" if self.publish_tf else "off"}'
-        )
+        if self._publish_tf:
+            self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
-    def cmd_vel_callback(self, msg: Twist):
-        event = self._odometry.on_cmd_vel(float(msg.linear.x), float(msg.angular.z))
-        if event.movement_started:
-            self.get_logger().info(
-                f'[MOVE] start vx={msg.linear.x:.3f}, vth={msg.angular.z:.3f}'
-            )
-        elif event.movement_stopped:
-            self.get_logger().info('[MOVE] stop')
+        # 50 Hz publication timer
+        self._timer = self.create_timer(0.02, self._on_tick)
 
-    def encoder_callback(self, msg: Int64MultiArray):
-        if len(msg.data) < 3:
+    # ------------------------------------------------------------------
+
+    def _on_encoders(self, msg: Int64MultiArray) -> None:
+        if len(msg.data) < 2:
             return
+        now_sec = self.get_clock().now().nanoseconds / 1e9
+        self._odometry.on_encoder(int(msg.data[0]), int(msg.data[1]), now_sec)
 
-        now_sec = time.time()
-        device_stamp_sec = float(msg.data[2]) / 1000.0
-        telemetry = self._parse_encoder_telemetry(msg)
-        previous_telemetry = self._last_encoder_telemetry
-        left_steps = int(msg.data[0])
-        right_steps = int(msg.data[1])
-        raw_delta_left_steps = None
-        raw_delta_right_steps = None
-        if self._last_raw_left_steps is not None:
-            raw_delta_left_steps = left_steps - self._last_raw_left_steps
-        if self._last_raw_right_steps is not None:
-            raw_delta_right_steps = right_steps - self._last_raw_right_steps
-        host_gap = None
-        device_gap = None
+    def _on_tick(self) -> None:
+        now = self.get_clock().now()
+        self._odometry.on_tick(now.nanoseconds / 1e9)
+        self._publish(now)
 
-        if self._last_encoder_host_time is not None:
-            host_gap = now_sec - self._last_encoder_host_time
-        if self._last_encoder_device_time is not None and device_stamp_sec >= self._last_encoder_device_time:
-            device_gap = device_stamp_sec - self._last_encoder_device_time
+    def _publish(self, now: rclpy.time.Time) -> None:
+        snap = self._odometry.snapshot()
 
-        seq_gap = self._track_encoder_stream(
-            telemetry,
-            host_gap,
-            device_gap,
-            previous_telemetry=previous_telemetry,
-        )
-        issue_cause = self._infer_encoder_issue_cause(
-            telemetry,
-            previous_telemetry,
-            seq_gap=seq_gap,
-            host_gap=host_gap,
-            device_gap=device_gap,
-        )
-        if issue_cause is not None:
-            self._last_encoder_issue_cause = issue_cause
+        # Yaw → quaternion (2-D robot: roll=0, pitch=0)
+        half = snap.theta * 0.5
+        qw, qx, qy, qz = math.cos(half), 0.0, 0.0, math.sin(half)
 
-        event = self._odometry.on_encoder(
-            left_steps=left_steps,
-            right_steps=right_steps,
-            now_sec=now_sec,
-        )
+        odom = Odometry()
+        odom.header.stamp    = now.to_msg()
+        odom.header.frame_id = 'odom'
+        odom.child_frame_id  = 'base_footprint'
 
-        if event.switched_to_encoder:
-            self.get_logger().info('Переключение на энкодерную одометрию (closed-loop)')
-        elif event.restored_encoder:
-            suffix = self._format_encoder_gap_suffix(
-                host_gap,
-                device_gap,
-                telemetry,
-                previous_telemetry=previous_telemetry,
-                seq_gap=seq_gap,
-                cause=issue_cause,
-            )
-            self.get_logger().info(f'Восстановление энкодерной одометрии (closed-loop{suffix})')
+        odom.pose.pose.position.x    = snap.x
+        odom.pose.pose.position.y    = snap.y
+        odom.pose.pose.orientation.w = qw
+        odom.pose.pose.orientation.x = qx
+        odom.pose.pose.orientation.y = qy
+        odom.pose.pose.orientation.z = qz
 
-        if host_gap is not None and host_gap > self._encoder_warn_gap:
-            self._encoder_rare_packet_count += 1
-            suffix = self._format_encoder_gap_suffix(
-                host_gap,
-                device_gap,
-                telemetry,
-                previous_telemetry=previous_telemetry,
-                seq_gap=seq_gap,
-                cause=issue_cause,
-            )
-            self.get_logger().warn(f'Редкий пакет /wheel_encoders{suffix}')
+        odom.twist.twist.linear.x  = snap.vx
+        odom.twist.twist.angular.z = snap.vth
 
-        self._last_encoder_host_time = now_sec
-        self._last_encoder_device_time = device_stamp_sec
-        self._last_encoder_telemetry = telemetry
-        self._last_raw_left_steps = left_steps
-        self._last_raw_right_steps = right_steps
+        odom.pose.covariance  = _pose_cov(snap.encoder_fresh)
+        odom.twist.covariance = _twist_cov(snap.encoder_fresh)
 
-    def update_odometry_callback(self):
-        event = self._odometry.on_tick(now_sec=time.time())
-        if event.switched_to_cmd_vel:
-            self._encoder_timeout_count += 1
-            suffix = self._format_timeout_suffix()
-            self.get_logger().warn(
-                'Таймаут данных энкодеров - переключение на cmd_vel (open-loop); '
-                f'gap={event.encoder_gap_sec:.3f}s{suffix}'
-            )
-        if event.large_dt:
-            self.get_logger().warn('Большой временной интервал: >1.000 сек. Сбрасываем.')
+        self._odom_pub.publish(odom)
 
-        self._publish_odometry()
-        if self.publish_tf:
-            self._publish_transform()
-
-    def _publish_odometry(self):
-        state = self._odometry.snapshot()
-        is_fallback = state.source == OdometrySource.CMD_VEL
-
-        # During CMD_VEL fallback position is frozen — inflate covariance so
-        # EKF reduces trust in odometry and defers to scan matching instead.
-        pose_xy_cov = 5.0 if is_fallback else 0.05
-        pose_yaw_cov = 5.0 if is_fallback else 0.15
-
-        odom_msg = Odometry()
-        odom_msg.header.stamp = self.get_clock().now().to_msg()
-        odom_msg.header.frame_id = 'odom'
-        odom_msg.child_frame_id = 'base_footprint'
-
-        odom_msg.pose.pose.position.x = state.x
-        odom_msg.pose.pose.position.y = state.y
-        odom_msg.pose.pose.position.z = 0.0
-        odom_msg.pose.pose.orientation = self._euler_to_quaternion(0.0, 0.0, state.theta)
-
-        odom_msg.pose.covariance = [
-            pose_xy_cov, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, pose_xy_cov, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 1e6, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 1e6, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 1e6, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, pose_yaw_cov,
-        ]
-
-        odom_msg.twist.twist.linear.x = state.vx
-        odom_msg.twist.twist.linear.y = state.vy
-        odom_msg.twist.twist.linear.z = 0.0
-        odom_msg.twist.twist.angular.x = 0.0
-        odom_msg.twist.twist.angular.y = 0.0
-        odom_msg.twist.twist.angular.z = state.vth
-
-        odom_msg.twist.covariance = [
-            0.05, 0.0, 0.0, 0.0, 0.0, 0.0,
-            0.0, 1e6, 0.0, 0.0, 0.0, 0.0,
-            0.0, 0.0, 1e6, 0.0, 0.0, 0.0,
-            0.0, 0.0, 0.0, 1e6, 0.0, 0.0,
-            0.0, 0.0, 0.0, 0.0, 1e6, 0.0,
-            0.0, 0.0, 0.0, 0.0, 0.0, 0.1,
-        ]
-
-        self.odom_publisher.publish(odom_msg)
-
-        if state.current_time - self._last_log_time > 1.0:
-            source_label = '[ENC]' if state.source == OdometrySource.ENCODER else '[CMD]'
-            self.get_logger().info(
-                f'{source_label} Позиция: x={state.x:.3f}м, y={state.y:.3f}м, '
-                f'θ={math.degrees(state.theta):.1f}° | '
-                f'Скорость: {state.vx:.2f}м/с, {math.degrees(state.vth):.1f}°/с'
-            )
-            self._last_log_time = state.current_time
-
-    def _publish_transform(self):
-        state = self._odometry.snapshot()
-
-        transform = TransformStamped()
-        transform.header.stamp = self.get_clock().now().to_msg()
-        transform.header.frame_id = 'odom'
-        transform.child_frame_id = 'base_footprint'
-        transform.transform.translation.x = state.x
-        transform.transform.translation.y = state.y
-        transform.transform.translation.z = 0.0
-        transform.transform.rotation = self._euler_to_quaternion(0.0, 0.0, state.theta)
-        self.tf_broadcaster.sendTransform(transform)
-
-    def _parse_encoder_telemetry(self, msg: Int64MultiArray) -> EncoderTelemetry:
-        payload_len = len(msg.data)
-        velocity_mode_raw = self._msg_int(msg.data, 34)
-        telemetry = EncoderTelemetry(
-            payload_len=payload_len,
-            left_pwm=self._msg_int(msg.data, 3),
-            right_pwm=self._msg_int(msg.data, 4),
-            left_velocity_mps=self._msg_velocity(msg.data, 5),
-            right_velocity_mps=self._msg_velocity(msg.data, 6),
-            loop_dt_ms=self._msg_int(msg.data, 7),
-            read_left_ms=self._msg_int(msg.data, 8),
-            read_right_ms=self._msg_int(msg.data, 9),
-            spin_ms=self._msg_int(msg.data, 10),
-            prev_publish_ms=self._msg_int(msg.data, 11),
-        )
-
-        if payload_len < 35:
-            if not self._logged_legacy_encoder_format:
-                self.get_logger().warn(
-                    'Получен legacy /wheel_encoders без расширенной диагностики; '
-                    f'payload_len={payload_len}'
-                )
-                self._logged_legacy_encoder_format = True
-            return telemetry
-
-        return EncoderTelemetry(
-            payload_len=payload_len,
-            left_pwm=telemetry.left_pwm,
-            right_pwm=telemetry.right_pwm,
-            left_velocity_mps=telemetry.left_velocity_mps,
-            right_velocity_mps=telemetry.right_velocity_mps,
-            loop_dt_ms=telemetry.loop_dt_ms,
-            read_left_ms=telemetry.read_left_ms,
-            read_right_ms=telemetry.read_right_ms,
-            spin_ms=telemetry.spin_ms,
-            prev_publish_ms=telemetry.prev_publish_ms,
-            sequence=self._msg_int(msg.data, 12),
-            boot_id=self._msg_int(msg.data, 13),
-            reset_reason=self._msg_int(msg.data, 14),
-            spin_rc=self._msg_int(msg.data, 15),
-            publish_rc=self._msg_int(msg.data, 16),
-            transport_write_drop_count=self._msg_int(msg.data, 17),
-            transport_short_write_count=self._msg_int(msg.data, 18),
-            transport_last_available=self._msg_int(msg.data, 19),
-            transport_last_required=self._msg_int(msg.data, 20),
-            spin_error_count=self._msg_int(msg.data, 21),
-            publish_error_count=self._msg_int(msg.data, 22),
-            left_i2c_tx_fail_count=self._msg_int(msg.data, 23),
-            left_i2c_short_read_count=self._msg_int(msg.data, 24),
-            right_i2c_tx_fail_count=self._msg_int(msg.data, 25),
-            right_i2c_short_read_count=self._msg_int(msg.data, 26),
-            encoder_jump_reject_count=self._msg_int(msg.data, 27),
-            long_loop_count=self._msg_int(msg.data, 28),
-            max_loop_dt_ms=self._msg_int(msg.data, 29),
-            cmd_timeout_stop_count=self._msg_int(msg.data, 30),
-            cmd_age_ms=self._msg_int(msg.data, 31),
-            free_heap_bytes=self._msg_int(msg.data, 32),
-            min_free_heap_bytes=self._msg_int(msg.data, 33),
-            velocity_mode=bool(velocity_mode_raw) if velocity_mode_raw is not None else None,
-        )
-
-    def _track_encoder_stream(
-        self,
-        telemetry: EncoderTelemetry,
-        host_gap: float | None,
-        device_gap: float | None,
-        previous_telemetry: EncoderTelemetry | None = None,
-    ) -> int | None:
-        seq_gap = None
-
-        if telemetry.boot_id is not None:
-            if self._last_encoder_boot_id is None:
-                self.get_logger().info(
-                    'Расширенная диагностика /wheel_encoders активна; '
-                    f'boot_id={telemetry.boot_id}, reset_reason={telemetry.reset_reason}, '
-                    f'seq={telemetry.sequence}'
-                )
-            elif telemetry.boot_id != self._last_encoder_boot_id:
-                self._encoder_restart_count += 1
-                suffix = self._format_encoder_gap_suffix(
-                    host_gap,
-                    device_gap,
-                    telemetry,
-                    previous_telemetry=previous_telemetry,
-                    cause='esp_restart',
-                )
-                self.get_logger().error(
-                    'Поток /wheel_encoders перезапущен на ESP32; '
-                    f'boot_id={self._last_encoder_boot_id}->{telemetry.boot_id}{suffix}'
-                )
-                self._last_encoder_seq = None
-                self._last_encoder_issue_cause = 'esp_restart'
-
-        if telemetry.sequence is not None and self._last_encoder_seq is not None:
-            same_boot = telemetry.boot_id is None or telemetry.boot_id == self._last_encoder_boot_id
-            if same_boot and telemetry.sequence > self._last_encoder_seq + 1:
-                seq_gap = telemetry.sequence - self._last_encoder_seq - 1
-                self._encoder_seq_gap_total += seq_gap
-                self._last_encoder_issue_cause = 'packet_drop'
-
-        if telemetry.boot_id is not None:
-            self._last_encoder_boot_id = telemetry.boot_id
-        if telemetry.sequence is not None:
-            self._last_encoder_seq = telemetry.sequence
-        return seq_gap
-
-    def _format_timeout_suffix(self) -> str:
-        parts = [
-            f'timeouts={self._encoder_timeout_count}',
-            f'rare={self._encoder_rare_packet_count}',
-            f'seq_loss={self._encoder_seq_gap_total}',
-            f'restarts={self._encoder_restart_count}',
-        ]
-        if self._last_encoder_issue_cause is not None:
-            parts.insert(0, f'cause={self._last_encoder_issue_cause}')
-        if self._last_encoder_telemetry is not None:
-            if self._last_encoder_telemetry.sequence is not None:
-                parts.append(f'last_seq={self._last_encoder_telemetry.sequence}')
-            if self._last_encoder_telemetry.boot_id is not None:
-                parts.append(f'last_boot={self._last_encoder_telemetry.boot_id}')
-            if self._last_encoder_telemetry.loop_dt_ms is not None:
-                parts.append(f'loop={self._last_encoder_telemetry.loop_dt_ms}ms')
-            if self._last_encoder_telemetry.read_left_ms is not None and self._last_encoder_telemetry.read_left_ms >= 20:
-                parts.append(f'i2c_l={self._last_encoder_telemetry.read_left_ms}ms')
-            if self._last_encoder_telemetry.read_right_ms is not None and self._last_encoder_telemetry.read_right_ms >= 20:
-                parts.append(f'i2c_r={self._last_encoder_telemetry.read_right_ms}ms')
-            if self._last_encoder_telemetry.spin_ms is not None and self._last_encoder_telemetry.spin_ms >= 20:
-                parts.append(f'spin={self._last_encoder_telemetry.spin_ms}ms')
-            if self._last_encoder_telemetry.prev_publish_ms is not None and self._last_encoder_telemetry.prev_publish_ms >= 20:
-                parts.append(f'pub={self._last_encoder_telemetry.prev_publish_ms}ms')
-        return '; ' + ', '.join(parts)
-
-    @staticmethod
-    def _msg_int(data, index: int) -> int | None:
-        if len(data) <= index:
-            return None
-        return int(data[index])
-
-    @staticmethod
-    def _msg_velocity(data, index: int) -> float | None:
-        raw_value = OdometryNode._msg_int(data, index)
-        if raw_value is None:
-            return None
-        return float(raw_value) / 10000.0
-
-    def _counter_delta(
-        self,
-        telemetry: EncoderTelemetry | None,
-        previous_telemetry: EncoderTelemetry | None,
-        attr_name: str,
-    ) -> int | None:
-        if telemetry is None or previous_telemetry is None:
-            return None
-        if (
-            telemetry.boot_id is not None
-            and previous_telemetry.boot_id is not None
-            and telemetry.boot_id != previous_telemetry.boot_id
-        ):
-            return None
-
-        current_value = getattr(telemetry, attr_name)
-        previous_value = getattr(previous_telemetry, attr_name)
-        if current_value is None or previous_value is None:
-            return None
-
-        delta = current_value - previous_value
-        if delta <= 0:
-            return None
-        return delta
-
-    def _infer_encoder_issue_cause(
-        self,
-        telemetry: EncoderTelemetry | None,
-        previous_telemetry: EncoderTelemetry | None,
-        seq_gap: int | None,
-        host_gap: float | None,
-        device_gap: float | None,
-    ) -> str | None:
-        if telemetry is None:
-            return None
-        if seq_gap:
-            return 'packet_drop'
-        if telemetry.read_right_ms is not None and telemetry.read_right_ms >= 900:
-            return 'right_i2c_block'
-        if telemetry.read_left_ms is not None and telemetry.read_left_ms >= 900:
-            return 'left_i2c_block'
-        if (
-            self._counter_delta(telemetry, previous_telemetry, 'right_i2c_tx_fail_count')
-            or self._counter_delta(telemetry, previous_telemetry, 'right_i2c_short_read_count')
-        ):
-            return 'right_i2c_errors'
-        if (
-            self._counter_delta(telemetry, previous_telemetry, 'left_i2c_tx_fail_count')
-            or self._counter_delta(telemetry, previous_telemetry, 'left_i2c_short_read_count')
-        ):
-            return 'left_i2c_errors'
-        if telemetry.spin_ms is not None and telemetry.spin_ms >= 900:
-            return 'executor_block'
-        if telemetry.prev_publish_ms is not None and telemetry.prev_publish_ms >= 900:
-            return 'publish_block'
-        if (
-            self._counter_delta(telemetry, previous_telemetry, 'transport_write_drop_count')
-            or self._counter_delta(telemetry, previous_telemetry, 'transport_short_write_count')
-        ):
-            return 'serial_tx_issue'
-        if (
-            telemetry.loop_dt_ms is not None
-            and telemetry.loop_dt_ms >= 900
-            or self._counter_delta(telemetry, previous_telemetry, 'long_loop_count')
-        ):
-            return 'esp_loop_gap'
-        if host_gap is not None and device_gap is not None and host_gap >= 0.9 and device_gap >= 0.9:
-            return 'esp_or_transport_gap'
-        if host_gap is not None and host_gap >= 0.9:
-            return 'host_gap'
-        return None
-
-    def _format_encoder_gap_suffix(
-        self,
-        host_gap: float | None,
-        device_gap: float | None,
-        telemetry: EncoderTelemetry | None,
-        previous_telemetry: EncoderTelemetry | None = None,
-        seq_gap: int | None = None,
-        cause: str | None = None,
-    ) -> str:
-        parts: list[str] = []
-        if cause is not None:
-            parts.append(f'cause={cause}')
-        if host_gap is not None:
-            parts.append(f'host={host_gap:.3f}s')
-        if device_gap is not None:
-            parts.append(f'esp={device_gap:.3f}s')
-        if telemetry is not None:
-            if telemetry.sequence is not None:
-                parts.append(f'seq={telemetry.sequence}')
-            if seq_gap is not None:
-                parts.append(f'seq_gap={seq_gap}')
-            if telemetry.boot_id is not None:
-                parts.append(f'boot={telemetry.boot_id}')
-            if telemetry.loop_dt_ms is not None:
-                parts.append(f'loop={telemetry.loop_dt_ms}ms')
-            if telemetry.read_left_ms is not None and (
-                telemetry.read_left_ms >= 20 or cause in {'left_i2c_block', 'left_i2c_errors'}
-            ):
-                parts.append(f'i2c_l={telemetry.read_left_ms}ms')
-            if telemetry.read_right_ms is not None and (
-                telemetry.read_right_ms >= 20 or cause in {'right_i2c_block', 'right_i2c_errors'}
-            ):
-                parts.append(f'i2c_r={telemetry.read_right_ms}ms')
-            if telemetry.spin_ms is not None and (
-                telemetry.spin_ms >= 20 or cause == 'executor_block'
-            ):
-                parts.append(f'spin={telemetry.spin_ms}ms')
-            if telemetry.prev_publish_ms is not None and (
-                telemetry.prev_publish_ms >= 20 or cause == 'publish_block'
-            ):
-                parts.append(f'pub={telemetry.prev_publish_ms}ms')
-            if telemetry.max_loop_dt_ms is not None and cause == 'esp_loop_gap':
-                parts.append(f'max_loop={telemetry.max_loop_dt_ms}ms')
-            counter_labels = (
-                ('right_i2c_tx_fail_count', 'i2c_r_tx'),
-                ('right_i2c_short_read_count', 'i2c_r_short'),
-                ('left_i2c_tx_fail_count', 'i2c_l_tx'),
-                ('left_i2c_short_read_count', 'i2c_l_short'),
-                ('transport_write_drop_count', 'tx_drop'),
-                ('transport_short_write_count', 'tx_short'),
-                ('spin_error_count', 'spin_err'),
-                ('publish_error_count', 'pub_err'),
-                ('encoder_jump_reject_count', 'enc_jump'),
-                ('long_loop_count', 'loops'),
-                ('cmd_timeout_stop_count', 'cmd_to'),
-            )
-            for attr_name, label in counter_labels:
-                delta = self._counter_delta(telemetry, previous_telemetry, attr_name)
-                if delta is not None:
-                    parts.append(f'{label}=+{delta}')
-        if not parts:
-            return ''
-        return '; ' + ', '.join(parts)
-
-    @staticmethod
-    def _euler_to_quaternion(roll: float, pitch: float, yaw: float) -> Quaternion:
-        cy = math.cos(yaw * 0.5)
-        sy = math.sin(yaw * 0.5)
-        cp = math.cos(pitch * 0.5)
-        sp = math.sin(pitch * 0.5)
-        cr = math.cos(roll * 0.5)
-        sr = math.sin(roll * 0.5)
-
-        quaternion = Quaternion()
-        quaternion.w = cr * cp * cy + sr * sp * sy
-        quaternion.x = sr * cp * cy - cr * sp * sy
-        quaternion.y = cr * sp * cy + sr * cp * sy
-        quaternion.z = cr * cp * sy - sr * sp * cy
-        return quaternion
-
-    def destroy_node(self):
-        state = self._odometry.snapshot()
-        self.get_logger().info('Завершение работы ноды одометрии')
-        self.get_logger().info(
-            f'Финальная позиция: x={state.x:.3f}м, y={state.y:.3f}м, θ={math.degrees(state.theta):.1f}°'
-        )
-        super().destroy_node()
+        if self._publish_tf:
+            tf = TransformStamped()
+            tf.header.stamp       = now.to_msg()
+            tf.header.frame_id    = 'odom'
+            tf.child_frame_id     = 'base_footprint'
+            tf.transform.translation.x = snap.x
+            tf.transform.translation.y = snap.y
+            tf.transform.rotation.w    = qw
+            tf.transform.rotation.x    = qx
+            tf.transform.rotation.y    = qy
+            tf.transform.rotation.z    = qz
+            self._tf_broadcaster.sendTransform(tf)
 
 
-def main(args=None):
+def main(args: list[str] | None = None) -> None:
     rclpy.init(args=args)
-    odometry_node = OdometryNode()
+    node = OdometryNode()
     try:
-        rclpy.spin(odometry_node)
+        rclpy.spin(node)
     except KeyboardInterrupt:
-        odometry_node.get_logger().info('Прерывание пользователем (Ctrl+C)')
+        pass
     finally:
-        odometry_node.destroy_node()
+        node.destroy_node()
         rclpy.shutdown()
 
 

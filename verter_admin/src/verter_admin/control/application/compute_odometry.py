@@ -1,177 +1,122 @@
-"""Odometry use-case orchestrating domain odometry policy."""
+"""Encoder-based differential drive odometry use-case.
 
-from dataclasses import dataclass
+Clean-slate implementation: pure encoder integration, no cmd_vel fallback,
+no impossible-delta filters (those existed to compensate for firmware I2C bugs
+that are now handled at the firmware level).
+"""
+
+from __future__ import annotations
+
 import math
+from dataclasses import dataclass
 
-from verter_admin.control.domain import (
+from verter_admin.control.domain.odometry_policy import (
     OdometryParameters,
-    OdometrySource,
-    OdometryState,
-    clamp_cmd_velocity,
     compute_encoder_delta,
-    integrate_cmd_vel_pose,
     normalize_angle,
 )
 
 
 @dataclass(frozen=True)
-class OdometryEvent:
-    """Lifecycle and transition markers for adapter logging."""
-
-    movement_started: bool = False
-    movement_stopped: bool = False
-    switched_to_encoder: bool = False
-    restored_encoder: bool = False
-    switched_to_cmd_vel: bool = False
-    large_dt: bool = False
-    encoder_gap_sec: float = 0.0
-
-
-@dataclass(frozen=True)
 class OdometrySnapshot:
-    """Current kinematic state for ROS publication."""
+    """Kinematic state snapshot for ROS publication."""
 
     x: float
     y: float
     theta: float
-    vx: float
-    vy: float
-    vth: float
-    source: OdometrySource
-    current_time: float
+    vx: float        # forward velocity  (m/s)
+    vth: float       # angular velocity  (rad/s)
+    encoder_fresh: bool  # False when encoder timed out → inflate covariance
 
 
 class ComputeOdometry:
-    """Stateful odometry use-case independent from ROS transport."""
+    """Stateful encoder odometry use-case, independent of ROS transport.
 
-    def __init__(self, params: OdometryParameters, now_sec: float):
+    Call sequence every cycle:
+        on_encoder() — when a new /wheel_encoders message arrives
+        on_tick()    — at the publication timer rate (e.g. 50 Hz)
+        snapshot()   — to read the current state for publishing
+    """
+
+    def __init__(self, params: OdometryParameters, now_sec: float) -> None:
         self._params = params
-        self._state = OdometryState(
-            last_time=now_sec,
-            current_time=now_sec,
-            last_encoder_time=now_sec,
+
+        self._x: float = 0.0
+        self._y: float = 0.0
+        self._theta: float = 0.0
+        self._vx: float = 0.0
+        self._vth: float = 0.0
+
+        self._initialized: bool = False
+        self._last_left: int = 0
+        self._last_right: int = 0
+        self._last_enc_sec: float = now_sec
+        self._encoder_fresh: bool = False
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def on_encoder(self, left_steps: int, right_steps: int, now_sec: float) -> None:
+        """Integrate a new encoder reading into the pose estimate."""
+
+        if not self._initialized:
+            self._last_left = left_steps
+            self._last_right = right_steps
+            self._last_enc_sec = now_sec
+            self._initialized = True
+            self._encoder_fresh = True
+            return
+
+        dt = now_sec - self._last_enc_sec
+        if dt <= 0.0:
+            # Duplicate or out-of-order message — ignore silently.
+            return
+
+        delta_left  = left_steps  - self._last_left
+        delta_right = right_steps - self._last_right
+
+        delta_dist, delta_theta = compute_encoder_delta(
+            delta_left, delta_right, self._params
         )
-        self._is_moving = False
 
-    def on_cmd_vel(self, linear_x: float, angular_z: float) -> OdometryEvent:
-        if self._state.source != OdometrySource.ENCODER:
-            self._state.vx, self._state.vth, self._state.vy = clamp_cmd_velocity(
-                linear_x,
-                angular_z,
-                self._params,
-            )
+        # Trapezoidal (mid-point) integration — more accurate than forward Euler
+        avg_theta    = self._theta + delta_theta / 2.0
+        self._x     += delta_dist * math.cos(avg_theta)
+        self._y     += delta_dist * math.sin(avg_theta)
+        self._theta  = normalize_angle(self._theta + delta_theta)
 
-        moving_now = abs(linear_x) > 0.01 or abs(angular_z) > 0.01
-        movement_started = moving_now and not self._is_moving
-        movement_stopped = (not moving_now) and self._is_moving
-        self._is_moving = moving_now
-        return OdometryEvent(
-            movement_started=movement_started,
-            movement_stopped=movement_stopped,
-        )
+        self._vx  = delta_dist  / dt
+        self._vth = delta_theta / dt
 
-    def on_encoder(self, left_steps: int, right_steps: int, now_sec: float) -> OdometryEvent:
-        self._state.last_encoder_time = now_sec
+        self._last_left    = left_steps
+        self._last_right   = right_steps
+        self._last_enc_sec = now_sec
+        self._encoder_fresh = True
 
-        if not self._state.encoder_initialized:
-            self._state.last_left_steps = left_steps
-            self._state.last_right_steps = right_steps
-            self._state.last_encoder_callback_time = now_sec
-            self._state.encoder_initialized = True
-            self._state.source = OdometrySource.ENCODER
-            return OdometryEvent(switched_to_encoder=True)
+    def on_tick(self, now_sec: float) -> None:
+        """Called at the publication timer rate.
 
-        restored_encoder = False
-        if self._state.source != OdometrySource.ENCODER:
-            self._state.source = OdometrySource.ENCODER
-            restored_encoder = True
+        When encoder data stops arriving (I2C hang or disconnected ESP32),
+        velocity is zeroed so the ROS consumer sees a stopped robot.
+        The adapter should inflate covariance when encoder_fresh is False.
+        """
 
-        delta_left = left_steps - int(self._state.last_left_steps)
-        delta_right = right_steps - int(self._state.last_right_steps)
-        dt = now_sec - float(self._state.last_encoder_callback_time)
+        if not self._initialized:
+            return
 
-        if dt <= 0:
-            self._state.last_left_steps = left_steps
-            self._state.last_right_steps = right_steps
-            self._state.last_encoder_callback_time = now_sec
-            return OdometryEvent(restored_encoder=restored_encoder)
-
-        if delta_left == 0 and delta_right == 0:
-            self._state.vx = 0.0
-            self._state.vth = 0.0
-            self._state.vy = 0.0
-            self._state.last_encoder_callback_time = now_sec
-            return OdometryEvent(restored_encoder=restored_encoder)
-
-        delta_distance, delta_theta = compute_encoder_delta(delta_left, delta_right, self._params)
-
-        # Reject physically impossible deltas (defense in depth against
-        # I2C corruption that slipped past the ESP32 filter).
-        max_delta = self._params.max_linear_velocity * max(dt, 0.02) * 1.5
-        if abs(delta_distance) > max_delta or abs(delta_theta) > 1.0:
-            self._state.last_left_steps = left_steps
-            self._state.last_right_steps = right_steps
-            self._state.last_encoder_callback_time = now_sec
-            return OdometryEvent(restored_encoder=restored_encoder)
-
-        avg_theta = self._state.theta + delta_theta / 2.0
-        self._state.x += delta_distance * math.cos(avg_theta)
-        self._state.y += delta_distance * math.sin(avg_theta)
-        self._state.theta = normalize_angle(self._state.theta + delta_theta)
-
-        if dt > 1.0:
-            # Large gaps make instantaneous velocity unreliable, but the
-            # encoder delta still represents real motion and must not be lost.
-            self._state.vx = 0.0
-            self._state.vth = 0.0
-            self._state.vy = 0.0
-        else:
-            self._state.vx = delta_distance / dt
-            self._state.vth = delta_theta / dt
-            self._state.vy = 0.0
-
-        self._state.last_left_steps = left_steps
-        self._state.last_right_steps = right_steps
-        self._state.last_encoder_callback_time = now_sec
-        return OdometryEvent(restored_encoder=restored_encoder)
-
-    def on_tick(self, now_sec: float) -> OdometryEvent:
-        switched_to_cmd_vel = False
-        encoder_gap_sec = 0.0
-        if self._state.source == OdometrySource.ENCODER:
-            encoder_gap_sec = now_sec - self._state.last_encoder_time
-            if encoder_gap_sec > self._params.encoder_timeout:
-                self._state.source = OdometrySource.CMD_VEL
-                switched_to_cmd_vel = True
-
-        dt = now_sec - self._state.last_time
-        large_dt = False
-        if dt > 1.0:
-            dt = 0.02
-            large_dt = True
-
-        # During CMD_VEL fallback: freeze position.
-        # Integrating from cmd_vel would cause double-counting when encoder
-        # returns (encoder delta already captures movement during the gap).
-        # High covariance (published by the ROS adapter) signals EKF to trust
-        # scan matching over odometry while position is frozen.
-
-        self._state.last_time = now_sec
-        self._state.current_time = now_sec
-        return OdometryEvent(
-            switched_to_cmd_vel=switched_to_cmd_vel,
-            large_dt=large_dt,
-            encoder_gap_sec=encoder_gap_sec,
-        )
+        gap = now_sec - self._last_enc_sec
+        if gap > self._params.encoder_timeout:
+            self._encoder_fresh = False
+            self._vx  = 0.0
+            self._vth = 0.0
 
     def snapshot(self) -> OdometrySnapshot:
         return OdometrySnapshot(
-            x=self._state.x,
-            y=self._state.y,
-            theta=self._state.theta,
-            vx=self._state.vx,
-            vy=self._state.vy,
-            vth=self._state.vth,
-            source=self._state.source,
-            current_time=self._state.current_time,
+            x=self._x,
+            y=self._y,
+            theta=self._theta,
+            vx=self._vx,
+            vth=self._vth,
+            encoder_fresh=self._encoder_fresh,
         )
