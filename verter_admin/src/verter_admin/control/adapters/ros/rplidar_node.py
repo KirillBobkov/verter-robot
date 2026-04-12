@@ -16,6 +16,8 @@ Parameters:
   inverted     (bool)  false
 """
 import math
+import os
+import termios
 import threading
 import time
 
@@ -90,11 +92,27 @@ class RPLidarNode(Node):
                     raise RuntimeError(f'Bad scan descriptor: {desc.hex()}')
                 self.get_logger().info('Scan started.')
 
+                # Switch serial fd to VMIN=1, VTIME=0 (blocking kernel read,
+                # no poll/select). Bypasses the tegra-xusb + cp210x poll bug
+                # that prevents pyserial's timeout-based reads from working.
+                attr = termios.tcgetattr(ser.fd)
+                attr[6][termios.VMIN]  = 1
+                attr[6][termios.VTIME] = 0
+                termios.tcsetattr(ser.fd, termios.TCSANOW, attr)
+
                 scan: list = []
                 while self._running and rclpy.ok():
-                    raw = ser.read(5)
-                    if len(raw) < 5:
+                    # os.read() blocks in the kernel until at least 1 byte
+                    # arrives — same mechanism as 'cat /dev/ttyUSB0'.
+                    buf = bytearray()
+                    while len(buf) < 5:
+                        chunk = os.read(ser.fd, 5 - len(buf))
+                        if not chunk:
+                            break
+                        buf.extend(chunk)
+                    if len(buf) < 5:
                         continue
+                    raw = bytes(buf)
 
                     new_scan = bool(raw[0] & 0x01)
                     inv_scan = bool((raw[0] >> 1) & 0x01)
