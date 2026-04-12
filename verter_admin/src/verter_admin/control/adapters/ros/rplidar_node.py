@@ -231,44 +231,35 @@ class RPLidarNode(Node):
                 scan = []
                 last_scan_t = 0.0
                 scan_time = 1.0 / 10.0
-                _pkt_count = 0
-                _new_scan_count = 0
-                _last_log = time.monotonic()
 
                 while self._running and rclpy.ok():
                     new_scan, start_deg, cabins = self._parse_packet(pkt)
-                    _pkt_count += 1
 
                     # Decode previous packet now that we have the next start angle
                     if prev_cabins is not None:
                         pts = self._decode_cabins(prev_cabins, prev_start, start_deg)
                         scan.extend(pts)
 
-                    if new_scan:
-                        _new_scan_count += 1
-                        if scan:
-                            now = time.monotonic()
-                            if last_scan_t > 0.0:
-                                scan_time = now - last_scan_t
-                            last_scan_t = now
-                            self._publish_scan(scan, scan_time)
-                            scan = []
-                        else:
-                            self.get_logger().warn(
-                                f'[DBG] new_scan=True but scan empty (pkt #{_pkt_count})'
-                            )
+                    # Firmware fw=1.29 only sets new_scan flag once at scan start.
+                    # Detect revolution boundary via angle rollover instead:
+                    #   CW rotation  (decreasing angle): small  →  large  (e.g. 10°→350°)
+                    #   CCW rotation (increasing angle): large  →  small  (e.g. 350°→10°)
+                    cw_rollover  = (prev_start is not None
+                                    and prev_start <  90.0 and start_deg > 270.0)
+                    ccw_rollover = (prev_start is not None
+                                    and prev_start > 270.0 and start_deg <  90.0)
+                    revolution_done = new_scan or cw_rollover or ccw_rollover
+
+                    if revolution_done and scan:
+                        now = time.monotonic()
+                        if last_scan_t > 0.0:
+                            scan_time = now - last_scan_t
+                        last_scan_t = now
+                        self._publish_scan(scan, scan_time)
+                        scan = []
 
                     prev_start = start_deg
                     prev_cabins = cabins
-
-                    now = time.monotonic()
-                    if now - _last_log > 2.0:
-                        self.get_logger().info(
-                            f'[DBG] pkts={_pkt_count} new_scans={_new_scan_count}'
-                            f' scan_buf={len(scan)} start={start_deg:.1f}° '
-                            f'b0=0x{pkt[0]:02x} b2b3=0x{pkt[2]:02x}{pkt[3]:02x}'
-                        )
-                        _last_log = now
 
                     # Read next packet via pyserial (avoids tcsetattr flush bug)
                     pkt = ser.read(_PACKET_SIZE)
