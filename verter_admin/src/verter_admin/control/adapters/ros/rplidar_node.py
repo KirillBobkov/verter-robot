@@ -58,41 +58,69 @@ class RPLidarNode(Node):
     # ------------------------------------------------------------------
 
     def _scan_loop(self) -> None:
-        # Import here so ROS node initialises even if library is missing
-        try:
-            from rplidar import RPLidar, RPLidarException  # noqa: F401
-        except ImportError:
-            self.get_logger().fatal(
-                'rplidar-roboticia not installed: pip3 install rplidar-roboticia'
-            )
-            return
-
-        from rplidar import RPLidar
+        import serial
 
         while self._running and rclpy.ok():
-            lidar = None
+            ser = None
             try:
-                self.get_logger().info(f'Connecting to lidar on {self._port} ...')
-                lidar = RPLidar(self._port, baudrate=115200, timeout=3)
-                info = lidar.get_info()
-                health = lidar.get_health()
+                self.get_logger().info(f'Connecting to {self._port} ...')
+                ser = serial.Serial(self._port, 115200, timeout=3)
+
+                # Stop + reset for clean state
+                ser.write(bytes([0xA5, 0x25]))   # STOP
+                time.sleep(0.1)
+                ser.reset_input_buffer()
+                ser.write(bytes([0xA5, 0x40]))   # RESET
+                time.sleep(2.5)
+                ser.reset_input_buffer()
+
+                # Verify connection
+                ser.write(bytes([0xA5, 0x50]))   # GET_DEVICE_INFO
+                resp = ser.read(27)
+                if len(resp) < 27 or resp[0] != 0xA5 or resp[1] != 0x5A:
+                    raise RuntimeError(f'Device info failed: {resp.hex()}')
                 self.get_logger().info(
-                    f'Connected: model={info["model"]} '
-                    f'fw={info["firmware"]} hw={info["hardware"]} '
-                    f'health={health[0]}'
+                    f'Connected: model={resp[7]} fw={resp[9]}.{resp[8]} hw={resp[10]}'
                 )
-                for scan in lidar.iter_scans(scan_type='normal', min_len=15):
-                    if not self._running or not rclpy.ok():
-                        break
-                    self._publish_scan(scan)
+
+                # Start Standard scan
+                ser.write(bytes([0xA5, 0x20]))   # START_SCAN
+                desc = ser.read(7)
+                if len(desc) < 7 or desc[0] != 0xA5 or desc[1] != 0x5A:
+                    raise RuntimeError(f'Bad scan descriptor: {desc.hex()}')
+                self.get_logger().info('Scan started.')
+
+                scan: list = []
+                while self._running and rclpy.ok():
+                    raw = ser.read(5)
+                    if len(raw) < 5:
+                        continue
+
+                    new_scan = bool(raw[0] & 0x01)
+                    inv_scan = bool((raw[0] >> 1) & 0x01)
+                    quality  = raw[0] >> 2
+                    check    = raw[1] & 0x01
+
+                    if new_scan == inv_scan or check != 1:
+                        continue  # malformed packet
+
+                    angle_deg = ((raw[1] >> 1) | (raw[2] << 7)) / 64.0
+                    dist_mm   = (raw[3] | (raw[4] << 8)) / 4.0
+
+                    if new_scan and scan:
+                        self._publish_scan(scan)
+                        scan = []
+                    if quality > 0 and dist_mm > 0:
+                        scan.append((quality, angle_deg, dist_mm))
+
             except Exception as exc:
                 self.get_logger().error(f'Lidar error: {exc!r} — reconnecting in 2 s')
                 time.sleep(2.0)
             finally:
-                if lidar is not None:
+                if ser is not None:
                     try:
-                        lidar.stop()
-                        lidar.disconnect()
+                        ser.write(bytes([0xA5, 0x25]))  # STOP
+                        ser.close()
                     except Exception:
                         pass
 
