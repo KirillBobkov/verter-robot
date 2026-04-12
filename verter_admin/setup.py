@@ -176,6 +176,7 @@ setup(
             'doa_node = verter_admin.doa.doa_node:main',
             'teleop_keyboard = verter_admin.control.adapters.ros.teleop_keyboard:main',
             'calibration_node = verter_admin.calibration.calibration_node:main',
+            'rplidar_node = verter_admin.control.adapters.ros.rplidar_node:main',
             'proximity_safety_node = verter_admin.control.adapters.ros.proximity_safety_node:main',
             'waypoint_manager_node = verter_admin.waypoints.adapters.ros.waypoint_manager_node:main',
             'web_server_node = verter_admin.web.adapters.ros.web_server_node:main'

@@ -122,20 +122,21 @@ def generate_launch_description() -> LaunchDescription:
 
     # ---- LiDAR (delay 1 s to let serial devices settle) -----------------------
 
+    # Python RPLiDAR driver — workaround for tegra-xusb + cp210x poll/select
+    # bug that prevents the C++ rplidar_ros SDK from working on this Jetson.
     rplidar = TimerAction(
-        period=1.0,
+        period=3.0,
         actions=[
             Node(
-                package='rplidar_ros',
+                package='verter_admin',
                 executable='rplidar_node',
                 name='rplidar_node',
                 parameters=[{
-                    'serial_port':     LaunchConfiguration('lidar_port'),
-                    'frame_id':        'lidar_link',
-                    'scan_mode':       'Express',   # ~10 Hz on A1M8
-                    'serial_baudrate': 115200,
-                    'inverted':        False,
-                    'angle_compensate': True,
+                    'serial_port': LaunchConfiguration('lidar_port'),
+                    'frame_id':    'lidar_link',
+                    'range_min':   0.20,
+                    'range_max':   6.0,
+                    'inverted':    False,
                 }],
                 remappings=[('scan', '/scan_raw')],
                 respawn=True,

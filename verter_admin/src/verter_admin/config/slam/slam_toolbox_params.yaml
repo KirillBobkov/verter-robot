@@ -5,8 +5,8 @@
 # Odom:    Wheel encoders via odometry_node → EKF → /odometry/filtered
 # Scan:    /scan (laser_filter, front 180°, 0.20–6.0 m)
 #
-# Scan intake rate (Express @ 10 Hz, mapping speed ≤ 0.15 m/s):
-#   robot moves ~1.5 cm per scan  →  process every 3 cm / ~1.7°
+# Scan intake rate (Express @ ~10 Hz via Python rplidar-roboticia, mapping speed ≤ 0.15 m/s):
+#   robot moves ~1.5 cm per scan  →  process every 5 cm / ~2.9°
 #
 # Frames:  map → odom handled by SLAM toolbox (via /tf)
 #          odom → base_footprint published by EKF
@@ -39,9 +39,9 @@ slam_toolbox:
     # ---- Scan intake -----------------------------------------------------------
     # At ≤ 0.15 m/s and 10 Hz:  robot moves ~1.5 cm per scan.
     # Process a scan every 3 cm of travel or ~1.7° of rotation.
-    minimum_travel_distance: 0.03   # m
-    minimum_travel_heading:  0.03   # rad
-    minimum_time_interval:   0.05   # s  (cap at 20 Hz to avoid overloading CPU)
+    minimum_travel_distance: 0.05   # m  (at 10 Hz, 0.15 m/s → ~1.5 cm/scan → process every ~3 scans)
+    minimum_travel_heading:  0.05   # rad (~2.9°)
+    minimum_time_interval:   0.05   # s  (cap at 20 Hz intake)
 
     # ---- Scan buffer (for pose-graph linking) -----------------------------------
     scan_buffer_size: 10

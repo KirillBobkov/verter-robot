@@ -174,7 +174,6 @@ def generate_launch_description():
                     {
                         'serial_port': LaunchConfiguration('lidar_port'),
                         'frame_id': 'lidar_link',
-                        'scan_mode': 'Express',
                         'serial_baudrate': 115200,
                         'inverted': False,
                         'angle_compensate': True,
