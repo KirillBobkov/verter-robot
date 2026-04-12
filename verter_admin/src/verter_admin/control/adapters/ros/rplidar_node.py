@@ -104,19 +104,14 @@ class RPLidarNode(Node):
                 # the kernel blocks until at least 1 byte arrives (like cat).
                 flags = fcntl.fcntl(ser.fd, fcntl.F_GETFL)
                 fcntl.fcntl(ser.fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
-                new_flags = fcntl.fcntl(ser.fd, fcntl.F_GETFL)
-                self.get_logger().info(
-                    f'O_NONBLOCK cleared: {not bool(new_flags & os.O_NONBLOCK)}'
-                )
                 attr = termios.tcgetattr(ser.fd)
                 attr[6][termios.VMIN]  = 1
                 attr[6][termios.VTIME] = 0
                 termios.tcsetattr(ser.fd, termios.TCSANOW, attr)
 
                 scan: list = []
-                _pkt_total = 0
-                _pkt_malformed = 0
-                _last_log = time.monotonic()
+                _last_scan_t: float = 0.0
+                _scan_time: float = 1.0 / 7.3  # updated dynamically
                 while self._running and rclpy.ok():
                     # os.read() blocks in the kernel until at least 1 byte
                     # arrives — same mechanism as 'cat /dev/ttyUSB0'.
@@ -127,14 +122,6 @@ class RPLidarNode(Node):
                             break
                         buf.extend(chunk)
                     if len(buf) < 5:
-                        _pkt_total += 1  # count empty reads
-                        now = time.monotonic()
-                        if now - _last_log > 3.0:
-                            self.get_logger().warn(
-                                f'[DBG] os.read() returned empty (O_NONBLOCK?)'
-                                f' — spins={_pkt_total}'
-                            )
-                            _last_log = now
                         continue
                     raw = bytes(buf)
 
@@ -142,41 +129,22 @@ class RPLidarNode(Node):
                     inv_scan = bool((raw[0] >> 1) & 0x01)
                     quality  = raw[0] >> 2
                     check    = raw[1] & 0x01
-                    _pkt_total += 1
 
                     if new_scan == inv_scan or check != 1:
-                        _pkt_malformed += 1
-                        now = time.monotonic()
-                        if now - _last_log > 3.0:
-                            self.get_logger().warn(
-                                f'[DBG] {_pkt_total} pkts, {_pkt_malformed} malformed'
-                                f' — raw[0]=0x{raw[0]:02x} raw[1]=0x{raw[1]:02x}'
-                                f' new_scan={new_scan} inv_scan={inv_scan} check={check}'
-                            )
-                            _last_log = now
                         continue  # malformed packet
 
                     angle_deg = ((raw[1] >> 1) | (raw[2] << 7)) / 64.0
                     dist_mm   = (raw[3] | (raw[4] << 8)) / 4.0
 
                     if new_scan and scan:
-                        self.get_logger().info(
-                            f'[DBG] Publishing scan: {len(scan)} pts'
-                            f' (total={_pkt_total}, malformed={_pkt_malformed})'
-                        )
-                        self._publish_scan(scan)
+                        now = time.monotonic()
+                        if _last_scan_t > 0.0:
+                            _scan_time = now - _last_scan_t
+                        _last_scan_t = now
+                        self._publish_scan(scan, _scan_time)
                         scan = []
                     if quality > 0 and dist_mm > 0:
                         scan.append((quality, angle_deg, dist_mm))
-
-                    now = time.monotonic()
-                    if now - _last_log > 3.0:
-                        self.get_logger().info(
-                            f'[DBG] {_pkt_total} pkts, {_pkt_malformed} malformed'
-                            f', scan_buf={len(scan)}, new_scan={new_scan}'
-                            f', q={quality}, d={dist_mm:.1f}mm'
-                        )
-                        _last_log = now
 
             except Exception as exc:
                 self.get_logger().error(f'Lidar error: {exc!r} — reconnecting in 2 s')
@@ -189,7 +157,7 @@ class RPLidarNode(Node):
                     except Exception:
                         pass
 
-    def _publish_scan(self, scan) -> None:
+    def _publish_scan(self, scan, scan_time: float = 1.0 / 7.3) -> None:
         n = self._NUM_BINS
         angle_min = -math.pi
         angle_inc = 2.0 * math.pi / n
@@ -223,7 +191,7 @@ class RPLidarNode(Node):
         msg.angle_max = math.pi - angle_inc
         msg.angle_increment = angle_inc
         msg.time_increment = 0.0
-        msg.scan_time = 1.0 / 5.5  # A1M8 Standard mode
+        msg.scan_time = scan_time
         msg.range_min = self._range_min
         msg.range_max = self._range_max
         msg.ranges = ranges
