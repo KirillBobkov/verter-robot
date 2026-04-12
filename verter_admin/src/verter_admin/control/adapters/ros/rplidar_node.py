@@ -106,6 +106,9 @@ class RPLidarNode(Node):
                 termios.tcsetattr(ser.fd, termios.TCSANOW, attr)
 
                 scan: list = []
+                _pkt_total = 0
+                _pkt_malformed = 0
+                _last_log = time.monotonic()
                 while self._running and rclpy.ok():
                     # os.read() blocks in the kernel until at least 1 byte
                     # arrives — same mechanism as 'cat /dev/ttyUSB0'.
@@ -123,18 +126,41 @@ class RPLidarNode(Node):
                     inv_scan = bool((raw[0] >> 1) & 0x01)
                     quality  = raw[0] >> 2
                     check    = raw[1] & 0x01
+                    _pkt_total += 1
 
                     if new_scan == inv_scan or check != 1:
+                        _pkt_malformed += 1
+                        now = time.monotonic()
+                        if now - _last_log > 3.0:
+                            self.get_logger().warn(
+                                f'[DBG] {_pkt_total} pkts, {_pkt_malformed} malformed'
+                                f' — raw[0]=0x{raw[0]:02x} raw[1]=0x{raw[1]:02x}'
+                                f' new_scan={new_scan} inv_scan={inv_scan} check={check}'
+                            )
+                            _last_log = now
                         continue  # malformed packet
 
                     angle_deg = ((raw[1] >> 1) | (raw[2] << 7)) / 64.0
                     dist_mm   = (raw[3] | (raw[4] << 8)) / 4.0
 
                     if new_scan and scan:
+                        self.get_logger().info(
+                            f'[DBG] Publishing scan: {len(scan)} pts'
+                            f' (total={_pkt_total}, malformed={_pkt_malformed})'
+                        )
                         self._publish_scan(scan)
                         scan = []
                     if quality > 0 and dist_mm > 0:
                         scan.append((quality, angle_deg, dist_mm))
+
+                    now = time.monotonic()
+                    if now - _last_log > 3.0:
+                        self.get_logger().info(
+                            f'[DBG] {_pkt_total} pkts, {_pkt_malformed} malformed'
+                            f', scan_buf={len(scan)}, new_scan={new_scan}'
+                            f', q={quality}, d={dist_mm:.1f}mm'
+                        )
+                        _last_log = now
 
             except Exception as exc:
                 self.get_logger().error(f'Lidar error: {exc!r} — reconnecting in 2 s')
