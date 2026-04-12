@@ -81,12 +81,7 @@ class RPLidarNode(Node):
                     f'fw={info["firmware"]} hw={info["hardware"]} '
                     f'health={health[0]}'
                 )
-                # Full reset ensures clean state regardless of previous session.
-                self.get_logger().info('Resetting lidar MCU...')
-                lidar.reset()
-                time.sleep(2.5)
-                self.get_logger().info('Starting Express scan...')
-                for scan in lidar.iter_scans(scan_type='express', min_len=15):
+                for scan in lidar.iter_scans(scan_type='normal', min_len=15):
                     if not self._running or not rclpy.ok():
                         break
                     self._publish_scan(scan)
@@ -135,7 +130,7 @@ class RPLidarNode(Node):
         msg.angle_max = math.pi - angle_inc
         msg.angle_increment = angle_inc
         msg.time_increment = 0.0
-        msg.scan_time = 1.0 / 10.0  # A1M8 Express mode
+        msg.scan_time = 1.0 / 5.5  # A1M8 Standard mode
         msg.range_min = self._range_min
         msg.range_max = self._range_max
         msg.ranges = ranges
