@@ -69,6 +69,10 @@ class RPLidarNode(Node):
                 self.get_logger().info(f'Connecting to {self._port} ...')
                 ser = serial.Serial(self._port, 115200, timeout=3)
 
+                # A1M8 motor is controlled via DTR: False = motor ON.
+                ser.dtr = False
+                time.sleep(1.0)   # wait for motor to spin up
+
                 # Stop + reset for clean state
                 ser.write(bytes([0xA5, 0x25]))   # STOP
                 time.sleep(0.1)
@@ -100,6 +104,10 @@ class RPLidarNode(Node):
                 # the kernel blocks until at least 1 byte arrives (like cat).
                 flags = fcntl.fcntl(ser.fd, fcntl.F_GETFL)
                 fcntl.fcntl(ser.fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+                new_flags = fcntl.fcntl(ser.fd, fcntl.F_GETFL)
+                self.get_logger().info(
+                    f'O_NONBLOCK cleared: {not bool(new_flags & os.O_NONBLOCK)}'
+                )
                 attr = termios.tcgetattr(ser.fd)
                 attr[6][termios.VMIN]  = 1
                 attr[6][termios.VTIME] = 0
@@ -119,6 +127,14 @@ class RPLidarNode(Node):
                             break
                         buf.extend(chunk)
                     if len(buf) < 5:
+                        _pkt_total += 1  # count empty reads
+                        now = time.monotonic()
+                        if now - _last_log > 3.0:
+                            self.get_logger().warn(
+                                f'[DBG] os.read() returned empty (O_NONBLOCK?)'
+                                f' — spins={_pkt_total}'
+                            )
+                            _last_log = now
                         continue
                     raw = bytes(buf)
 
