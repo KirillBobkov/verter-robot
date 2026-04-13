@@ -20,14 +20,10 @@ laser_filter:
       name: range_filter
       type: laser_filters/LaserScanRangeFilter
       params:
-        # Отсечь точки ближе 20см (корпус робота) и дальше 6м (шум/отражения)
+        # Strip points closer than 20 cm (sensor noise / near-field) and beyond 6 m.
+        # Angular filter removed: lidar is at 0.80 m height, robot body top is at
+        # 0.65 m — robot body is below the scan plane so angular clipping is
+        # unnecessary and was incorrectly removing the front-of-robot sector.
         lower_threshold: 0.20
         upper_threshold: 6.0
         use_message_range_limits: false
-    filter2:
-      name: angular_bounds
-      type: laser_filters/LaserScanAngularBoundsFilterInPlace
-      params:
-        # Keep angles from -90° to +90° (front 180° FOV)
-        lower_angle: -1.5708
-        upper_angle: 1.5708
