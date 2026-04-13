@@ -149,8 +149,18 @@ class RPLidarNode(Node):
 
         Angles are linearly interpolated between start_curr and start_next,
         then corrected by each cabin's delta angle.
+
+        diff is computed as a SIGNED value in (-180, 180] to handle both
+        CW rotation (diff < 0, ~-29°) and CCW rotation (diff > 0, ~+29°).
+        Using plain % 360 gives diff=331° for CW which spreads 32 points
+        over the wrong 331° arc instead of the correct 29° arc.
         """
-        diff = (start_next - start_curr) % 360.0
+        diff = start_next - start_curr
+        if diff > 180.0:
+            diff -= 360.0
+        elif diff < -180.0:
+            diff += 360.0
+
         pts = []
         for i, (d1, d2, da1, da2) in enumerate(cabins):
             a1 = (start_curr + diff * (2 * i) / _MEAS + da1) % 360.0
