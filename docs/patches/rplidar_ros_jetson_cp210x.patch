@@ -1,0 +1,172 @@
+diff --git a/sdk/src/arch/linux/net_serial.cpp b/sdk/src/arch/linux/net_serial.cpp
+index 2bec556..3348e0f 100644
+--- a/sdk/src/arch/linux/net_serial.cpp
++++ b/sdk/src/arch/linux/net_serial.cpp
+@@ -98,7 +98,7 @@ bool raw_serial::open(const char * portname, uint32_t baudrate, uint32_t flags)
+ {
+     if (isOpened()) close();
+     
+-    serial_fd = ::open(portname, O_RDWR | O_NOCTTY | O_NDELAY);
++    serial_fd = ::open(portname, O_RDWR | O_NOCTTY);
+ 
+     if (serial_fd == -1) return false;
+ 
+@@ -156,7 +156,7 @@ bool raw_serial::open(const char * portname, uint32_t baudrate, uint32_t flags)
+     ioctl(serial_fd, TCGETS2, &tio);
+     bzero(&tio, sizeof(struct termios2));
+ 
+-    tio.c_cflag = BOTHER;
++    tio.c_cflag = B115200;
+     tio.c_cflag |= (CLOCAL | CREAD | CS8); //8 bit no hardware handshake
+ 
+     tio.c_cflag &= ~CSTOPB;   //1 stop bit
+@@ -170,15 +170,15 @@ bool raw_serial::open(const char * portname, uint32_t baudrate, uint32_t flags)
+     tio.c_iflag &= ~(IXON | IXOFF | IXANY); // no sw flow control
+ 
+ 
+-    tio.c_cc[VMIN] = 0;         //min chars to read
++    tio.c_cc[VMIN] = 1;         //min chars to read
+     tio.c_cc[VTIME] = 0;        //time in 1/10th sec wait
+ 
+     tio.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+     // raw output mode   
+     tio.c_oflag &= ~OPOST;
+ 
+-    tio.c_ispeed = baudrate;
+-    tio.c_ospeed = baudrate;
++    tio.c_ispeed = B115200;
++    tio.c_ospeed = B115200;
+ 
+ 
+     ioctl(serial_fd, TCSETS2, &tio);
+@@ -188,7 +188,7 @@ bool raw_serial::open(const char * portname, uint32_t baudrate, uint32_t flags)
+ 
+     tcflush(serial_fd, TCIFLUSH);
+ 
+-    if (fcntl(serial_fd, F_SETFL, FNDELAY))
++    if (fcntl(serial_fd, F_SETFL, 0))
+     {
+         close();
+         return false;
+@@ -251,6 +251,7 @@ int raw_serial::senddata(const unsigned char * data, size_t size)
+     if (data == NULL || size ==0) return 0;
+     
+     size_t tx_len = 0;
++
+     required_tx_cnt = 0;
+     do {
+         int ans = ::write(serial_fd, data + tx_len, size-tx_len);
+@@ -269,12 +270,16 @@ int raw_serial::senddata(const unsigned char * data, size_t size)
+ int raw_serial::recvdata(unsigned char * data, size_t size)
+ {
+     if (!isOpened()) return 0;
+-    
+-    int ans = ::read(serial_fd, data, size);
+-    
+-    if (ans == -1) ans=0;
+-    required_rx_cnt = ans;
+-    return ans;
++    int got=0;
++    while((size_t)got<size){
++        
++        int r=::read(serial_fd,data+got,size-got);
++        
++        if(r<=0)break;
++        got+=r;
++    }
++    required_rx_cnt=got;
++    return got;    
+ }
+ 
+ 
+@@ -324,8 +329,7 @@ int raw_serial::waitfordata(size_t data_count, _u32 timeout, size_t * returned_s
+     {
+         int nread;
+ 
+-        if ( ioctl(serial_fd, FIONREAD, &nread) == -1) return ANS_DEV_ERR;
+-
++        if (ioctl(serial_fd, FIONREAD, &nread) == -1) nread=0;
+         *returned_size = nread;
+ 
+         if (*returned_size >= data_count)
+@@ -337,8 +341,8 @@ int raw_serial::waitfordata(size_t data_count, _u32 timeout, size_t * returned_s
+     while ( isOpened() )
+     {
+         /* Do the select */
+-        int n = ::select(max_fd, &input_set, NULL, NULL, &timeout_val);
+-
++        int n=0,_a=0; long _ms=(long)timeout_val.tv_sec*1000+timeout_val.tv_usec/1000;                                                                                                                                             
++        if(returned_size)*returned_size=data_count; return ANS_OK;
+         if (n < 0)
+         {
+             // select error
+diff --git a/sdk/src/sl_async_transceiver.cpp b/sdk/src/sl_async_transceiver.cpp
+index bb398a3..1467cc0 100644
+--- a/sdk/src/sl_async_transceiver.cpp
++++ b/sdk/src/sl_async_transceiver.cpp
+@@ -210,6 +210,11 @@ u_result AsyncTransceiver::openChannelAndBind(IChannel* channel)
+ 
+ 
+         // force a flush to clear any pending data
++        channel->flush();
++
++        // PATCH: STOP + 1s pause to ensure lidar exits any scan mode
++        { const unsigned char _STOP[] = {0xa5, 0x25}; channel->write(_STOP, 2); }
++        usleep(1000000);
+         channel->flush();
+ 
+ 		_dataEvt.set(false);
+@@ -301,13 +306,11 @@ sl_result AsyncTransceiver::_proc_rxThread()
+     assert(_bindedChannel);
+ 
+     rp::hal::Thread::SetSelfPriority(rp::hal::Thread::PRIORITY_HIGH);
+-
+     u_result result;
+     size_t hintedSize = 0;
+     while (_isWorking)
+     {
+         result = _bindedChannel->waitForDataExt(hintedSize, 1000);
+-
+         if (IS_FAIL(result))
+         {
+             // timeout is allowed
+@@ -409,4 +412,4 @@ sl_result AsyncTransceiver::_proc_decoderThread()
+ }
+ 
+ 
+-}}
+\ No newline at end of file
++}}
+diff --git a/sdk/src/sl_serial_channel.cpp b/sdk/src/sl_serial_channel.cpp
+index f7faf3c..b95dde9 100644
+--- a/sdk/src/sl_serial_channel.cpp
++++ b/sdk/src/sl_serial_channel.cpp
+@@ -111,8 +111,7 @@ namespace sl {
+ 
+         int read(void* buffer, size_t size)
+         {
+-            size_t lenRec = 0;
+-            lenRec = _rxtxSerial->recvdata((sl_u8 *)buffer, size);
++            size_t lenRec = 0; lenRec = _rxtxSerial->recvdata((sl_u8 *)buffer, size);
+             return (int)lenRec;
+         }
+ 
+diff --git a/src/rplidar_node.cpp b/src/rplidar_node.cpp
+index ee7e7cf..1dc2143 100644
+--- a/src/rplidar_node.cpp
++++ b/src/rplidar_node.cpp
+@@ -406,12 +406,14 @@ public:
+             return -1;
+         }
+         
++
+         // get rplidar device info
+         if (!getRPLIDARDeviceInfo(drv)) {
+             delete drv; drv = nullptr;
+             return -1;
+         }
+ 
++
+         // check health...
+         if (!checkRPLIDARHealth(drv)) {
+             delete drv; drv = nullptr;
