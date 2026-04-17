@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Python RPLiDAR Express scan node using pyserial.
+"""RPLiDAR Standard scan node using os.open() + blocking termios.
 
 Workaround for tegra-xusb + cp210x incompatibility:
-  - C++ rplidar_ros SDK: poll/select fails → no scan data.
-  - tcsetattr(TCSANOW) after initial read flushes rx buffer → os.read() blocks.
-  - Fix: use pyserial ser.read() (VMIN=0, VTIME=timeout) throughout.
-    84-byte Express packets arrive fast enough that this works reliably.
+  - C++ rplidar_ros SDK / pyserial / rplidar-roboticia all use poll()/select()
+    internally, which is broken on this Jetson's cp210x USB serial driver.
+  - Fix: open port with os.open() (no O_NONBLOCK), configure VMIN=1/VTIME=0
+    BEFORE any I/O, then use os.read() which blocks in-kernel without poll().
 
-Express scan protocol (cmd 0x82):
-  - 84-byte response packets, each holding 16 "cabins" (32 measurements).
-  - Angles are reconstructed from two consecutive packets.
+Standard scan protocol (cmd 0xA5 0x20):
+  - One 5-byte packet per measurement, no packet-pair dependency.
+  - Format: quality/sync(1) + angle_q6(2) + dist_q2(2)
+  - ~5–6 Hz, ~360 points per revolution.
 
 Publishes: scan (sensor_msgs/LaserScan, BEST_EFFORT)
   — remapped to /scan_raw in mapping.launch.py
@@ -21,7 +22,11 @@ Parameters:
   range_max    (float) 6.0 m
   inverted     (bool)  false
 """
+import fcntl
 import math
+import os
+import struct
+import termios
 import threading
 import time
 
@@ -30,12 +35,70 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import LaserScan
 
-# Express Scan command (0x82), payload_size=5, payload=[0,0,0,0,0]
-# checksum = XOR(0xA5, 0x82, 0x05, 0x00×5) = 0x22
-_EXPRESS_CMD = bytes([0xA5, 0x82, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22])
-_PACKET_SIZE = 84    # bytes per Express response packet
-_CABINS = 16         # cabins per packet
-_MEAS = 32           # measurements per packet (16 cabins × 2)
+_SCAN_CMD = bytes([0xA5, 0x20])
+
+# Linux IOCTL for DTR (A1M8 motor control: DTR=LOW → motor ON)
+_TIOCMBIC = 0x5417
+_TIOCM_DTR = 0x002
+
+
+def _open_serial_blocking(port: str) -> int:
+    """Open serial port in blocking mode, termios configured BEFORE any I/O.
+
+    os.open() without O_NONBLOCK → fd is blocking by default.
+    VMIN=1, VTIME=0 → os.read() blocks until ≥1 byte arrives (no poll needed).
+    TCSAFLUSH before any I/O → buffer flush is harmless.
+    """
+    fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+    attr = termios.tcgetattr(fd)
+    attr[0] = termios.IGNPAR | termios.IGNBRK  # iflag: ignore parity/break
+    attr[1] = 0                                  # oflag: raw output
+    attr[2] = termios.CS8 | termios.CLOCAL | termios.CREAD  # cflag: 8N1
+    attr[3] = 0                                  # lflag: raw mode
+    attr[4] = termios.B115200
+    attr[5] = termios.B115200
+    attr[6][termios.VMIN] = 1                    # block until ≥1 byte
+    attr[6][termios.VTIME] = 0
+    termios.tcsetattr(fd, termios.TCSAFLUSH, attr)
+    return fd
+
+
+def _read_exact(fd: int, n: int) -> bytes:
+    """Block until exactly n bytes are read."""
+    buf = bytearray()
+    while len(buf) < n:
+        chunk = os.read(fd, n - len(buf))
+        if not chunk:
+            raise RuntimeError(f'EOF: wanted {n} bytes, got {len(buf)}')
+        buf += chunk
+    return bytes(buf)
+
+
+def _parse_std_packet(pkt: bytes):
+    """Parse one 5-byte Standard scan packet.
+
+    Byte 0: quality[7:2] | S_inv[1] | S[0]
+      S=1 → start of new scan. S_inv must equal ~S (validity check).
+    Byte 1: angle_q6[6:0] | check[0]   (check should be 1)
+    Byte 2: angle_q6[14:7]
+    Byte 3: dist_q2 LSB
+    Byte 4: dist_q2 MSB
+
+    Returns (new_scan, quality, angle_deg, dist_mm) or None if packet invalid.
+    """
+    s_bit     = pkt[0] & 0x01
+    s_inv_bit = (pkt[0] >> 1) & 0x01
+    if s_bit == s_inv_bit:
+        return None   # S and ~S must be complementary
+
+    quality  = pkt[0] >> 2
+    angle_q6 = (pkt[1] >> 1) | (pkt[2] << 7)   # 14-bit angle in 1/64 °
+    angle_deg = angle_q6 / 64.0
+
+    dist_q2  = pkt[3] | (pkt[4] << 8)           # 16-bit distance in 0.25 mm units
+    dist_mm  = dist_q2 / 4.0
+
+    return bool(s_bit), quality, angle_deg, dist_mm
 
 
 class RPLidarNode(Node):
@@ -50,11 +113,11 @@ class RPLidarNode(Node):
         self.declare_parameter('range_max', 6.0)
         self.declare_parameter('inverted', False)
 
-        self._port = self.get_parameter('serial_port').value
-        self._frame_id = self.get_parameter('frame_id').value
+        self._port      = self.get_parameter('serial_port').value
+        self._frame_id  = self.get_parameter('frame_id').value
         self._range_min = float(self.get_parameter('range_min').value)
         self._range_max = float(self.get_parameter('range_max').value)
-        self._inverted = self.get_parameter('inverted').value
+        self._inverted  = self.get_parameter('inverted').value
 
         sensor_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -66,201 +129,67 @@ class RPLidarNode(Node):
         self._running = True
         self._thread = threading.Thread(target=self._scan_loop, daemon=True)
         self._thread.start()
-        self.get_logger().info(f'RPLidar Python node started on {self._port}')
-
-    # ------------------------------------------------------------------
-    # Low-level I/O
-
-    @staticmethod
-    def _resync_pyserial(ser) -> bytes:
-        """Byte-by-byte resync using pyserial (avoids raw os.read issues).
-
-        Express packets start with high nibble 0xA (byte 0) and 0x5 (byte 1).
-        Returns a complete 84-byte packet.
-        """
-        b0 = ser.read(1)
-        b1 = ser.read(1)
-        if not b0 or not b1:
-            raise RuntimeError('lidar: resync read timeout')
-        b0, b1 = b0[0], b1[0]
-        for _ in range(_PACKET_SIZE * 8):
-            if (b0 >> 4) == 0xA and (b1 >> 4) == 0x5:
-                rest = ser.read(_PACKET_SIZE - 2)
-                if len(rest) < _PACKET_SIZE - 2:
-                    raise RuntimeError('lidar: resync short read')
-                return bytes([b0, b1]) + rest
-            b0 = b1
-            b = ser.read(1)
-            if not b:
-                raise RuntimeError('lidar: resync read timeout')
-            b1 = b[0]
-        raise RuntimeError('lidar: express resync failed')
-
-    # ------------------------------------------------------------------
-    # Express packet decode
-
-    @staticmethod
-    def _parse_packet(pkt: bytes):
-        """Parse one 84-byte Express scan packet.
-
-        Packet layout:
-          byte 0  : sync1 (high nibble = 0xA) | flags
-          byte 1  : sync2 (high nibble = 0x5) | checksum nibble
-          bytes 2-3: start_angle_sync_q6 (little-endian uint16)
-                     bit 15 = new_scan flag
-                     bits 14:0 = start_angle in 1/64° units
-          bytes 4-83: 16 cabins × 5 bytes each
-
-        Each cabin (5 bytes):
-          w1 = bytes[0:2] uint16: bits 15:2 = dist1 in Q2 (×0.25 mm), bit 0 = sign of d_angle1
-          w2 = bytes[2:4] uint16: bits 15:2 = dist2 in Q2 (×0.25 mm), bit 0 = sign of d_angle2
-          b4 = byte[4]: low nibble = magnitude of d_angle1 (Q3), high nibble = magnitude of d_angle2 (Q3)
-
-        Returns:
-          new_scan (bool)
-          start_deg (float): start angle [0, 360)
-          cabins (list[tuple]): (dist1_mm, dist2_mm, d_angle1_deg, d_angle2_deg) × 16
-        """
-        raw_angle = (pkt[3] << 8) | pkt[2]
-        new_scan = bool(raw_angle & 0x8000)
-        start_deg = (raw_angle & 0x7FFF) / 64.0
-
-        cabins = []
-        for i in range(_CABINS):
-            o = 4 + i * 5
-            w1 = pkt[o] | (pkt[o + 1] << 8)
-            w2 = pkt[o + 2] | (pkt[o + 3] << 8)
-            b4 = pkt[o + 4]
-
-            dist1_mm = (w1 >> 2) * 0.25
-            dist2_mm = (w2 >> 2) * 0.25
-
-            # Delta angle: magnitude in Q3 (÷8 → degrees), sign from dist-word LSB
-            da1 = (b4 & 0x0F) / 8.0 * (-1.0 if (w1 & 0x01) else 1.0)
-            da2 = ((b4 >> 4) & 0x0F) / 8.0 * (-1.0 if (w2 & 0x01) else 1.0)
-
-            cabins.append((dist1_mm, dist2_mm, da1, da2))
-
-        return new_scan, start_deg, cabins
-
-    @staticmethod
-    def _decode_cabins(cabins, start_curr: float, start_next: float):
-        """Reconstruct 32 (angle_deg, dist_mm) points from one packet's cabins.
-
-        Angles are linearly interpolated between start_curr and start_next,
-        then corrected by each cabin's delta angle.
-
-        diff is computed as a SIGNED value in (-180, 180] to handle both
-        CW rotation (diff < 0, ~-29°) and CCW rotation (diff > 0, ~+29°).
-        Using plain % 360 gives diff=331° for CW which spreads 32 points
-        over the wrong 331° arc instead of the correct 29° arc.
-        """
-        diff = start_next - start_curr
-        if diff > 180.0:
-            diff -= 360.0
-        elif diff < -180.0:
-            diff += 360.0
-
-        pts = []
-        for i, (d1, d2, da1, da2) in enumerate(cabins):
-            a1 = (start_curr + diff * (2 * i) / _MEAS + da1) % 360.0
-            a2 = (start_curr + diff * (2 * i + 1) / _MEAS + da2) % 360.0
-            pts.append((a1, d1))
-            pts.append((a2, d2))
-        return pts
+        self.get_logger().info(f'RPLidar node started on {self._port}')
 
     # ------------------------------------------------------------------
 
     def _scan_loop(self) -> None:
-        import serial
-
         while self._running and rclpy.ok():
-            ser = None
+            fd = None
             try:
-                self.get_logger().info(f'Connecting to {self._port} ...')
-                ser = serial.Serial(self._port, 115200, timeout=3)
+                self.get_logger().info(f'Opening {self._port} (blocking)...')
+                fd = _open_serial_blocking(self._port)
 
-                # A1M8 motor controlled via DTR: False = motor ON.
-                ser.dtr = False
+                # A1M8: DTR=LOW → motor ON
+                fcntl.ioctl(fd, _TIOCMBIC, struct.pack('I', _TIOCM_DTR))
                 time.sleep(1.0)
 
-                # Stop + reset for clean state
-                ser.write(bytes([0xA5, 0x25]))   # STOP
+                # Stop any running scan, then reset for clean state
+                os.write(fd, bytes([0xA5, 0x25]))   # STOP
                 time.sleep(0.1)
-                ser.reset_input_buffer()
-                ser.write(bytes([0xA5, 0x40]))   # RESET
-                time.sleep(2.5)
-                ser.reset_input_buffer()
+                termios.tcflush(fd, termios.TCIFLUSH)
 
-                # Verify connection
-                ser.write(bytes([0xA5, 0x50]))   # GET_DEVICE_INFO
-                resp = ser.read(27)
-                if len(resp) < 27 or resp[0] != 0xA5 or resp[1] != 0x5A:
-                    raise RuntimeError(f'Device info failed: {resp.hex()}')
+                os.write(fd, bytes([0xA5, 0x40]))   # RESET
+                time.sleep(2.5)
+                termios.tcflush(fd, termios.TCIFLUSH)
+
+                # Verify device
+                os.write(fd, bytes([0xA5, 0x50]))   # GET_DEVICE_INFO
+                resp = _read_exact(fd, 27)
+                if resp[0] != 0xA5 or resp[1] != 0x5A:
+                    raise RuntimeError(f'Bad device info: {resp[:4].hex()}')
                 self.get_logger().info(
                     f'Connected: model={resp[7]} fw={resp[9]}.{resp[8]} hw={resp[10]}'
                 )
 
-                # Start Express scan
-                ser.write(_EXPRESS_CMD)
-                desc = ser.read(7)
-                if len(desc) < 7 or desc[0] != 0xA5 or desc[1] != 0x5A:
-                    raise RuntimeError(f'Bad express descriptor: {desc.hex()}')
-                self.get_logger().info(f'Express descriptor: {desc.hex()}')
-                if desc[6] != 0x82:
-                    raise RuntimeError(
-                        f'Express scan unsupported by firmware '
-                        f'(data_type=0x{desc[6]:02x})'
-                    )
+                # Start Standard scan
+                os.write(fd, _SCAN_CMD)
+                desc = _read_exact(fd, 7)
+                if desc[0] != 0xA5 or desc[1] != 0x5A:
+                    raise RuntimeError(f'Bad scan descriptor: {desc.hex()}')
+                self.get_logger().info(f'Standard scan started. Descriptor: {desc.hex()}')
 
-                # On tegra-xusb + cp210x, tcsetattr(TCSANOW) flushes the rx
-                # buffer — subsequent os.read() blocks even though the lidar
-                # is streaming.  pyserial's ser.read() (VMIN=0, VTIME=timeout)
-                # works correctly for 84-byte Express packets, so we use it
-                # throughout without switching to raw blocking I/O.
-                first_pkt = ser.read(_PACKET_SIZE)
-                if len(first_pkt) < _PACKET_SIZE:
-                    raise RuntimeError(
-                        f'Express scan: no data after descriptor '
-                        f'(got {len(first_pkt)}/{_PACKET_SIZE} bytes)'
-                    )
-                self.get_logger().info(
-                    f'Express scan started. '
-                    f'First packet sync: 0x{first_pkt[0]:02x} 0x{first_pkt[1]:02x}'
-                )
-
-                # Validate sync; byte-level resync via pyserial if needed
-                if (first_pkt[0] >> 4) == 0xA and (first_pkt[1] >> 4) == 0x5:
-                    pkt = first_pkt
-                else:
-                    self.get_logger().warn('Bad sync on first Express packet — resyncing')
-                    pkt = self._resync_pyserial(ser)
-
-                prev_start = None
-                prev_cabins = None
-                scan = []
+                scan: list[tuple[int, float, float]] = []
                 last_scan_t = 0.0
-                scan_time = 1.0 / 10.0
+                scan_time = 1.0 / 6.0
+                bad_pkts = 0
 
                 while self._running and rclpy.ok():
-                    new_scan, start_deg, cabins = self._parse_packet(pkt)
+                    pkt = _read_exact(fd, 5)
+                    parsed = _parse_std_packet(pkt)
 
-                    # Decode previous packet now that we have the next start angle
-                    if prev_cabins is not None:
-                        pts = self._decode_cabins(prev_cabins, prev_start, start_deg)
-                        scan.extend(pts)
+                    if parsed is None:
+                        bad_pkts += 1
+                        if bad_pkts > 20:
+                            raise RuntimeError(f'Too many bad packets ({bad_pkts}), restarting')
+                        # Try to resync: search for a packet with check bit=1
+                        self.get_logger().warn(f'Bad packet ({bad_pkts}): {pkt.hex()} — skipping')
+                        continue
 
-                    # Firmware fw=1.29 only sets new_scan flag once at scan start.
-                    # Detect revolution boundary via angle rollover instead:
-                    #   CW rotation  (decreasing angle): small  →  large  (e.g. 10°→350°)
-                    #   CCW rotation (increasing angle): large  →  small  (e.g. 350°→10°)
-                    cw_rollover  = (prev_start is not None
-                                    and prev_start <  90.0 and start_deg > 270.0)
-                    ccw_rollover = (prev_start is not None
-                                    and prev_start > 270.0 and start_deg <  90.0)
-                    revolution_done = new_scan or cw_rollover or ccw_rollover
+                    bad_pkts = 0
+                    new_scan, quality, angle_deg, dist_mm = parsed
 
-                    if revolution_done and scan:
+                    if new_scan and scan:
                         now = time.monotonic()
                         if last_scan_t > 0.0:
                             scan_time = now - last_scan_t
@@ -268,41 +197,27 @@ class RPLidarNode(Node):
                         self._publish_scan(scan, scan_time)
                         scan = []
 
-                    prev_start = start_deg
-                    prev_cabins = cabins
-
-                    # Read next packet via pyserial (avoids tcsetattr flush bug)
-                    pkt = ser.read(_PACKET_SIZE)
-                    if len(pkt) < _PACKET_SIZE:
-                        raise RuntimeError(
-                            f'Express: short read {len(pkt)}/{_PACKET_SIZE}'
-                        )
-                    if (pkt[0] >> 4) != 0xA or (pkt[1] >> 4) != 0x5:
-                        self.get_logger().warn('Express sync lost — resyncing')
-                        pkt = self._resync_pyserial(ser)
-                        prev_cabins = None
-                        prev_start = None
+                    if quality > 0 and dist_mm > 0:
+                        scan.append((quality, angle_deg, dist_mm))
 
             except Exception as exc:
                 self.get_logger().error(f'Lidar error: {exc!r} — reconnecting in 2 s')
                 time.sleep(2.0)
             finally:
-                if ser is not None:
+                if fd is not None:
                     try:
-                        ser.write(bytes([0xA5, 0x25]))  # STOP
-                        ser.close()
+                        os.write(fd, bytes([0xA5, 0x25]))  # STOP
+                        os.close(fd)
                     except Exception:
                         pass
 
-    def _publish_scan(self, scan, scan_time: float = 1.0 / 10.0) -> None:
+    def _publish_scan(self, scan, scan_time: float) -> None:
         n = self._NUM_BINS
         angle_min = -math.pi
         angle_inc = 2.0 * math.pi / n
         ranges = [float('inf')] * n
 
-        for angle_deg, dist_mm in scan:
-            if dist_mm <= 0:
-                continue
+        for _quality, angle_deg, dist_mm in scan:
             dist_m = dist_mm / 1000.0
             if dist_m < self._range_min or dist_m > self._range_max:
                 continue

@@ -90,15 +90,50 @@ class OdometryNode(Node):
 
     # ------------------------------------------------------------------
 
+    # --- logging state ------------------------------------------------
+    _enc_count: int = 0           # total encoder messages received
+    _last_log_sec: float = 0.0    # last periodic-log wall time
+
     def _on_encoders(self, msg: Int64MultiArray) -> None:
         if len(msg.data) < 2:
+            self.get_logger().warn(
+                f'wheel_encoders message too short: len={len(msg.data)}'
+            )
             return
+
+        left, right = int(msg.data[0]), int(msg.data[1])
         now_sec = self.get_clock().now().nanoseconds / 1e9
-        self._odometry.on_encoder(int(msg.data[0]), int(msg.data[1]), now_sec)
+
+        self._enc_count += 1
+        if self._enc_count == 1:
+            self.get_logger().info(
+                f'First encoder message: left={left}  right={right}'
+            )
+
+        self._odometry.on_encoder(left, right, now_sec)
 
     def _on_tick(self) -> None:
         now = self.get_clock().now()
-        self._odometry.on_tick(now.nanoseconds / 1e9)
+        now_sec = now.nanoseconds / 1e9
+        self._odometry.on_tick(now_sec)
+
+        # Periodic log every ~1 s
+        if now_sec - self._last_log_sec >= 1.0:
+            self._last_log_sec = now_sec
+            snap = self._odometry.snapshot()
+            if self._enc_count == 0:
+                self.get_logger().warn('No encoder messages received yet')
+            else:
+                self.get_logger().info(
+                    f'enc_msgs={self._enc_count:5d}  '
+                    f'fresh={snap.encoder_fresh}  '
+                    f'x={snap.x:+.3f}  y={snap.y:+.3f}  '
+                    f'θ={math.degrees(snap.theta):+.1f}°  '
+                    f'vx={snap.vx:+.3f} m/s  vth={snap.vth:+.3f} rad/s'
+                )
+                if not snap.encoder_fresh:
+                    self.get_logger().warn('encoder_fresh=False — encoder timeout!')
+
         self._publish(now)
 
     def _publish(self, now: rclpy.time.Time) -> None:
