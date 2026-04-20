@@ -11,14 +11,17 @@ Broadcast TF
   odom → base_footprint  (50 Hz, disabled with parameter publish_tf:=false)
 
 Subscribed topics
-  /wheel_encoders  (std_msgs/Int64MultiArray, BEST_EFFORT)
+  /wheel_encoders  (std_msgs/Int64MultiArray, BEST_EFFORT, 50 Hz from ESP32)
 """
+
+from __future__ import annotations
 
 import math
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.time import Time
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Int64MultiArray
@@ -85,14 +88,17 @@ class OdometryNode(Node):
         if self._publish_tf:
             self._tf_broadcaster = tf2_ros.TransformBroadcaster(self)
 
+        # Logging state — instance attributes (class-level hides behind __init__
+        # on multi-instance use and complicates debugging).
+        self._enc_count: int = 0
+        self._last_log_sec: float = now_sec
+
         # 50 Hz publication timer
         self._timer = self.create_timer(0.02, self._on_tick)
 
-    # ------------------------------------------------------------------
+        self.get_logger().info('odometry_node started — waiting for /wheel_encoders')
 
-    # --- logging state ------------------------------------------------
-    _enc_count: int = 0           # total encoder messages received
-    _last_log_sec: float = 0.0    # last periodic-log wall time
+    # ------------------------------------------------------------------
 
     def _on_encoders(self, msg: Int64MultiArray) -> None:
         if len(msg.data) < 2:
@@ -136,7 +142,7 @@ class OdometryNode(Node):
 
         self._publish(now)
 
-    def _publish(self, now: rclpy.time.Time) -> None:
+    def _publish(self, now: Time) -> None:
         snap = self._odometry.snapshot()
 
         # Yaw → quaternion (2-D robot: roll=0, pitch=0)
