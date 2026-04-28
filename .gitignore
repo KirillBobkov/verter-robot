@@ -30,3 +30,5 @@ site/
 # Logs
 verter_admin/journal.log
 verter_admin/journal-error.log
+
+**/node_modules

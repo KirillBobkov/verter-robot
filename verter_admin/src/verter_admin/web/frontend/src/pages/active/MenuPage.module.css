@@ -1,0 +1,106 @@
+/**
+ * MenuPage styles - Material Design 3
+ * Designed for 10" tablet (1280×800)
+ */
+
+.menuContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+/* Title */
+.title {
+  font: var(--md-sys-typescale-display-small);
+  font-size: 36px;
+  color: var(--md-sys-color-on-surface);
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+/* Card Grid - always 2 columns for 10" tablet */
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+  width: 100%;
+}
+
+/* Primary card spans full width */
+.cardGrid .actionCard.primary {
+  grid-column: 1 / -1;
+}
+
+/* 10" tablet 1280×800 specific */
+@media (min-width: 1200px) and (max-width: 1300px) {
+  .menuContainer {
+    max-width: 900px;
+    padding: 20px;
+  }
+
+  .title {
+    font-size: 32px;
+    margin-bottom: 28px;
+  }
+
+  .cardGrid {
+    gap: 20px;
+  }
+}
+
+/* Larger screens - 3 columns */
+@media (min-width: 1400px) {
+  .menuContainer {
+    max-width: 1200px;
+    padding: 32px;
+  }
+
+  .cardGrid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+  }
+
+  .title {
+    font-size: 48px;
+    margin-bottom: 40px;
+  }
+}
+
+/* Tablet portrait */
+@media (max-width: 899px) and (orientation: portrait) {
+  .cardGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+
+  .title {
+    font: var(--md-sys-typescale-headline-large);
+    font-size: 32px;
+    margin-bottom: 32px;
+  }
+
+  .menuContainer {
+    padding: 24px;
+  }
+}
+
+/* Small tablets */
+@media (max-width: 600px) {
+  .cardGrid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .title {
+    font-size: 28px;
+    margin-bottom: 24px;
+  }
+
+  .menuContainer {
+    padding: 16px;
+  }
+}

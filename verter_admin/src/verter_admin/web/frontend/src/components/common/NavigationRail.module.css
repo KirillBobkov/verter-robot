@@ -1,0 +1,140 @@
+/**
+ * NavigationRail styles - Material Design 3
+ * Vertical navigation for tablet landscape
+ */
+
+.navigationRail {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  z-index: var(--z-sticky);
+  background-color: var(--md-sys-color-surface);
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.navigationRailContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-lg) var(--spacing-sm);
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.navigationRailContainer::-webkit-scrollbar {
+  display: none;
+}
+
+.navigationRailItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs);
+  width: 64px;
+  height: 72px;
+  padding: var(--spacing-sm);
+  background: none;
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Ripple effect placeholder */
+.navigationRailItem::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+  border-radius: inherit;
+}
+
+.navigationRailItem:active::before {
+  opacity: 0.1;
+}
+
+/* Inactive state */
+.navigationRailItem {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.navigationRailItem:hover {
+  background-color: var(--md-sys-color-surface-container-highest);
+}
+
+/* Active state - MD3 Secondary Container */
+.navigationRailItemActive {
+  background-color: var(--md-sys-color-secondary-container);
+  color: var(--md-sys-color-on-secondary-container);
+}
+
+.navigationRailItemActive:hover {
+  background-color: var(--md-sys-color-secondary-container);
+  filter: brightness(0.95);
+}
+
+/* Icon */
+.navigationRailIcon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+/* Label */
+.navigationRailLabel {
+  font: var(--md-sys-typescale-label-medium);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* Tablet portrait - adjust width */
+@media (max-width: 900px) and (orientation: portrait) {
+  .navigationRail {
+    width: 56px;
+  }
+
+  .navigationRailItem {
+    width: 48px;
+    height: 56px;
+  }
+
+  .navigationRailLabel {
+    font-size: 10px;
+  }
+
+  .navigationRailIcon {
+    font-size: 20px;
+  }
+}
+
+/* Large tablet - more space */
+@media (min-width: 1200px) {
+  .navigationRail {
+    width: 100px;
+  }
+
+  .navigationRailItem {
+    width: 80px;
+    height: 80px;
+  }
+
+  .navigationRailIcon {
+    font-size: 28px;
+  }
+
+  .navigationRailLabel {
+    font: var(--md-sys-typescale-label-large);
+  }
+}

@@ -1,0 +1,138 @@
+/**
+ * Main CSS entry point
+ * Import all CSS modules and global styles
+ */
+
+/* CSS Variables */
+@import './variables.css';
+
+/* Animations */
+@import './animations.css';
+
+/* Global reset and base styles */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 18px; /* Increased from 16px for elderly users */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 10" tablet 1280×800 specific optimization */
+@media (min-width: 1200px) and (max-width: 1300px) {
+  html {
+    font-size: 18px;
+  }
+
+  :root {
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 20px;
+    --spacing-2xl: 28px;
+    --spacing-3xl: 40px;
+  }
+}
+
+/* 10" tablet height optimization */
+@media (min-height: 700px) and (max-height: 850px) {
+  :root {
+    --spacing-lg: 14px;
+    --spacing-xl: 18px;
+    --spacing-2xl: 24px;
+    --spacing-3xl: 32px;
+  }
+}
+
+/* Tablet portrait */
+@media (max-width: 900px) and (orientation: portrait) {
+  html {
+    font-size: 18px;
+  }
+}
+
+/* Tablet landscape */
+@media (min-width: 901px) and (orientation: landscape) {
+  html {
+    font-size: 20px;
+  }
+}
+
+/* Large tablets / desktop */
+@media (min-width: 1400px) {
+  html {
+    font-size: 20px;
+  }
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-family-base);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-secondary);
+  min-height: 100vh;
+}
+
+/* Remove default button styles */
+button {
+  font: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+/* Remove default input styles */
+input, textarea, select {
+  font: inherit;
+  border: none;
+  background: none;
+  outline: none;
+}
+
+/* Focus visible for accessibility */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Utility classes */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-md);
+}
+
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.text-right { text-align: right; }
+
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.gap-sm { gap: var(--spacing-sm); }
+.gap-md { gap: var(--spacing-md); }
+.gap-lg { gap: var(--spacing-lg); }
+
+.hidden { display: none; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}

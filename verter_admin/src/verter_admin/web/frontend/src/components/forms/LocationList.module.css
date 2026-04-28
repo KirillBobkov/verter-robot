@@ -1,0 +1,82 @@
+/**
+ * LocationList styles
+ */
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.empty {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* Item */
+.item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  background-color: var(--md-sys-color-surface-container);
+  border-radius: 50px;
+
+  transition: box-shadow var(--transition-fast);
+}
+
+.item:hover {
+  
+}
+
+/* Info */
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.details {
+  font-size: var(--font-size-sm);
+  font-family: var(--font-family-monospace);
+  color: var(--color-text-secondary);
+}
+
+.description {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-top: var(--spacing-xs);
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+  margin-left: var(--spacing-md);
+}
+
+@media (max-width: 768px) {
+  .item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-sm);
+  }
+
+  .actions {
+    margin-left: 0;
+    justify-content: stretch;
+  }
+
+  .actions button {
+    flex: 1;
+  }
+}

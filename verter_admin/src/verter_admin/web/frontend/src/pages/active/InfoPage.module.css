@@ -1,0 +1,111 @@
+/**
+ * InfoPage styles
+ */
+
+.infoContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Title */
+.title {
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  color: var(--color-text-primary);
+  text-align: center;
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Section */
+.section {
+  background-color: var(--md-sys-color-surface-container);
+
+  border-radius: 50px;
+  padding: var(--spacing-lg);
+}
+
+.sectionTitle {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+/* Schedule */
+.schedule {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.scheduleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.scheduleRow:last-child {
+  border-bottom: none;
+}
+
+.scheduleDays {
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.scheduleHours {
+  color: var(--color-text-secondary);
+  font-family: var(--font-family-monospace);
+}
+
+/* Rules List */
+.rulesList {
+  margin: 0;
+  padding-left: var(--spacing-lg);
+}
+
+.ruleItem {
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-primary);
+  line-height: var(--line-height-relaxed);
+}
+
+.ruleItem::marker {
+  color: var(--color-primary);
+}
+
+/* Help Button */
+.helpButton {
+  width: 100%;
+  padding: var(--spacing-md);
+  background-color: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: 50px;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+  transition: background-color var(--transition-fast);
+
+}
+
+.helpButton:hover {
+  background-color: var(--color-primary-hover);
+  
+}
+
+@media (max-width: 768px) {
+  .title {
+    font-size: var(--font-size-xl);
+  }
+
+  .section {
+    padding: var(--spacing-md);
+  }
+}

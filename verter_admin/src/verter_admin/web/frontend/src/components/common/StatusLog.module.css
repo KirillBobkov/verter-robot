@@ -1,0 +1,80 @@
+/**
+ * StatusLog styles
+ */
+
+.log {
+  background-color: #1a1a2e;
+  border-radius: 50px;
+  overflow: hidden;
+  font-family: var(--font-family-monospace);
+  font-size: var(--font-size-xs);
+}
+
+.header {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-inverse);
+  font-weight: var(--font-weight-medium);
+}
+
+.entries {
+  max-height: 150px;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+}
+
+.entries::-webkit-scrollbar {
+  width: 8px;
+}
+
+.entries::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.entries::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50px;
+}
+
+.entries::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.entry {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) 0;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.timestamp {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.message {
+  color: #aef;
+}
+
+.entry.info .message {
+  color: #aef;
+}
+
+.entry.warn .message {
+  color: #fe9;
+}
+
+.entry.error .message {
+  color: #f66;
+}
+
+.entry.success .message {
+  color: #6f6;
+}
+
+.empty {
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: var(--spacing-md);
+}

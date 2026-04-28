@@ -96,6 +96,20 @@ def get_sound_files():
     
     return sound_files
 
+def get_web_frontend_files():
+    """Копирует собранный React frontend из frontend/dist/"""
+    files = []
+    dist_dir = 'src/verter_admin/web/frontend/dist'
+    if os.path.isdir(dist_dir):
+        for root, dirs, filenames in os.walk(dist_dir):
+            for filename in filenames:
+                src_path = os.path.join(root, filename)
+                # rel_path будет 'index.html', 'assets/index.xxx.js', etc.
+                rel_path = os.path.relpath(src_path, dist_dir)
+                dest_dir = os.path.join('share', package_name, 'web', os.path.dirname(rel_path))
+                files.append((dest_dir, [src_path]))
+    return files
+
 package_name = 'verter_admin'
 
 setup(
@@ -122,8 +136,10 @@ setup(
         (os.path.join('share', package_name, 'config', 'twist_mux'), glob(os.path.join('src/verter_admin/config/twist_mux', '*.yaml'))),
         # Включаем конфигурацию Laser Filters
         (os.path.join('share', package_name, 'config', 'laser_filters'), glob(os.path.join('src/verter_admin/config/laser_filters', '*.yaml'))),
-        # Включаем веб-интерфейс
-        (os.path.join('share', package_name, 'web'), glob(os.path.join('src/verter_admin/web', '*.html'))),
+        # Включаем веб-интерфейс (React build)
+        # Сборка React приложения должна быть выполнена заранее: cd src/verter_admin/web/frontend && npm run build
+        # Файлы из dist/ копируются в share/verter_admin/web/
+        *get_web_frontend_files(),
         # Включаем скрипты (save_map.sh и др.)
         (os.path.join('share', package_name, 'scripts'), glob(os.path.join('scripts', '*.sh'))),
         # Включаем конфигурацию RViz (waypoint_navigation.rviz)

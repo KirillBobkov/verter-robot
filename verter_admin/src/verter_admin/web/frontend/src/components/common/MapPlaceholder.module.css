@@ -1,0 +1,76 @@
+/**
+ * MapPlaceholder styles
+ */
+
+.placeholder {
+  position: relative;
+  background-color: var(--md-sys-color-surface-container);
+
+  border-radius: 50px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Grid pattern */
+.grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--md-sys-color-outline-variant) 1px, transparent 1px),
+    linear-gradient(90deg, var(--md-sys-color-outline-variant) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.3;
+}
+
+/* Label */
+.label {
+  position: relative;
+  z-index: 1;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* Robot marker */
+.robot {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  z-index: 2;
+}
+
+.robotArrow {
+  width: 100%;
+  height: 100%;
+  background-color: var(--color-primary);
+  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+
+}
+
+/* Loading state */
+.placeholder.loading {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 0%,
+    var(--md-sys-color-surface-container-highest) 50%,
+    var(--color-bg-tertiary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+.placeholder.loading .label {
+  display: none;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
