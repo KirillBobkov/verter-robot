@@ -227,3 +227,8 @@ class ZLACDriver:
 
     def read_status(self) -> int:
         return self._read(REG_DRIVER_STATUS)[0]
+
+    def read_register(self, address: int) -> int:
+        """Public single-register read — used by the bench probe CLI for ad-hoc
+        debugging at arbitrary addresses."""
+        return self._read(address)[0]
