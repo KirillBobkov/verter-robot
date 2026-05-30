@@ -81,10 +81,18 @@
 #define R_ENC_SDA    32
 #define R_ENC_SCL    4
 #define AS5600_ADDR  0x36
-#define AS5600_REG   0x0C
+// ANGLE register (0x0E) — built-in slow-filter + hysteresis.
+// RAW_ANGLE (0x0C) is unfiltered and has ±2-5 LSB noise at rest that
+// accumulates as phantom step drift, especially on Wire1 (shares GPIO 4
+// with Tegra USB, picks up electrical noise).
+#define AS5600_REG   0x0E
 #define ENC_RES      4096
 #define L_ENC_SIGN   (-1)   // left encoder counts DOWN when forward
 #define R_ENC_SIGN   (+1)   // right encoder counts UP   when forward
+
+// Sanity filter: reject read if |delta| per tick exceeds physical max.
+// At MAX_VEL=0.5 m/s → ~142 steps/10ms tick. 220 gives ~1.5× margin.
+#define MAX_STEP_DELTA 220
 
 // Kinematics (hardware_spec.md)
 static constexpr float WHEEL_CIRC  = 0.576f;
@@ -202,6 +210,11 @@ static void encoderTask(void *pvp) {
     args->wire->setClock(400000);
     args->wire->setTimeout(1000);   // arduino-esp32 v2.x bug: <1000 has no effect
 
+    // Give AS5600 time to power-up before first transaction.
+    // Without this, Wire1's first read can hang on some boards, and the
+    // recovery loop never escapes.
+    vTaskDelay(pdMS_TO_TICKS(50));
+
     uint16_t prev_angle  = 0;
     int32_t  steps_local = 0;
     bool     inited      = false;
@@ -250,6 +263,15 @@ static void encoderTask(void *pvp) {
         int16_t delta = (int16_t)(angle - prev_angle);
         if (delta >  2048) delta -= 4096;
         if (delta < -2048) delta += 4096;
+
+        // Reject glitched reads: physical wheel can't move >MAX_STEP_DELTA
+        // per ENC_PERIOD_MS tick. Re-baseline prev_angle so we don't
+        // compound the rejection into a huge delta next tick.
+        if (abs(delta) > MAX_STEP_DELTA) {
+            prev_angle = angle;
+            continue;
+        }
+
         prev_angle   = angle;
         steps_local += (int32_t)(args->sign * delta);
 

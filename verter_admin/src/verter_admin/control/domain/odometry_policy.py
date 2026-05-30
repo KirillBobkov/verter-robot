@@ -14,10 +14,29 @@ class OdometrySource(Enum):
 
 @dataclass(frozen=True)
 class OdometryParameters:
-    """Robot and policy constants for odometry integration."""
+    """Robot and policy constants for odometry integration.
 
-    wheel_circumference: float = 0.576
-    gear_ratio: float = 4.0007
+    Defaults reflect the post-migration chassis: ZLLG80ASM250-L hub motors
+    (Ø 200 mm, direct-drive), driven by ZLAC8015D. The `/wheel_encoders` topic
+    semantics are unchanged from the ESP32 era — left/right cumulative tick
+    counts — but the conversion constants change:
+
+      * wheel_circumference = π · 0.200 m  (was 0.576 m for old wheels)
+      * gear_ratio          = 1.0          (was 4.0007 with gearbox)
+      * encoder_resolution  = 4096         (TODO calibrate against ZLAC8015D
+                                            position counter — drive 1.0 m
+                                            forward, measure ΔPosition_M1)
+      * wheel_base          = 0.386 m      (carry-over; verify on assembled
+                                            chassis if frame changed)
+
+    `meters_per_step` is the only kinematic constant odometry actually uses;
+    it must be correct to ≤ 1% for usable scan-matching SLAM. Calibrate it on
+    bench (see scripts/zlac_probe.py spin + measured travel distance) BEFORE
+    relying on this default in mapping/navigation runs.
+    """
+
+    wheel_circumference: float = math.pi * 0.200
+    gear_ratio: float = 1.0
     encoder_resolution: int = 4096
     wheel_base: float = 0.386
     max_linear_velocity: float = 0.5
