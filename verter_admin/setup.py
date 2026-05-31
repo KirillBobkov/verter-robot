@@ -189,8 +189,6 @@ setup(
             'distance_sensors_node = verter_admin.control.adapters.ros.distance_sensors_node:main',
             'range_converter_node = verter_admin.control.adapters.ros.range_converter_node:main',
             'odometry_node = verter_admin.control.adapters.ros.odometry_node:main',
-            'zlac_chassis_node = verter_admin.control.adapters.ros.zlac_chassis_node:main',
-            'zlac_probe = verter_admin.control.adapters.zlac.probe_cli:main',
             'doa_node = verter_admin.doa.doa_node:main',
             'teleop_keyboard = verter_admin.control.adapters.ros.teleop_keyboard:main',
             'calibration_node = verter_admin.calibration.calibration_node:main',
