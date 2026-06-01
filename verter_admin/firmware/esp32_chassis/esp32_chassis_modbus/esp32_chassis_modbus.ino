@@ -63,8 +63,11 @@
 
 #define UART_MODBUS         Serial2
 #define UART_MODBUS_BAUD    115200
-#define UART_MODBUS_TX_PIN  17
-#define UART_MODBUS_RX_PIN  16
+// Engineer's hardware-summary said TX2=GPIO17, RX2=GPIO16, but the actual
+// wiring on this robot is the opposite (confirmed by scanner on 2026-05-31:
+// only TX=16 RX=17 gets a Modbus response from ZLAC).
+#define UART_MODBUS_TX_PIN  16
+#define UART_MODBUS_RX_PIN  17
 
 #define LED_PIN             2
 
@@ -118,7 +121,7 @@ static constexpr int16_t MAX_MOTOR_RPM  = 200;      // rated for ZLLG80ASM250
 // Sign calibration — TODO verify on bench (spin one motor at +20 RPM,
 // confirm wheel rotates "forward" relative to robot front).
 static constexpr int8_t  LEFT_SIGN      = +1;
-static constexpr int8_t  RIGHT_SIGN     = +1;
+static constexpr int8_t  RIGHT_SIGN     = -1;
 
 // Derived: motor RPM per m/s of wheel speed
 static constexpr float MOTOR_RPM_PER_MPS =
@@ -472,12 +475,18 @@ static void controlTask(void* pvp) {
         }
 
         // --- Accumulate positions across int32 wraps -----------------------
+        // Apply LEFT_SIGN/RIGHT_SIGN so /wheel_encoders semantics is:
+        // "robot moves forward → both values increase".  Without this,
+        // the wheel commanded with negative sign (mounted mirror-image)
+        // would report decreasing position during forward motion, which
+        // makes the downstream odometry compute backward translation
+        // plus rotation instead of pure forward motion.
         if (read_ok) {
             if (!pos_inited) {
                 pos_inited = true;
             } else {
-                accum_pos_l += (int32_t)(fb.pos_l - prev_pos_l);
-                accum_pos_r += (int32_t)(fb.pos_r - prev_pos_r);
+                accum_pos_l += (int32_t)LEFT_SIGN  * (int32_t)(fb.pos_l - prev_pos_l);
+                accum_pos_r += (int32_t)RIGHT_SIGN * (int32_t)(fb.pos_r - prev_pos_r);
             }
             prev_pos_l = fb.pos_l;
             prev_pos_r = fb.pos_r;
@@ -491,10 +500,13 @@ static void controlTask(void* pvp) {
         }
 
         // --- Publish shared state for microrosTask -------------------------
+        // Sign-correct actual RPM (same reason as encoder position above):
+        // we want "wheel rotating forward → positive RPM" for both wheels,
+        // so it matches the commanded target RPM after sign mapping.
         portENTER_CRITICAL(&g_fb_mux);
         if (read_ok) {
-            g_fb.actual_rpm_l = fb.rpm_l;
-            g_fb.actual_rpm_r = fb.rpm_r;
+            g_fb.actual_rpm_l = LEFT_SIGN  * fb.rpm_l;
+            g_fb.actual_rpm_r = RIGHT_SIGN * fb.rpm_r;
             g_fb.fault_code   = fb.fault;
             g_fb.fresh        = true;
         }
@@ -527,6 +539,7 @@ static rcl_publisher_t     g_pub_state;
 static rcl_publisher_t     g_pub_fault;
 static rcl_publisher_t     g_pub_wd;
 static rcl_publisher_t     g_pub_rpm;
+static rcl_publisher_t     g_pub_mb_fails;
 
 static geometry_msgs__msg__Twist        g_msg_cmd;
 static std_msgs__msg__Int64MultiArray   g_msg_enc;
@@ -534,6 +547,7 @@ static std_msgs__msg__UInt8             g_msg_state;
 static std_msgs__msg__UInt32            g_msg_fault;
 static std_msgs__msg__Bool              g_msg_wd;
 static std_msgs__msg__Int16MultiArray   g_msg_rpm;
+static std_msgs__msg__UInt32            g_msg_mb_fails;
 
 static int64_t g_enc_data[2] = {0, 0};
 static int16_t g_rpm_data[2] = {0, 0};
@@ -578,6 +592,8 @@ static void microrosTask(void* pvp) {
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "/chassis/cmd_watchdog");
     rclc_publisher_init_best_effort(&g_pub_rpm, &g_node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int16MultiArray), "/chassis/wheel_rpm");
+    rclc_publisher_init_default(&g_pub_mb_fails, &g_node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt32), "/chassis/modbus_fails");
 
     // Static buffers for multi-array payloads
     g_msg_enc.data.data     = g_enc_data;
@@ -591,12 +607,13 @@ static void microrosTask(void* pvp) {
 
     g_state = STATE_READY;
 
-    uint32_t last_enc_ms    = 0;
-    uint32_t last_state_ms  = 0;
-    uint32_t last_fault_ms  = 0;
-    uint32_t last_wd_ms     = 0;
-    uint32_t last_rpm_ms    = 0;
-    uint32_t last_sync_ms   = millis();
+    uint32_t last_enc_ms      = 0;
+    uint32_t last_state_ms    = 0;
+    uint32_t last_fault_ms    = 0;
+    uint32_t last_wd_ms       = 0;
+    uint32_t last_rpm_ms      = 0;
+    uint32_t last_mb_fails_ms = 0;
+    uint32_t last_sync_ms     = millis();
 
     for (;;) {
         rclc_executor_spin_some(&g_executor, RCL_MS_TO_NS(5));
@@ -650,6 +667,14 @@ static void microrosTask(void* pvp) {
             last_wd_ms = now;
             g_msg_wd.data = snap.cmd_fresh;
             rcl_publish(&g_pub_wd, &g_msg_wd, NULL);
+        }
+
+        // /chassis/modbus_fails — 2 Hz, diagnostic. Consecutive failure count.
+        // 0 = comm healthy; growing fast (~50/sec) = no Modbus responses at all.
+        if ((now - last_mb_fails_ms) >= 500UL) {
+            last_mb_fails_ms = now;
+            g_msg_mb_fails.data = (uint32_t)fb.modbus_fails;
+            rcl_publish(&g_pub_mb_fails, &g_msg_mb_fails, NULL);
         }
 
         // LED: ACTIVE solid, SAFE_STOP slow blink, FAULT fast blink, else breathing
