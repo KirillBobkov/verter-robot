@@ -52,7 +52,9 @@ except ImportError:
 
 # Wheel diameter must match firmware constant. Change here only if you change
 # both in the firmware and in odometry_policy.py.
-WHEEL_DIAMETER_M = 0.200
+# 0.196 m = effective rolling diameter under load (tire compression vs the
+# geometric 200 mm of ZLLG80ASM250).
+WHEEL_DIAMETER_M = 0.196
 WHEEL_CIRCUMFERENCE_M = math.pi * WHEEL_DIAMETER_M
 
 

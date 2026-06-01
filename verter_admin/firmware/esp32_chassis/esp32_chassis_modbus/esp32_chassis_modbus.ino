@@ -111,7 +111,11 @@
 // ROBOT KINEMATICS / POLICY
 // ============================================================================
 
-static constexpr float WHEEL_DIAMETER   = 0.200f;   // m  (ZLLG80ASM250)
+// Effective rolling diameter under load. ZLLG80ASM250 geometric diameter is
+// 200 mm but the tire compresses under chassis weight (~30-50 kg) — 4 runs
+// of chassis_calibrate.py on 2026-06-01 measured meters_per_tick consistent
+// with ~194 mm rolling. Set to 196 mm as a conservative middle value.
+static constexpr float WHEEL_DIAMETER   = 0.196f;   // m  (rolling, loaded)
 static constexpr float WHEEL_BASE       = 0.386f;   // m  TODO verify on chassis
 static constexpr float GEAR_RATIO       = 1.0f;     // direct-drive
 static constexpr float MAX_LINEAR_VEL   = 0.5f;     // m/s

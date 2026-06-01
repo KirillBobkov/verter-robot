@@ -1,5 +1,6 @@
 cd ~/verter-robot && git pull                                                                                                                                                                                             
-cd ~/ros2_ws && colcon build --packages-select verter_admin --symlink-install && source install/setup.bash                                                                                                                
+cd ~/ros2_ws && colcon build --packages-select verter_admin --symlink-install && source install/setup.bash
+ros2 launch verter_admin chassis_bringup.launch.py
 ros2 launch verter_admin mapping.launch.py
 ros2 launch verter_admin waypoint_ui.launch.py
 
