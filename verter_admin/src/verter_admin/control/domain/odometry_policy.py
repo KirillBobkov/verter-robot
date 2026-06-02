@@ -41,8 +41,9 @@ class OdometryParameters:
     wheel_circumference: float = math.pi * 0.196     # 0.6158 m, rolling-loaded
     gear_ratio: float = 1.0                          # direct-drive hub motor
     encoder_resolution: int = 4096                   # confirmed by 7 runs
-    wheel_base: float = 0.3612                       # calibrated 2026-06-02
-                                                     # (auto-rotate 360°, measured 355°)
+    wheel_base: float = 0.3642                       # calibrated 2026-06-02
+                                                     # (auto-rotate, 3 iterations
+                                                     # converged within 0.1%)
     max_linear_velocity: float = 0.5
     max_angular_velocity: float = 1.0
     linear_scale: float = 1.0
