@@ -40,6 +40,7 @@ import time
 
 try:
     import rclpy
+    from geometry_msgs.msg import Twist
     from rclpy.node import Node
     from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
     from std_msgs.msg import Int64MultiArray
@@ -222,6 +223,245 @@ def cmd_encoder(_args: argparse.Namespace) -> int:
     return 0
 
 
+class _AutoRotator(Node):
+    """Drives a closed-loop pure rotation: publishes /cmd_vel, watches
+    /wheel_encoders, stops when the *estimated* yaw reaches the target.
+
+    Estimated yaw is computed from (right_ticks - left_ticks) * meters_per_tick
+    / wheel_base_estimate. If the estimate is wrong, the physical angle the
+    robot ends up at will differ from the target — that mismatch is exactly
+    what we use to correct wheel_base afterwards.
+    """
+
+    PHASE_WAITING = "waiting"
+    PHASE_ROTATING = "rotating"
+    PHASE_SETTLING = "settling"
+    PHASE_DONE = "done"
+
+    def __init__(
+        self,
+        target_rad: float,
+        angular_velocity: float,
+        wb_estimate: float,
+        meters_per_tick: float,
+        settle_secs: float = 2.0,
+    ) -> None:
+        super().__init__("chassis_wheelbase_auto")
+        # Direction: angular_velocity sign follows target sign so we always
+        # converge instead of running away from the target.
+        self._omega = abs(angular_velocity) * (1.0 if target_rad >= 0 else -1.0)
+        self._target_rad = target_rad
+        self._wb_estimate = wb_estimate
+        self._mpt = meters_per_tick
+        self._settle_secs = settle_secs
+
+        self._start_enc: tuple[int, int] | None = None
+        self._latest_enc: tuple[int, int] | None = None
+        self._phase = self.PHASE_WAITING
+        self._settle_t0: float | None = None
+        self._last_log = 0.0
+
+        qos_be = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        qos_re = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        self.create_subscription(Int64MultiArray, "/wheel_encoders",
+                                 self._on_enc, qos_be)
+        self._pub = self.create_publisher(Twist, "/cmd_vel", qos_re)
+        # 10 Hz control loop — well within the firmware's 500 ms cmd_vel
+        # watchdog window.
+        self.create_timer(0.1, self._tick)
+
+    @property
+    def phase(self) -> str:
+        return self._phase
+
+    def estimated_rad(self) -> float:
+        if self._start_enc is None or self._latest_enc is None:
+            return 0.0
+        dl = self._latest_enc[0] - self._start_enc[0]
+        dr = self._latest_enc[1] - self._start_enc[1]
+        return (dr - dl) * self._mpt / self._wb_estimate
+
+    def deltas(self) -> tuple[int, int]:
+        assert self._start_enc is not None and self._latest_enc is not None
+        return (
+            self._latest_enc[0] - self._start_enc[0],
+            self._latest_enc[1] - self._start_enc[1],
+        )
+
+    def emergency_stop(self) -> None:
+        # Send a few zero-twist messages to overcome best-effort drops.
+        for _ in range(5):
+            self._pub.publish(Twist())
+            time.sleep(0.02)
+
+    def _on_enc(self, msg: Int64MultiArray) -> None:
+        if len(msg.data) >= 2:
+            self._latest_enc = (int(msg.data[0]), int(msg.data[1]))
+
+    def _tick(self) -> None:
+        now = time.monotonic()
+        twist = Twist()
+
+        if self._phase == self.PHASE_WAITING:
+            if self._latest_enc is not None:
+                self._start_enc = self._latest_enc
+                self._phase = self.PHASE_ROTATING
+                print(f"Start encoder: L={self._start_enc[0]}  R={self._start_enc[1]}")
+                print("Rotating ...")
+            return
+
+        if self._phase == self.PHASE_ROTATING:
+            est = self.estimated_rad()
+            if (now - self._last_log) > 1.0:
+                self._last_log = now
+                deg = math.degrees(est)
+                tdeg = math.degrees(self._target_rad)
+                print(f"  est {deg:+6.1f}° / target {tdeg:+6.1f}°")
+            if abs(est) >= abs(self._target_rad):
+                twist.angular.z = 0.0
+                self._pub.publish(twist)
+                self._phase = self.PHASE_SETTLING
+                self._settle_t0 = now
+                print(f"  target reached at est {math.degrees(est):+.2f}°"
+                      f"  — settling for {self._settle_secs:.1f} s ...")
+            else:
+                twist.angular.z = float(self._omega)
+                self._pub.publish(twist)
+            return
+
+        if self._phase == self.PHASE_SETTLING:
+            twist.angular.z = 0.0
+            self._pub.publish(twist)
+            if self._settle_t0 is not None and (now - self._settle_t0) > self._settle_secs:
+                self._phase = self.PHASE_DONE
+            return
+
+
+def cmd_wheelbase_auto(_args: argparse.Namespace) -> int:
+    print()
+    print("===== Wheel-base calibration (auto rotation) =====")
+    print(f"Wheel diameter assumed: {WHEEL_DIAMETER_M:.3f} m "
+          f"(circumference {WHEEL_CIRCUMFERENCE_M:.4f} m)")
+    print()
+
+    enc_res_str = input("encoder_resolution [4096]: ").strip() or "4096"
+    encoder_resolution = float(enc_res_str)
+    wb_str = input("wheel_base estimate [0.386]: ").strip() or "0.386"
+    wb_estimate = float(wb_str)
+    target_deg_str = input("target rotation in degrees [360]: ").strip() or "360"
+    target_deg = float(target_deg_str)
+    omega_str = input("angular velocity rad/s [0.5]: ").strip() or "0.5"
+    omega = float(omega_str)
+
+    if encoder_resolution <= 0 or wb_estimate <= 0 or omega <= 0:
+        print("ERROR: encoder_resolution, wheel_base, omega must all be > 0.")
+        return 1
+    if target_deg == 0:
+        print("ERROR: target_deg must be non-zero.")
+        return 1
+
+    meters_per_tick = WHEEL_CIRCUMFERENCE_M / encoder_resolution
+    expected_secs = abs(math.radians(target_deg) / omega)
+
+    print()
+    print(f"Will rotate IN PLACE at ω = {omega:.2f} rad/s")
+    print(f"Target: {target_deg:+.1f}°  (estimated duration ≈ {expected_secs:.1f} s)")
+    print()
+    print("SAFETY:")
+    print("  - Clear 1 m around the robot.")
+    print("  - Floor must not be slippery.")
+    print("  - Mark a tape arrow under the front of the robot — you will")
+    print("    measure how many degrees the arrow turned vs. its mark.")
+    print("  - Keep hand on E-stop / main switch.")
+    print()
+    input("Press ENTER to start rotation ...")
+
+    rclpy.init()
+    node = _AutoRotator(
+        target_rad=math.radians(target_deg),
+        angular_velocity=omega,
+        wb_estimate=wb_estimate,
+        meters_per_tick=meters_per_tick,
+    )
+
+    # Spin until the rotator finishes its phase machine, with a hard cap.
+    timeout = time.monotonic() + expected_secs * 4 + 10.0
+    try:
+        while node.phase != _AutoRotator.PHASE_DONE:
+            if time.monotonic() > timeout:
+                print("TIMEOUT — aborting and stopping the robot.")
+                node.emergency_stop()
+                rclpy.shutdown()
+                return 1
+            rclpy.spin_once(node, timeout_sec=0.05)
+    except KeyboardInterrupt:
+        print("\nInterrupted — stopping the robot.")
+        node.emergency_stop()
+        rclpy.shutdown()
+        return 130
+
+    dl, dr = node.deltas()
+    estimated_final = node.estimated_rad()
+    node.emergency_stop()
+    rclpy.shutdown()
+
+    print()
+    print(f"Δ encoder:       L={dl:+d}  R={dr:+d}")
+    print(f"Estimated angle: {math.degrees(estimated_final):+.2f}° "
+          f"(by current wheel_base estimate {wb_estimate:.4f} m)")
+    print()
+    print("Now MEASURE THE PHYSICAL ANGLE the robot ended up rotated.")
+    print("Compare the front-of-robot mark to its original orientation.")
+    print("If the robot did multiple full revolutions, count them all")
+    print("  (e.g. '1 full turn + 8° extra' → enter 368).")
+    print("Direction matters — if the robot turned OPPOSITE to what was")
+    print("  commanded, enter the angle with a negative sign.")
+    print()
+    actual_deg = _prompt_float("Actual measured angle in degrees: ")
+    if actual_deg == 0:
+        print("ERROR: actual angle cannot be zero.")
+        return 1
+    actual_rad = math.radians(actual_deg)
+
+    arc_diff_m = (dr - dl) * meters_per_tick
+    wb_corrected = abs(arc_diff_m / actual_rad)
+    correction = wb_corrected / wb_estimate
+
+    print()
+    print("===== Result =====")
+    print(f"Arc difference     = {arc_diff_m:+.4f} m")
+    print(f"Actual angle       = {actual_rad:+.4f} rad ({actual_deg:+.2f}°)")
+    print(f"wheel_base (corrected) = {wb_corrected:.4f} m")
+    print(f"wheel_base (estimate)  = {wb_estimate:.4f} m")
+    print(f"correction factor      = ×{correction:.4f}  "
+          f"({(correction - 1) * 100:+.2f}%)")
+    print()
+    print("Apply to:")
+    print("  firmware (esp32_chassis_modbus.ino):")
+    print(f"      static constexpr float WHEEL_BASE = {wb_corrected:.4f}f;")
+    print("  odometry (control/domain/odometry_policy.py):")
+    print(f"      wheel_base: float = {wb_corrected:.4f}")
+    print()
+    if 0.95 < correction < 1.05:
+        print("Correction < 5 % — initial estimate was already close.")
+    elif 0.80 < correction < 1.20:
+        print("Correction 5-20 % — typical for a frame change. Apply and "
+              "optionally re-run for refinement.")
+    else:
+        print("Correction > 20 % — suspect: angle measurement error, wheel"
+              " slip on slippery floor, or wrong encoder_resolution. Re-run"
+              " on a non-slippery surface and double-check the angle.")
+    return 0
+
+
 def cmd_wheelbase(_args: argparse.Namespace) -> int:
     rclpy.init()
     tap = EncoderTap()
@@ -317,13 +557,17 @@ def main() -> int:
     sub.add_parser("encoder",
                    help="measure encoder_resolution from a straight-line drive")
     sub.add_parser("wheelbase",
-                   help="measure wheel_base from a known rotation angle")
+                   help="measure wheel_base from a known rotation angle (manual)")
+    sub.add_parser("wheelbase-auto",
+                   help="rotate the robot automatically to a target angle, "
+                        "then ask the operator for the actual angle observed")
     args = p.parse_args()
 
     handlers = {
-        "forward-check": cmd_forward_check,
-        "encoder":       cmd_encoder,
-        "wheelbase":     cmd_wheelbase,
+        "forward-check":  cmd_forward_check,
+        "encoder":        cmd_encoder,
+        "wheelbase":      cmd_wheelbase,
+        "wheelbase-auto": cmd_wheelbase_auto,
     }
     return handlers[args.cmd](args)
 

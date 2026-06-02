@@ -16,29 +16,32 @@ class OdometrySource(Enum):
 class OdometryParameters:
     """Robot and policy constants for odometry integration.
 
-    Defaults reflect the post-migration chassis: ZLLG80ASM250-L hub motors
-    (Ø 200 mm, direct-drive), driven by ZLAC8015D. The `/wheel_encoders` topic
-    semantics are unchanged from the ESP32 era — left/right cumulative tick
-    counts — but the conversion constants change:
+    Calibrated on 2026-06-02 using scripts/chassis_calibrate.py encoder.
+    Seven independent straight-line runs (0.66 m … 2.03 m) converged on:
 
-      * wheel_circumference = π · 0.200 m  (was 0.576 m for old wheels)
-      * gear_ratio          = 1.0          (was 4.0007 with gearbox)
-      * encoder_resolution  = 4096         (TODO calibrate against ZLAC8015D
-                                            position counter — drive 1.0 m
-                                            forward, measure ΔPosition_M1)
-      * wheel_base          = 0.386 m      (carry-over; verify on assembled
-                                            chassis if frame changed)
+      * meters_per_tick ≈ 1.503e-4 m
+      * encoder PPR     = 4096          (round, matches typical 1024 cpr × 4)
+      * rolling Ø       ≈ 0.196 m       (5 mm less than geometric 200 mm due
+                                          to tire compression under load)
+      * L/R asymmetry   < 0.5 %         (driving straight is straight)
+
+    Two runs at d=0.196 in firmware gave encoder_resolution = 4093 and 4094
+    (0.04 % apart) — strong evidence the physical encoder is exactly 4096
+    and the residual error is tape-measure noise on the floor marks.
 
     `meters_per_step` is the only kinematic constant odometry actually uses;
-    it must be correct to ≤ 1% for usable scan-matching SLAM. Calibrate it on
-    bench (see scripts/zlac_probe.py spin + measured travel distance) BEFORE
-    relying on this default in mapping/navigation runs.
+    it is now correct to ≤ 0.5 % of distance traveled — well below SLAM /
+    Nav2 tolerance.
+
+    `wheel_base` is still a carry-over from the old chassis frame; calibrate
+    it via `scripts/chassis_calibrate.py wheelbase` before relying on yaw
+    in odom-only operation.
     """
 
-    wheel_circumference: float = math.pi * 0.200
-    gear_ratio: float = 1.0
-    encoder_resolution: int = 4096
-    wheel_base: float = 0.386
+    wheel_circumference: float = math.pi * 0.196     # 0.6158 m, rolling-loaded
+    gear_ratio: float = 1.0                          # direct-drive hub motor
+    encoder_resolution: int = 4096                   # confirmed by 7 runs
+    wheel_base: float = 0.386                        # TODO calibrate
     max_linear_velocity: float = 0.5
     max_angular_velocity: float = 1.0
     linear_scale: float = 1.0
