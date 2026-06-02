@@ -116,7 +116,10 @@
 // of chassis_calibrate.py on 2026-06-01 measured meters_per_tick consistent
 // with ~194 mm rolling. Set to 196 mm as a conservative middle value.
 static constexpr float WHEEL_DIAMETER   = 0.196f;   // m  (rolling, loaded)
-static constexpr float WHEEL_BASE       = 0.386f;   // m  TODO verify on chassis
+static constexpr float WHEEL_BASE       = 0.3612f;  // m, calibrated 2026-06-02
+                                                    // (chassis_calibrate.py wheelbase-auto,
+                                                    // 360° commanded vs 355° measured at
+                                                    // wb_estimate=0.354 → +2% correction)
 static constexpr float GEAR_RATIO       = 1.0f;     // direct-drive
 static constexpr float MAX_LINEAR_VEL   = 0.5f;     // m/s
 static constexpr float MAX_ANGULAR_VEL  = 1.0f;     // rad/s
