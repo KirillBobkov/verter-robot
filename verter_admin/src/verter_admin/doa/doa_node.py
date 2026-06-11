@@ -25,7 +25,7 @@ RESPEAKER_PRODUCT_ID = 0x0018
 DOA_POLLING_INTERVAL = 7.0
 
 # Константы для Arduino подключения
-ARDUINO_DEVPATH = "1.3"  # devpath для Arduino головы
+ARDUINO_DEVPATH = "2.2.3"  # devpath для Arduino головы
 BAUD_RATE = 9600
 CONNECTION_TIMEOUT = 2.0
 SERIAL_TIMEOUT = 0.1
