@@ -133,6 +133,9 @@ systemctl --user enable verter-admin.service
 
 # Перезапустить сервис
 systemctl --user restart verter-admin.service
+
+# Перезапустить сервис
+systemctl --user stop verter-admin.service
 ```
 
 ### Шаг 3: Проверить статус сервиса
