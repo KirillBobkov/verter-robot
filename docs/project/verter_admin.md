@@ -117,8 +117,13 @@ nmcli monitor
 ip a
 # Статус линка (UP/DOWN), MTU, ошибки
 ip -s link
+
 # Только IPv4 адреса
 hostname -I
+
+# Ваш реальный внешний IP
+curl ifconfig.me
+
 # Таблица маршрутов
 ip r
 # Какой маршрут пойдет до адреса
@@ -157,8 +162,6 @@ python3 src/verter_admin/tof_camera/tof_camera_node.py
 # воспроизведение
 aplay -D default /usr/share/sounds/alsa/Front_Center.wav
 
+192.168.0.7
 
-чиназес сюда
-<img width="452" height="254" alt="image" src="https://github.com/user-attachments/assets/63d33128-2b4a-4812-8213-d55b6474b88c" />
-
-
+109.195.134.20
