@@ -22,53 +22,12 @@ plugins:
 
 nav:
   - Главная: index.md
-  - Кодовая документация:
-      - Обзор: code/verter_admin.md
-      - API:
-          - Интерфейсы и топики: code/api.md
-          - Топики (справка): code/api/topics.md
-      - Инженерия и план:
-          - Чертежи: hardware/Колёсная_база.md
-          - Итоги фазы 1: code/engineering/PHASE1_SUMMARY.md
-          - Итоги чистки/рефакторинга: code/engineering/CLEANUP_SUMMARY.md
-          - Оптимизация: code/engineering/OPTIMIZATION_NOTES.md
-      - Заметки разработки:
-          - Odometry: code/dev/odometry.md
-          - Тест-кейсы голосового пайплайна: code/dev/speech_pipeline_test_cases.md
-          - Журнал изменений URDF: code/dev/urdf_changes_log.md
-          - Параметры URDF к замеру: code/dev/urdf_parameters_to_measure.md
-  - Проектная документация:
-      - Обзор: project/verter_admin.md
-      - Цель проекта: project/PROJECT_GOAL.md
-      - FAQ: project/FAQ.md
-      - Установка и запуск:
-          - Предпосылки: project/getting_started/prerequisites.md
-          - Сборка и установка: project/getting_started/install.md
-          - Первый запуск: project/getting_started/run.md
-      - Руководство оператора:
-          - Голосовое управление: project/guides/voice.md
-          - Навигация и карты:
-              - Автономное картирование: project/navigation/AUTONOMOUS_MAPPING.md
-              - Карты (SLAM): project/navigation/MAPS_GUIDE.md
-              - Waypoints: project/navigation/WAYPOINTS_GUIDE.md
-              - Высота лидара (обоснование): project/navigation/LIDAR_HEIGHT_ANALYSIS.md
-      - Эксплуатация:
-          - Systemd-сервис: project/operations/services.md
-          - Диагностика: project/operations/diagnostics.md
-      - Сеть и подключение:
-          - WiFi на Raspberry Pi (nmcli): project/networking/raspberry_pi_wifi.md
-          - WiFi Connect:
-              - Обзор: project/networking/wifi-connect/index.md
-              - Решенные проблемы: project/networking/wifi-connect/PROBLEMS-SOLVED.md
-  - Аппаратная часть:
-      - Обзор: hardware.md
-      - ESP32 MicroROS Setup: hardware/esp32_microros_setup.md
-  - Планы:
-      - Диагностика аудио-синка: plans/audio-sink-diagnosis.md
-      - Исправление автозапуска аудио: plans/autostart-audio-fix.md
-  - Операции:
-      - Установка исправления автозапуска аудио: project/operations/autostart-audio-fix-install.md
-      - Исправление USB-Serial на Jetson: project/operations/jetson-usb-serial-fix.md
-      - Проверка подключения лидара: project/operations/lidar_connection_check.md
+  - Установка:
+      - Обзор: v2/installation.md
+      - Настройка Ubuntu + ROS2: v2/os_setup.md
+      - Настройка udev правил: v2/udev_rules.md
+      - Сборка проекта: v2/project_build.md
+  - Удалённое подключение: v2/remote_access.md
+  - Подключение к WiFi: v2/wifi_connect.md
 
 
