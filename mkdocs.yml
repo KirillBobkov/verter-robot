@@ -22,6 +22,8 @@ plugins:
   - search
 
 nav:
+  - Главная: index.md
+  
   - 1. Установка:
       - Ubuntu + ROS2: v2/os_setup.md
       - udev-правила: v2/udev_rules.md
