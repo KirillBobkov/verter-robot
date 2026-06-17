@@ -22,35 +22,36 @@ plugins:
   - search
 
 nav:
-  - Главная: index.md
-
   - 1. Установка:
       - Ubuntu + ROS2: v2/os_setup.md
       - udev-правила: v2/udev_rules.md
       - Сборка проекта: v2/project_build.md
 
-  - 2. Железо:
-      - ESP32 + micro-ROS: v2/hardware.md
-      - Подключение шасси ZLAC8015D: v2/hardware/chassis_wiring.md
-
-  - 3. Запуск:
+  - 2. Запуск:
       - Launch-файлы: v2/launch_files.md
       - WiFi — подключение к сети: v2/wifi_connect.md
       - Удалённый доступ (SSH, RViz): v2/remote_access.md
 
+  - 3. Железо:
+      - ESP32 + micro-ROS: v2/hardware.md
+      - Подключение шасси ZLAC8015D: v2/chassis_wiring.md
+
   - 4. Навигация:
       - Архитектура (SDHR, twist_mux, QoS): v2/navigation/architecture.md
-      - Построение карт: v2/navigation/autonomous_mapping.md
-      - Управление картами и путевыми точками: v2/navigation/maps_waypoints.md
-
-  - 5. Голосовое управление: v2/guides/voice.md
-
-  - 6. Диагностика: v2/diagnostics.md
-
-  - 7. Разработка:
+      - Автономное картографирование: v2/navigation/autonomous_mapping.md
+      - Карты и путевые точки: v2/navigation/maps_waypoints.md
       - Одометрия: v2/odometry.md
 
-  - 8. Справочник проблем:
+  - 5. Диагностика:
+      - Быстрая проверка: v2/diagnostics/quick_check.md
+      - Systemd-сервис: v2/diagnostics/service.md
+      - ROS2-ноды: v2/diagnostics/ros_nodes.md
+      - LiDAR: v2/diagnostics/lidar.md
+      - USB: v2/diagnostics/usb.md
+      - Аудио: v2/diagnostics/audio.md
+      - Логи: v2/diagnostics/logs.md
+
+  - 6. Справочник проблем:
       - Аудио система: v2/problems_solved/audio_system.md
       - SLAM / Локализация: v2/problems_solved/slam_localization.md
       - Навигация: v2/problems_solved/navigation.md
@@ -61,6 +62,4 @@ nav:
       - WiFi Connect: v2/problems_solved/wifi_connect_problems.md
       - Прочее: v2/problems_solved/misc.md
 
-  - FAQ: v2/guides/faq.md
-
-  - О проекте: v2/project_overview.md
+  - FAQ: v2/faq.md
