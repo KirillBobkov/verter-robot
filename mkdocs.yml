@@ -1,5 +1,5 @@
-site_name: Документация по проекту Вертер
-site_description: Документация по проекту verter-robot
+site_name: Вертер — Документация
+site_description: Документация автономного мобильного робота Verter
 
 theme:
   name: material
@@ -8,6 +8,7 @@ theme:
     - navigation.instant
     - navigation.sections
     - navigation.tracking
+    - navigation.expand
     - content.code.copy
 
 markdown_extensions:
@@ -22,12 +23,44 @@ plugins:
 
 nav:
   - Главная: index.md
-  - Установка:
-      - Обзор: v2/installation.md
-      - Настройка Ubuntu + ROS2: v2/os_setup.md
-      - Настройка udev правил: v2/udev_rules.md
+
+  - 1. Установка:
+      - Ubuntu + ROS2: v2/os_setup.md
+      - udev-правила: v2/udev_rules.md
       - Сборка проекта: v2/project_build.md
-  - Удалённое подключение: v2/remote_access.md
-  - Подключение к WiFi: v2/wifi_connect.md
 
+  - 2. Железо:
+      - ESP32 + micro-ROS: v2/hardware.md
+      - Подключение шасси ZLAC8015D: v2/hardware/chassis_wiring.md
 
+  - 3. Запуск:
+      - Launch-файлы: v2/launch_files.md
+      - WiFi — подключение к сети: v2/wifi_connect.md
+      - Удалённый доступ (SSH, RViz): v2/remote_access.md
+
+  - 4. Навигация:
+      - Архитектура (SDHR, twist_mux, QoS): v2/navigation/architecture.md
+      - Построение карт: v2/navigation/autonomous_mapping.md
+      - Управление картами и путевыми точками: v2/navigation/maps_waypoints.md
+
+  - 5. Голосовое управление: v2/guides/voice.md
+
+  - 6. Диагностика: v2/diagnostics.md
+
+  - 7. Разработка:
+      - Одометрия: v2/odometry.md
+
+  - 8. Справочник проблем:
+      - Аудио система: v2/problems_solved/audio_system.md
+      - SLAM / Локализация: v2/problems_solved/slam_localization.md
+      - Навигация: v2/problems_solved/navigation.md
+      - Speech-to-Text: v2/problems_solved/speech_to_text.md
+      - USB-Serial / CH340: v2/problems_solved/usb_serial.md
+      - ESP32 / micro-ROS: v2/problems_solved/esp32_microros.md
+      - Система и сервисы: v2/problems_solved/system_services.md
+      - WiFi Connect: v2/problems_solved/wifi_connect_problems.md
+      - Прочее: v2/problems_solved/misc.md
+
+  - FAQ: v2/guides/faq.md
+
+  - О проекте: v2/project_overview.md
