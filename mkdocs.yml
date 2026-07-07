@@ -44,7 +44,18 @@ nav:
       - Карты и путевые точки: v2/navigation/maps_waypoints.md
       - Одометрия: v2/odometry.md
 
-  - 5. Диагностика:
+  - 5. Голосовой пайплайн:
+      - Обзор: v2/voice/index.md
+      - FSM диалога: v2/voice/fsm.md
+      - Топики: v2/voice/topics.md
+      - Тайминги и паузы: v2/voice/timings.md
+      - Бизнес-кейсы диалога: v2/voice/dialog_cases.md
+      - STT-движки: v2/voice/stt_engines.md
+      - TTS и звук: v2/voice/tts_soundplayer.md
+      - AI-ассистент: v2/voice/ai_assistant.md
+      - Заметки о рефакторинге: v2/voice/refactor_notes.md
+
+  - 6. Диагностика:
       - Быстрая проверка: v2/diagnostics/quick_check.md
       - Systemd-сервис: v2/diagnostics/service.md
       - ROS2-ноды: v2/diagnostics/ros_nodes.md
@@ -53,7 +64,7 @@ nav:
       - Аудио: v2/diagnostics/audio.md
       - Логи: v2/diagnostics/logs.md
 
-  - 6. Справочник проблем:
+  - 7. Справочник проблем:
       - Аудио система: v2/problems_solved/audio_system.md
       - SLAM / Локализация: v2/problems_solved/slam_localization.md
       - Навигация: v2/problems_solved/navigation.md
