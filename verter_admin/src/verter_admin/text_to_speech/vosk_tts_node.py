@@ -42,7 +42,7 @@ class VoskTTSNode(Node):
             raise FileNotFoundError("Модель Vosk TTS не найдена")
 
         # Параметры
-        self.declare_parameter('speaker_id', 3)
+        self.declare_parameter('speaker_id', 4)
         self.speaker_id = self.get_parameter('speaker_id').get_parameter_value().integer_value
 
         # Нормализация чисел всегда включена для vosk-tts (обязательная)
