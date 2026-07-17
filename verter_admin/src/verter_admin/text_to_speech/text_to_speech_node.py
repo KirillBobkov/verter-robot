@@ -12,9 +12,12 @@ from ament_index_python.packages import get_package_share_directory
 try:
     from piper import PiperVoice
     import wave
+    from ru_normalizr import Normalizer, NormalizeOptions
 except ImportError:
     PiperVoice = None
     wave = None
+    Normalizer = None
+    NormalizeOptions = None
 
 class TextToSpeechNode(Node):
     
@@ -67,6 +70,18 @@ class TextToSpeechNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка загрузки модели: {e}")
             raise
+
+        # Инициализация ru-normalizr для контекстного склонения числительных (режим TTS)
+        if Normalizer is None:
+            self.get_logger().warning("ru-normalizr не установлен. Установите: pip install ru-normalizr")
+            self.normalizer = None
+        else:
+            try:
+                self.normalizer = Normalizer(NormalizeOptions.tts())
+                self.get_logger().info("ru-normalizr инициализирован")
+            except Exception as e:
+                self.get_logger().error(f"Ошибка инициализации нормализатора: {e}")
+                self.normalizer = None
     
     def _setup_environment(self):
         self.env = os.environ.copy()
@@ -101,7 +116,21 @@ class TextToSpeechNode(Node):
 
         if start_new:
             threading.Thread(target=self._speak_loop, args=(text,), daemon=True).start()
-    
+
+    def _normalize_text(self, text):
+        """Нормализация текста для TTS с контекстным склонением (годы, даты, числа, аббревиатуры)"""
+        if not text or self.normalizer is None:
+            return text
+
+        try:
+            # ru-normalizr (режим TTS) обрабатывает: годы, даты, время, валюты, проценты,
+            # сокращения, римские цифры, аббревиатуры, латиницу с контекстным склонением
+            normalized = self.normalizer.normalize(text)
+            return normalized
+        except Exception as e:
+            self.get_logger().warning(f"ru-normalizr ошибка: {e}, возвращаем оригинал")
+            return text
+
     def _speak_loop(self, first_text):
         current_text = first_text
         try:
@@ -123,7 +152,17 @@ class TextToSpeechNode(Node):
         try:
             # СНАЧАЛА ОТКЛЮЧАЕМ МИКРОФОН
             self._deactivate_speech_recognition()
-            
+
+            # Нормализация текста (годы, даты, числа, аббревиатуры)
+            self.get_logger().info(f"Исходный текст: {text[:100]}...")
+            normalized = self._normalize_text(text)
+            if normalized != text:
+                self.get_logger().info(f"Нормализация текста: \"{text[:50]}...\" → \"{normalized[:50]}...\"")
+            else:
+                self.get_logger().info("Текст не требует нормализации")
+            text = normalized
+
+            self.get_logger().info(f"Текст для синтеза: {text[:100]}...")
             sample_rate = str(self.voice.config.sample_rate)
             
             # Запускаем aplay СРАЗУ, без ожидания данных

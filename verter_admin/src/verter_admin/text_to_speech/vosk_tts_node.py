@@ -201,10 +201,6 @@ class VoskTTSNode(Node):
                     self.get_logger().info("⏭ Пропускаю текущее сообщение, есть новое в очереди")
                     return
 
-            # Добавляем тишину в начало (0.25с) для предотвращения глотания первого слога
-            padding = np.zeros(int(self.sample_rate * 0.25), dtype=np.float32)
-            audio = np.concatenate((padding, audio))
-
             # Выбор устройства вывода
             device = None
             if self.audio_device and self.audio_device not in ['pulse', 'default']:
