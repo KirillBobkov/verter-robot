@@ -13,7 +13,7 @@ try:
     import sounddevice as sd
     import numpy as np
     from vosk_tts import Model, Synth
-    from num2words import num2words
+    from ru_normalizr import Normalizer, NormalizeOptions
     SOUNDDEVICE_AVAILABLE = True
 except ImportError as e:
     SOUNDDEVICE_AVAILABLE = False
@@ -25,7 +25,7 @@ class VoskTTSNode(Node):
         super().__init__('vosk_tts_node')
 
         if not SOUNDDEVICE_AVAILABLE:
-            self.get_logger().error("Required packages not installed. Install: pip install vosk-tts sounddevice num2words numpy")
+            self.get_logger().error("Required packages not installed. Install: pip install vosk-tts sounddevice ru-normalizr numpy")
             raise ImportError("vosk-tts or dependencies not found")
 
         # Путь к модели vosk-tts
@@ -45,8 +45,8 @@ class VoskTTSNode(Node):
         self.declare_parameter('speaker_id', 4)
         self.speaker_id = self.get_parameter('speaker_id').get_parameter_value().integer_value
 
-        # Нормализация чисел всегда включена для vosk-tts (обязательная)
-        # Vosk TTS не может правильно произносить числа без нормализации
+        # Нормализация текста всегда включена для vosk-tts (обязательная)
+        # Vosk TTS не может правильно произносить текст без нормализации (годы, даты, числа, аббревиатуры)
         self.normalize_numbers = True
 
         self.declare_parameter('audio_device', 'pulse')
@@ -65,7 +65,10 @@ class VoskTTSNode(Node):
         self._busy = False
         self._pending_text = None
 
-        self.get_logger().info(f"Vosk TTS готов. Speaker ID: {self.speaker_id}, Normalization: always enabled")
+        # Инициализация ru-normalizr для контекстного склонения числительных (режим TTS)
+        self.normalizer = Normalizer(NormalizeOptions.tts())
+
+        self.get_logger().info(f"Vosk TTS готов. Speaker ID: {self.speaker_id}, ru-normalizr + char filter enabled")
 
     def _initialize_tts(self):
         """Загрузка модели vosk-tts"""
@@ -82,27 +85,45 @@ class VoskTTSNode(Node):
             self.get_logger().error(f"Ошибка загрузки модели: {e}")
             raise
 
-    def _normalize_numbers(self, text):
-        """Преобразует числа в слова для vosk-tts (опционально)"""
+    def _filter_supported_chars(self, text):
+        """Фильтрует текст, оставляя только символы, поддерживаемые моделью Vosk TTS"""
+        if not text:
+            return text
+
+        # Поддерживаемые символы из config.json модели
+        # ВНИМАНИЕ: Модель НЕ поддерживает латинские буквы, только кириллицу!
+        # Русские буквы + пробел + знаки препинания: !'(),,-...:;?^_
+        supported_pattern = r"[а-яА-ЯёЁ\s!'(),\-.:;?_^]"
+
+        # Фильтруем: оставляем только поддерживаемые символы
+        filtered = []
+        for char in text:
+            if re.match(supported_pattern, char):
+                filtered.append(char)
+            # Любой другой символ просто пропускаем (не добавляем)
+
+        result = ''.join(filtered)
+        # Очищаем множественные пробелы после фильтрации
+        result = re.sub(r'\s+', ' ', result).strip()
+
+        if result != text:
+            self.get_logger().debug(f"Фильтрация символов: \"{text}\" → \"{result}\"")
+
+        return result
+
+    def _normalize_text(self, text):
+        """Нормализация текста для TTS с контекстным склонением (годы, даты, числа, аббревиатуры)"""
         if not text or not self.normalize_numbers:
             return text
 
-        # Десятичные числа (42.5 → 42 запятая 5)
-        text = re.sub(r'(\d+)\.(\d+)', r'\1 запятая \2', text)
-
-        # Целые числа → слова
-        def replace_number(match):
-            num_str = match.group(0)
-            try:
-                num = int(num_str)
-                return num2words(num, lang='ru')
-            except ValueError:
-                return num_str
-
-        text = re.sub(r'\b\d+\b', replace_number, text)
-        text = re.sub(r'\s+', ' ', text).strip()
-
-        return text
+        try:
+            # ru-normalizr (режим TTS) обрабатывает: годы, даты, время, валюты, проценты,
+            # сокращения, римские цифры, аббревиатуры, латиницу с контекстным склонением
+            normalized = self.normalizer.normalize(text)
+            return normalized
+        except Exception as e:
+            self.get_logger().warning(f"ru-normalizr ошибка: {e}, возвращаем оригинал")
+            return text
 
     def text_callback(self, msg):
         """Обработка входящих сообщений с текстом"""
@@ -145,11 +166,17 @@ class VoskTTSNode(Node):
             # Отключаем микрофон перед TTS
             self._deactivate_speech_recognition()
 
-            # Нормализация чисел (опционально)
-            normalized = self._normalize_numbers(text)
+            # Нормализация текста (годы, даты, числа, аббревиатуры)
+            normalized = self._normalize_text(text)
             if normalized != text:
-                self.get_logger().info(f"Нормализация: \"{text}\" → \"{normalized}\"")
+                self.get_logger().info(f"Нормализация текста: \"{text}\" → \"{normalized}\"")
             text = normalized
+
+            # Фильтрация неподдерживаемых символов
+            filtered = self._filter_supported_chars(text)
+            if filtered != text:
+                self.get_logger().info(f"Фильтрация символов: \"{text}\" → \"{filtered}\"")
+            text = filtered
 
             self.get_logger().info(f"Синтез текста: {text[:50]}..." if len(text) > 50 else f"Синтез текста: {text}")
             start_synth = time.time()
@@ -157,16 +184,10 @@ class VoskTTSNode(Node):
             # Синтез (возвращает numpy.ndarray с dtype=int16)
             audio = self.synth.synth_audio(text, speaker_id=self.speaker_id)
 
-            # Временное логирование для проверки типа данных (удалить после тестирования)
-            self.get_logger().info(f"Audio dtype: {audio.dtype}, range: [{audio.min():.2f}, {audio.max():.2f}]")
-
             # Конвертация int16 → float32 для совместимости с OutputStream
             # vosk-tts возвращает int16 (диапазон -32768...32767)
             # OutputStream ожидает float32 (диапазон -1.0...1.0)
             audio = audio.astype(np.float32) / 32768.0
-
-            # Проверка после конвертации (удалить после тестирования)
-            self.get_logger().info(f"After conversion: {audio.dtype}, range: [{audio.min():.4f}, {audio.max():.4f}]")
 
             synth_time = time.time() - start_synth
             duration = len(audio) / self.sample_rate

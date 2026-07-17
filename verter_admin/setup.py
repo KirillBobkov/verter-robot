@@ -164,7 +164,7 @@ setup(
         'silero-tts',
         'piper-tts',
         'vosk-tts',
-        'num2words',
+        'ru-normalizr',
         'pyserial',
         'opencv-python<4.9',  # Совместимо с numpy<2.0
         'kaldi-native-fbank',
