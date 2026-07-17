@@ -66,18 +66,19 @@ def get_tts_model_files():
     """Специальная функция для копирования TTS моделей в правильное место"""
     tts_files = []
     tts_dir = 'src/verter_admin/text_to_speech'
-    
+
     for root, dirs, filenames in os.walk(tts_dir):
         for filename in filenames:
-            # Включаем файлы Piper (.onnx, .json) и Silero (.pt)
+            # Включаем файлы Piper (.onnx, .json), Silero (.pt) и Vosk TTS
             if (filename.startswith('ru_') and (filename.endswith('.onnx') or filename.endswith('.json') or filename.endswith('.txt'))) or \
-               filename.endswith('.pt'):
+               filename.endswith('.pt') or \
+               filename in ['model.onnx', 'dictionary', 'config.json', 'vocab.txt']:
                 src_path = os.path.join(root, filename)
                 # Убираем префикс 'src/verter_admin/text_to_speech/' из пути
                 rel_path = os.path.relpath(src_path, 'src/verter_admin/text_to_speech/')
                 dest_dir = os.path.join('share', 'verter_admin', 'text_to_speech', os.path.dirname(rel_path))
                 tts_files.append((dest_dir, [src_path]))
-    
+
     return tts_files
 
 def get_sound_files():
@@ -161,19 +162,22 @@ setup(
         'pyusb',
         'yandex-cloud-ml-sdk',
         'silero-tts',
+        'piper-tts',
+        'vosk-tts',
+        'num2words',
         'pyserial',
         'opencv-python<4.9',  # Совместимо с numpy<2.0
         'kaldi-native-fbank',
         'onnxruntime',
         'torch',
         'sherpa-onnx',
+        'openai',
     ], 
     zip_safe=True,
     maintainer='Имя Пользователя',
     maintainer_email='user@example.com',
     description='Пакет для распознавания речи с помощью Sherpa-ONNX CTC',
     license='Apache License 2.0',
-    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'speech_to_text_node = verter_admin.speech_to_text.speech_to_text_node:main',
@@ -184,6 +188,7 @@ setup(
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',
             'silero_tts_node = verter_admin.text_to_speech.silero_tts_node:main',
+            'vosk_tts_node = verter_admin.text_to_speech.vosk_tts_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
 
             'distance_sensors_node = verter_admin.control.adapters.ros.distance_sensors_node:main',

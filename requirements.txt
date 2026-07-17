@@ -1,0 +1,16 @@
+# Python зависимости для verter-robot
+# Извлечено из setup.py
+
+sounddevice
+numpy<2.0
+pyusb
+yandex-cloud-ml-sdk
+silero-tts
+pyserial
+opencv-python<4.9
+kaldi-native-fbank
+onnxruntime
+torch
+sherpa-onnx
+num2words>=0.5.12
+vosk-tts

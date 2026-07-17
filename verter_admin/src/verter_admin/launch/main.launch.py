@@ -44,7 +44,7 @@ def generate_launch_description():
             name='recognition_node',
             output='screen'
         ),
-        
+
         # Узел AI ассистента
         Node(
             package='verter_admin',
@@ -54,15 +54,15 @@ def generate_launch_description():
         ),
         
         # Узел синтеза речи (Piper)
-        Node(
-            package='verter_admin',
-            executable='text_to_speech_node',
-            name='text_to_speech_node',
-            output='screen',
-            parameters=[{
-                'audio_device': 'pulse'  # Использует default sink PulseAudio
-            }]
-        ),
+        # Node(
+        #     package='verter_admin',
+        #     executable='text_to_speech_node',
+        #     name='text_to_speech_node',
+        #     output='screen',
+        #     parameters=[{
+        #         'audio_device': 'pulse'  # Использует default sink PulseAudio
+        #     }]
+        # ),
         
         # Узел синтеза речи (Silero TTS)
         # Node(
@@ -71,6 +71,18 @@ def generate_launch_description():
         #     name='silero_tts_node',
         #     output='screen'
         # ),
+
+        # Узел синтеза речи (Vosk TTS)
+        Node(
+            package='verter_admin',
+            executable='vosk_tts_node',
+            name='vosk_tts_node',
+            output='screen',
+            parameters=[{
+                'speaker_id': 3,
+                'audio_device': 'pulse'
+            }]
+        ),
         
         # Узел воспроизведения звуков
         Node(

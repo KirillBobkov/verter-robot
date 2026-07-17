@@ -6,6 +6,7 @@
 
 # Python
 .venv/
+venv/
 __pycache__/
 *.pyc
 
@@ -26,6 +27,11 @@ site/
 **/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/
 **/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/
 **/v5_ru.pt
+
+# Vosk TTS models (теперь в text_to_speech/, копируются при сборке)
+# **/vosk-models/*.onnx
+# **/vosk-models/*/dictionary
+# **/vosk-models/*/bert/*.onnx
 
 # Logs
 verter_admin/journal.log
