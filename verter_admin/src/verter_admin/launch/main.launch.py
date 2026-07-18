@@ -65,24 +65,24 @@ def generate_launch_description():
         # ),
         
         # Узел синтеза речи (Silero TTS)
-        # Node(
-        #     package='verter_admin',
-        #     executable='silero_tts_node',
-        #     name='silero_tts_node',
-        #     output='screen'
-        # ),
-
-        # Узел синтеза речи (Vosk TTS)
         Node(
             package='verter_admin',
-            executable='vosk_tts_node',
-            name='vosk_tts_node',
-            output='screen',
-            parameters=[{
-                'speaker_id': 3,
-                'audio_device': 'pulse'
-            }]
+            executable='silero_tts_node',
+            name='silero_tts_node',
+            output='screen'
         ),
+
+        # Узел синтеза речи (Vosk TTS)
+        # Node(
+        #     package='verter_admin',
+        #     executable='vosk_tts_node',
+        #     name='vosk_tts_node',
+        #     output='screen',
+        #     parameters=[{
+        #         'speaker_id': 3,
+        #         'audio_device': 'pulse'
+        #     }]
+        # ),
         
         # Узел воспроизведения звуков
         Node(
