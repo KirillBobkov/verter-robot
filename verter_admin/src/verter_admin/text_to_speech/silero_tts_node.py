@@ -13,11 +13,14 @@ import sounddevice as sd
 try:
     import torch
     import numpy as np
+    from ru_normalizr import Normalizer, NormalizeOptions
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
     torch = None
     np = None
+    Normalizer = None
+    NormalizeOptions = None
 
 
 class SileroTTSNode(Node):
@@ -31,30 +34,43 @@ class SileroTTSNode(Node):
             
         # Оптимизация для CPU (Jetson/RPi)
         torch.set_num_threads(4)
-        
+
+        # Параметры ROS
+        self.declare_parameter('speaker', 'eugene')
+        self.declare_parameter('sample_rate', 24000)
+        self.declare_parameter('model_version', 'v5_5_ru')  # v5_ru или v5_5_ru
+        self.declare_parameter('audio_device', 'pulse')
+
+        # Настройки Silero v5
+        self.speaker = self.get_parameter('speaker').get_parameter_value().string_value
+        self.sample_rate = self.get_parameter('sample_rate').get_parameter_value().integer_value
+        self.model_version = self.get_parameter('model_version').get_parameter_value().string_value
+        self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
+
+        # Валидация диктора
+        valid_speakers = ['aidar', 'baya', 'kseniya', 'xenia', 'eugene']
+        if self.speaker not in valid_speakers:
+            self.get_logger().warning(f"Неверный диктор: {self.speaker}. Доступные: {valid_speakers}. Используем 'xenia'")
+            self.speaker = 'eugene'
+
+        # Валидация версии модели
+        valid_models = ['v5_ru', 'v5_5_ru']
+        if self.model_version not in valid_models:
+            self.get_logger().warning(f"Неверная версия модели: {self.model_version}. Используем 'v5_ru'")
+            self.model_version = 'v5_ru'
+
         # Путь к локальной модели (в той же директории что и нода)
         try:
             package_share = get_package_share_directory('verter_admin')
             tts_models_dir = os.path.join(package_share, 'text_to_speech')
-            self.model_path = os.path.join(tts_models_dir, "v5_ru.pt")
+            self.model_path = os.path.join(tts_models_dir, f"{self.model_version}.pt")
         except Exception as e:
             self.get_logger().error(f"Ошибка поиска модели: {e}")
             raise
-        
+
         if not os.path.exists(self.model_path):
             self.get_logger().error(f"Файл модели не найден: {self.model_path}")
             raise FileNotFoundError("Модель Silero не найдена")
-        
-        # Настройки
-        self.sample_rate = 24000
-        self.speaker = 'eugene'
-        self.put_accent = True
-        self.put_yo = True
-        self.put_stress_homo = True
-        self.put_yo_homo = True
-        
-        self.declare_parameter('audio_device', 'pulse')
-        self.audio_device = self.get_parameter('audio_device').get_parameter_value().string_value
         
         self._setup_environment()
         self._initialize_tts()
@@ -70,23 +86,35 @@ class SileroTTSNode(Node):
         self._pending_text = None
         self._current_process = None  # Для возможности прерывания
         
-        self.get_logger().info(f"Silero TTS готов. Sample rate: {self.sample_rate}, speaker: {self.speaker}")
+        self.get_logger().info(f"Silero TTS v5_5 готов. Модель: {self.model_version}, Диктор: {self.speaker}, Sample rate: {self.sample_rate}")
     
     def _initialize_tts(self):
         """Загрузка локальной модели Silero"""
         try:
             self.get_logger().info(f"Загрузка локальной модели: {self.model_path}")
             start_load = time.time()
-            
+
             # Загрузка локальной модели из .pt файла (как в примере с локальной моделью)
             importer = torch.package.PackageImporter(self.model_path)
             self.model = importer.load_pickle("tts_models", "model")
-            
+
             load_time = time.time() - start_load
             self.get_logger().info(f"✓ Модель Silero загружена за {load_time:.2f} сек")
         except Exception as e:
             self.get_logger().error(f"Ошибка загрузки модели: {e}")
             raise
+
+        # Инициализация ru-normalizr для контекстного склонения числительных (режим TTS)
+        if Normalizer is None:
+            self.get_logger().warning("ru-normalizr не установлен. Установите: pip install ru-normalizr")
+            self.normalizer = None
+        else:
+            try:
+                self.normalizer = Normalizer(NormalizeOptions.tts())
+                self.get_logger().info("ru-normalizr инициализирован")
+            except Exception as e:
+                self.get_logger().error(f"Ошибка инициализации нормализатора: {e}")
+                self.normalizer = None
     
     def _setup_environment(self):
         """Настройка окружения для аудио"""
@@ -112,7 +140,23 @@ class SileroTTSNode(Node):
 
         if start_new:
             threading.Thread(target=self._speak_loop, args=(text,), daemon=True).start()
-    
+
+    def _normalize_text(self, text):
+        """Нормализация текста для TTS с контекстным склонением (годы, даты, числа, аббревиатуры)"""
+        if not text or self.normalizer is None:
+            return text
+
+        try:
+            # ru-normalizr (режим TTS) обрабатывает: годы, даты, время, валюты, проценты,
+            # сокращения, римские цифры, аббревиатуры, латиницу с контекстным склонением
+            normalized = self.normalizer.normalize(text)
+            if normalized != text:
+                self.get_logger().info(f"Нормализация текста: \"{text[:50]}...\" → \"{normalized[:50]}...\"")
+            return normalized
+        except Exception as e:
+            self.get_logger().warning(f"ru-normalizr ошибка: {e}, возвращаем оригинал")
+            return text
+
     def _speak_loop(self, first_text):
         """Цикл обработки текстов с очередью"""
         current_text = first_text
@@ -136,7 +180,13 @@ class SileroTTSNode(Node):
         try:
             # СНАЧАЛА ОТКЛЮЧАЕМ МИКРОФОН
             self._deactivate_speech_recognition()
-            
+
+            # Нормализация текста (годы, даты, числа, аббревиатуры)
+            normalized = self._normalize_text(text)
+            if normalized != text:
+                self.get_logger().info(f"Нормализация текста: \"{text[:50]}...\" → \"{normalized[:50]}...\"")
+            text = normalized
+
             self.get_logger().info(f"Синтез текста: {text[:50]}..." if len(text) > 50 else f"Синтез текста: {text}")
             start_synth = time.time()
             
@@ -145,11 +195,7 @@ class SileroTTSNode(Node):
                 audio = self.model.apply_tts(
                     text=text.strip(),
                     speaker=self.speaker,
-                    sample_rate=self.sample_rate,
-                    put_accent=self.put_accent,
-                    put_yo=self.put_yo,
-                    put_stress_homo=self.put_stress_homo,
-                    put_yo_homo=self.put_yo_homo
+                    sample_rate=self.sample_rate
                 )
             
             synth_time = time.time() - start_synth
@@ -162,11 +208,6 @@ class SileroTTSNode(Node):
                     return
             
             audio_np = audio.numpy()
-
-            # FIX: Добавляем тишину в начало (0.25с), чтобы не глотало первый слог
-            # Это дает время аудиосистеме/усилителю выйти из спящего режима
-            padding = np.zeros(int(self.sample_rate * 0.25), dtype=np.float32)
-            audio_np = np.concatenate((padding, audio_np))
             
             # Выбор устройства вывода
             device = None
