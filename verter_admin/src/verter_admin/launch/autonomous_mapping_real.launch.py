@@ -88,12 +88,13 @@ def generate_launch_description():
             '-c',
             [
                 'trap "kill 0; exit" TERM INT; '
+                'PORT=', LaunchConfiguration('esp32_port'), '; '
                 'while true; do '
+                'echo "[micro_ros_agent chassis] resetting ESP32 on $PORT via DTR..."; '
+                'python3 ~/verter-robot/verter_admin/scripts/reset_esp32_dtr.py $PORT || true; '
                 'source ~/microros_ws/install/setup.bash && '
                 'ros2 run micro_ros_agent micro_ros_agent serial '
-                '--dev ',
-                LaunchConfiguration('esp32_port'),
-                ' -b 921600 ',
+                '--dev $PORT -b 921600 ',
                 LaunchConfiguration('micro_ros_agent_extra_args'),
                 '; '
                 'echo "[micro_ros_agent chassis] exited, restarting in 2s..."; '
@@ -112,12 +113,13 @@ def generate_launch_description():
             '-c',
             [
                 'trap "kill 0; exit" TERM INT; '
+                'PORT=', LaunchConfiguration('imu_esp32_port'), '; '
                 'while true; do '
+                'echo "[micro_ros_agent imu] resetting ESP32 on $PORT via DTR..."; '
+                'python3 ~/verter-robot/verter_admin/scripts/reset_esp32_dtr.py $PORT || true; '
                 'source ~/microros_ws/install/setup.bash && '
                 'ros2 run micro_ros_agent micro_ros_agent serial '
-                '--dev ',
-                LaunchConfiguration('imu_esp32_port'),
-                ' -b 921600 ',
+                '--dev $PORT -b 921600 ',
                 LaunchConfiguration('micro_ros_agent_extra_args'),
                 '; '
                 'echo "[micro_ros_agent imu] exited, restarting in 2s..."; '

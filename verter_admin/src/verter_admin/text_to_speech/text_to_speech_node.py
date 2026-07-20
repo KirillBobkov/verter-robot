@@ -164,7 +164,8 @@ class TextToSpeechNode(Node):
 
             self.get_logger().info(f"Текст для синтеза: {text[:100]}...")
             sample_rate = str(self.voice.config.sample_rate)
-            
+            self.get_logger().info(f"🔊 TTS: Синтез текста: '{text[:100]}...'")
+
             # Запускаем aplay СРАЗУ, без ожидания данных
             # Увеличенные размеры буфера для предотвращения underrun при автозапуске
             cmd = ["aplay", "-D", self.audio_device, "-q", "-f", "S16_LE", "-r", sample_rate, "-c", "1", "--buffer-size=4096", "--period-size=512"]
@@ -177,34 +178,50 @@ class TextToSpeechNode(Node):
                 bufsize=0,  # Отключаем буферизацию stdin
                 env=self.env
             )
-            
+
+            chunk_count = 0
+            total_bytes = 0
+
             # Синтезируем и сразу отправляем в aplay
+            self.get_logger().info("🔊 TTS: Начало синтеза...")
             for chunk in self.voice.synthesize(text.strip()):
                 if process.poll() is not None:
+                    self.get_logger().warning(f"🔊 TTS: aplay завершился досрочно на чанке {chunk_count}")
                     break
-                
+
                 try:
                     process.stdin.write(chunk.audio_int16_bytes)
+                    chunk_count += 1
+                    total_bytes += len(chunk.audio_int16_bytes)
                 except BrokenPipeError:
+                    self.get_logger().error(f"🔊 TTS: BrokenPipeError на чанке {chunk_count}")
                     break
-            
+                except Exception as e:
+                    self.get_logger().error(f"🔊 TTS: Ошибка записи на чанке {chunk_count}: {e}")
+                    break
+
+            self.get_logger().info(f"🔊 TTS: Синтез завершён, {chunk_count} чанков, {total_bytes} байт")
+
             process.stdin.close()
-            
+
             # Ждем завершения
+            self.get_logger().info("🔊 TTS: Ожидание завершения aplay...")
             return_code = process.wait()
             stderr_output = process.stderr.read().decode() if process.stderr else ""
-            
+
             if return_code != 0:
-                self.get_logger().error(f"aplay завершился с кодом {return_code}, stderr: {stderr_output}")
+                self.get_logger().error(f"🔊 TTS: aplay завершился с кодом {return_code}, stderr: {stderr_output}")
             elif stderr_output:
                 # Логируем предупреждения даже при успешном завершении
-                self.get_logger().warning(f"aplay stderr: {stderr_output}")
+                self.get_logger().warning(f"🔊 TTS: aplay stderr: {stderr_output}")
                 self.get_logger().info("✓ Аудио воспроизведено успешно")
             else:
                 self.get_logger().info("✓ Аудио воспроизведено успешно")
-            
+
         except Exception as e:
-            self.get_logger().error(f"Ошибка воспроизведения: {e}")
+            self.get_logger().error(f"🔊 TTS: Ошибка воспроизведения: {e}")
+            import traceback
+            self.get_logger().error(f"🔊 TTS: Traceback: {traceback.format_exc()}")
         finally:
             # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО С ЗАДЕРЖКОЙ (предотвращение эхо)
             import time

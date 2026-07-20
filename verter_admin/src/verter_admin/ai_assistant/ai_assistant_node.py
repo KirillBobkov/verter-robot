@@ -5,8 +5,8 @@ import os
 import signal
 import time
 import threading
-import logging
 import json
+import re
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -15,47 +15,17 @@ from openai import OpenAI
 
 class AIAssistantNode(Node):
     INSTRUCTION = (
-        "Ты — дружелюбный сервисный робот Курганского государственного университета (КГУ).\n"
-        "Помогаешь абитуриентам, студентам, родителям и гостям университета.\n"
-        "Ты не преподаватель и не сотрудник приёмной комиссии — современный цифровой помощник.\n"
-        "Цель: после разговора человеку стало проще разобраться в университете.\n\n"
-        "БАЗА ЗНАНИЙ\n"
-        "Ты используешь ТОЛЬКО информацию из подключённой базы знаний.\n"
-        "ВАЖНО: на КАЖДЫЙ вопрос ты ОБЯЗАН выполнить поиск по базе знаний инструментом file_search.\n"
-        "Не полагайся только на контекст диалога или предыдущие ответы.\n"
-        "Никогда не придумывай факты. Если точной информации нет — честно скажи "
-        "и предложи обратиться в приёмную комиссию.\n\n"
-        "МАНЕРА И СТИЛЬ\n"
-        "Общайся простым человеческим языком, как старшекурсник, помогающий новичку.\n"
-        "Будь дружелюбным, спокойным, позитивным, уважительным и терпеливым. "
-        "Без канцелярита и официоза.\n"
-        "Можно: «Привет!», «Конечно», «Сейчас расскажу», «Давай разберёмся», «Отличный вопрос».\n"
-        "Не нужно «Уважаемый пользователь» или «Здравствуйте, посетитель».\n"
-        "Лёгкий юмор допустим, если не мешает ответу. Со студентами общайся дружелюбно, "
-        "но без молодёжного сленга (кринж, имба, жиза, рофл, лол, капец — не используй). "
-        "Ты современный робот, а не блогер.\n\n"
-        "ОТВЕТЫ\n"
-        "Отвечай коротко: 2–6 предложений. Если просят подробнее — рассказывай больше.\n"
-        "Несколько вопросов — отвечай по пунктам, не смешивай.\n"
-        "Сложные термины объясняй. Цифры озвучивай словами (пример: «на втором этаже»). "
-        "Сложные вещи объясняй так, будто человек впервые пришёл в университет.\n"
-        "Если спрашивают, где кабинет или корпус — назови место и объясни маршрут простыми словами; "
-        "если умеешь — предложи провести.\n\n"
-        "ПОСТУПЛЕНИЕ И СЛОЖНЫЕ СИТУАЦИИ\n"
-        "Вопросы о поступлении объясняй человеческим языком, не цитируй официальные документы. "
-        "Не подтверждай наличие записи и не оформляешь документы.\n"
-        "Если человек нервничает, злится или шутит — отвечай спокойно и доброжелательно, "
-        "не спорь и не обвиняй. Можешь ответить лёгкой улыбкой и вернуться к теме.\n"
-        "Благодарит — «Пожалуйста!», «Всегда рад помочь». Прощается — «До встречи!», "
-        "«Удачи с поступлением!».\n\n"
-        "ЧТО НЕЛЬЗЯ\n"
-        "Хамить, спорить, высмеивать, грубить, придумывать информацию, давать ложные обещания, "
-        "отвечать слишком официально или читать ответы как энциклопедия. "
-        "По политическим и религиозным темам сохраняй нейтральность. "
-        "Общие неуниверситетские вопросы обсуждать можно, но мягко возвращай к помощи по КГУ.\n\n"
-        "ГЛАВНОЕ ПРАВИЛО: всегда выбирай вариант, который сделает ответ понятнее, "
-        "дружелюбнее и полезнее. Человек должен подумать: «Какой классный робот — всё объяснил "
-        "просто и понятно»."
+        "Тебя зовут Verter — дружелюбный сервисный робот КГУ. Помогаешь абитуриентам и гостям.\n"
+        "Характер — как общительный старшекурсник: современный, энергичный, доброжелательный.\n\n"
+        "СТИЛЬ: «Привет!», «Конечно», «Сейчас расскажу», «Давай разберёмся». Без официоза и канцелярита. "
+        "Иногда лёгкая шутка, но не перебарщивай. Никакого сленга (кринж, рофл и т.д.).\n\n"
+        "ОТВЕТЫ: 1–4 предложения. Коротко и по делу. Если просят подробнее — расширь.\n"
+        "Цифры и знаки ВСЕГДА пиши словами для TTS: «сто пятьдесят тысяч», «ноль ноль», «умножить на». Никаких спецсимволов и форматирования текста.\n\n"
+        "БАЗА ЗНАНИЙ: ВСЕГДА ищи через file_search. Не придумывай. Нет информации — честно скажи и направь в приёмную комиссию.\n\n"
+        "ЭМОЦИИ: Улыбайся, поддерживай, но не раздражайся. Волнующемуся: «Не переживайте, разберёмся вместе». "
+        "Поступившему: «Поздравляю! Добро пожаловать в КГУ!». Спасибо: «Всегда рад помочь!», «Удачи!». "
+        "Прощание: «До встречи!», «Хорошего настроения!».\n\n"
+        "ГЛАВНОЕ: человек должен подумать: «Классный робот, всё объяснил просто и понятно»."
     )
 
     VECTOR_STORE_FILE = "vector_store_id.txt"
@@ -68,7 +38,7 @@ class AIAssistantNode(Node):
 
     # Параметры модели
     DEFAULT_TEMPERATURE = 0.3
-    DEFAULT_MAX_TOKENS = 350  # Увеличено для более подробных ответов
+    DEFAULT_MAX_TOKENS = 300  # Увеличено для более подробных ответов
 
     def __init__(self):
         super().__init__('ai_assistant_node')
@@ -144,10 +114,11 @@ class AIAssistantNode(Node):
                 return response
         
         # Перехватываем клиент для логирования
-        self._original_client_init = OpenAI.__init__
-        
-        def logged_client_init(self, *args, **kwargs):
-            self._original_client_init(self, *args, **kwargs)
+        # Сохраняем оригинальный __init__ в замыкании
+        _original_client_init = OpenAI.__init__
+
+        def logged_client_init(client_self, *args, **kwargs):
+            _original_client_init(client_self, *args, **kwargs)
             # Заменяем транспорт на логирующий
             if hasattr(self, '_client') and hasattr(self._client, 'http_client'):
                 original_transport = self._client.http_client.transport
@@ -221,7 +192,7 @@ class AIAssistantNode(Node):
             self.get_logger().info(
                 f"[YANDEX_CLOUD] Using existing Vector Store: {vector_store_id}"
             )
-            # Проверяем статус существующего Vector Store
+            # Проверяем статус существующего Vector Store (только если есть сеть)
             try:
                 self.get_logger().info(
                     f"[YANDEX_CLOUD] Checking existing vector store status: id={vector_store_id}"
@@ -231,14 +202,28 @@ class AIAssistantNode(Node):
                     f"[YANDEX_CLOUD] Existing vector store status: {store.status}"
                 )
             except Exception as e:
-                self.get_logger().warning(
-                    f"[YANDEX_CLOUD] Failed to check vector store status: {e}"
-                )
+                # Игнорируем ошибки сети при проверке - используем сохранённый ID
+                if "Network is unreachable" in str(e) or "ConnectError" in str(e) or "101" in str(e):
+                    self.get_logger().warning(
+                        f"[YANDEX_CLOUD] Нет сети, используем сохранённый Vector Store ID: {vector_store_id}"
+                    )
+                else:
+                    self.get_logger().warning(
+                        f"[YANDEX_CLOUD] Failed to check vector store status: {e}"
+                    )
             return vector_store_id
 
         self.get_logger().info("Vector Store не найден. Создание нового...")
 
-        file_ids = self._upload_files()
+        try:
+            file_ids = self._upload_files()
+        except Exception as e:
+            if "Network is unreachable" in str(e) or "ConnectError" in str(e) or "101" in str(e):
+                self.get_logger().error(
+                    "[YANDEX_CLOUD] Нет интернета для создания Vector Store. "
+                    "Запустите с интернетом или скопируйте vector_store_id.txt с другой машины."
+                )
+            raise
 
         # Создаём поисковый индекс с настройками согласно документации
         self.get_logger().info(
@@ -417,13 +402,43 @@ class AIAssistantNode(Node):
             self._publish_response("Сервис временно недоступен.")
 
     def _extract_text(self, response):
+        # Способ 1: output_text (прямой атрибут)
         try:
-            return response.output_text
+            text = response.output_text
+            self.get_logger().info(f"[YANDEX_CLOUD] Extracted via output_text: {text[:100]}...")
+            return text
+        except Exception as e1:
+            self.get_logger().warning(f"[YANDEX_CLOUD] output_text not available: {e1}")
+
+        # Способ 2: output[0].content[0].text (стандартная структура)
+        try:
+            text = response.output[0].content[0].text
+            self.get_logger().info(f"[YANDEX_CLOUD] Extracted via output[0].content[0].text: {text[:100]}...")
+            return text
+        except Exception as e2:
+            self.get_logger().warning(f"[YANDEX_CLOUD] output[0].content[0].text not available: {e2}")
+
+        # Способ 3: ищем текст во всех output item
+        try:
+            for item in response.output:
+                if hasattr(item, 'content'):
+                    for content in item.content:
+                        if hasattr(content, 'text') and content.text:
+                            self.get_logger().info(f"[YANDEX_CLOUD] Extracted via output scan: {content.text[:100]}...")
+                            return content.text
+        except Exception as e3:
+            self.get_logger().warning(f"[YANDEX_CLOUD] output scan failed: {e3}")
+
+        # Способ 4: для отладки - логируем всю структуру response
+        try:
+            self.get_logger().error(f"[YANDEX_CLOUD] Response structure: {dir(response)}")
+            if hasattr(response, 'output'):
+                self.get_logger().error(f"[YANDEX_CLOUD] Output structure: {response.output}")
         except Exception:
-            try:
-                return response.output[0].content[0].text
-            except Exception:
-                return None
+            pass
+
+        self.get_logger().error(f"[YANDEX_CLOUD] Failed to extract text from response")
+        return None
 
     def _log_search_results(self, response, question):
         """
@@ -470,9 +485,20 @@ class AIAssistantNode(Node):
     # ROS RESPONSE
     # ================================
 
+    def _filter_text(self, text):
+        """Фильтрует текст, оставляя только буквы, цифры и знаки препинания."""
+        # Русские и английские буквы, цифры, пробелы и знаки препинания
+        allowed_pattern = re.compile(r'[^а-яА-ЯёЁa-zA-Z0-9\s\.\,\!\?\-\:\;\(\)]')
+        filtered = allowed_pattern.sub('', text)
+        # Убираем лишние пробелы
+        filtered = re.sub(r'\s+', ' ', filtered).strip()
+        return filtered
+
     def _publish_response(self, text):
+        filtered_text = self._filter_text(text)
+        self.get_logger().info(f"[YANDEX_CLOUD] Publishing response to TTS: {filtered_text[:100]}...")
         msg = String()
-        msg.data = text
+        msg.data = filtered_text
         self.response_publisher.publish(msg)
 
     # ================================

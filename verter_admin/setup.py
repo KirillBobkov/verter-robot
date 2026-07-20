@@ -125,6 +125,8 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('src/verter_admin/launch', '*.launch.py'))),
         # Включаем URDF модели робота
         (os.path.join('share', package_name, 'urdf'), glob(os.path.join('src/verter_admin/urdf', '*.urdf'))),
+        # Включаем конфигурацию шасси
+        (os.path.join('share', package_name, 'chassis'), glob(os.path.join('src/verter_admin/chassis', '*.yaml'))),
         # Включаем конфигурацию Nav2
         (os.path.join('share', package_name, 'config', 'nav2'), glob(os.path.join('src/verter_admin/config/nav2', '*.yaml'))),
         # Включаем конфигурацию SLAM
@@ -191,6 +193,7 @@ setup(
             'vosk_tts_node = verter_admin.text_to_speech.vosk_tts_node:main',
             'sound_player_node = verter_admin.sound_player.sound_player_node:main',
 
+            'chassis_zlac_node = verter_admin.chassis.chassis_zlac_node:main',
             'distance_sensors_node = verter_admin.control.adapters.ros.distance_sensors_node:main',
             'range_converter_node = verter_admin.control.adapters.ros.range_converter_node:main',
             'odometry_node = verter_admin.control.adapters.ros.odometry_node:main',

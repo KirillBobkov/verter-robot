@@ -26,9 +26,10 @@ slam_toolbox:
     # ---- Mode / frames ---------------------------------------------------------
     mode: mapping
     odom_frame:  odom
+    #odom_frame:  base_footprint
     map_frame:   map
     base_frame:  base_footprint
-    scan_topic:  /scan
+    scan_topic:  /scan_raw
     use_map_saver: true
 
     # ---- Map -------------------------------------------------------------------
