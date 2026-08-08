@@ -28,10 +28,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, LogInfo
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node, SetParameter
+from launch_ros.descriptions import ParameterFile
+from nav2_common.launch import RewrittenYaml
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -68,6 +70,21 @@ def generate_launch_description() -> LaunchDescription:
     map_file     = LaunchConfiguration('map')
     log_level    = LaunchConfiguration('log_level')
 
+    param_substitutions = {
+        'use_sim_time': use_sim_time,
+        'yaml_filename': map_file,
+    }
+
+    configured_params = ParameterFile(
+        RewrittenYaml(
+            source_file=params_file,
+            root_key='',
+            param_rewrites=param_substitutions,
+            convert_types=True,
+        ),
+        allow_substs=True,
+    )
+
     # ---- Shared parameter -------------------------------------------------------
 
     set_sim_time = SetParameter(name='use_sim_time', value=use_sim_time)
@@ -80,7 +97,8 @@ def generate_launch_description() -> LaunchDescription:
         name='map_server',
         output='screen',
         arguments=['--ros-args', '--log-level', log_level],
-        parameters=[params_file, {'yaml_filename': map_file}],
+        #parameters=[params_file, {'yaml_filename': map_file}],
+        parameters=[configured_params],
     )
 
     amcl = Node(
@@ -100,7 +118,7 @@ def generate_launch_description() -> LaunchDescription:
         arguments=['--ros-args', '--log-level', log_level],
         parameters=[params_file],
         remappings=[
-            ('cmd_vel', '/nav2/cmd_vel_raw'),    # → velocity_smoother
+            #('cmd_vel', '/nav2/cmd_vel_raw'),    # → velocity_smoother
             ('odom',    '/odometry/filtered'),
         ],
     )
@@ -130,7 +148,7 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
         arguments=['--ros-args', '--log-level', log_level],
         parameters=[params_file],
-        remappings=[('cmd_vel', '/nav2/cmd_vel_raw')],
+        #remappings=[('cmd_vel', '/nav2/cmd_vel_raw')],
     )
 
     bt_navigator = Node(
@@ -152,19 +170,19 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[params_file],
     )
 
-    velocity_smoother = Node(
-        package='nav2_velocity_smoother',
-        executable='velocity_smoother',
-        name='velocity_smoother',
-        output='screen',
-        arguments=['--ros-args', '--log-level', log_level],
-        parameters=[params_file],
-        remappings=[
-            ('cmd_vel',      '/nav2/cmd_vel_raw'),   # input from controller
-            ('cmd_vel_smoothed', '/nav2/cmd_vel'),   # output → twist_mux
-            ('odom',         '/odometry/filtered'),
-        ],
-    )
+    #velocity_smoother = Node(
+    #    package='nav2_velocity_smoother',
+    #    executable='velocity_smoother',
+    #    name='velocity_smoother',
+    #    output='screen',
+    #    arguments=['--ros-args', '--log-level', log_level],
+    #    parameters=[params_file],
+    #    remappings=[
+    #        ('cmd_vel',      '/nav2/cmd_vel_raw'),   # input from controller
+    #        ('cmd_vel_smoothed', '/nav2/cmd_vel'),   # output → twist_mux
+    #        ('odom',         '/odometry/filtered'),
+    #    ],
+    #)
 
     lifecycle_manager = Node(
         package='nav2_lifecycle_manager',
@@ -183,7 +201,7 @@ def generate_launch_description() -> LaunchDescription:
                 'behavior_server',
                 'bt_navigator',
                 'waypoint_follower',
-                'velocity_smoother',
+                #'velocity_smoother',
             ],
         }],
     )
@@ -203,6 +221,7 @@ def generate_launch_description() -> LaunchDescription:
         behavior_server,
         bt_navigator,
         waypoint_follower,
-        velocity_smoother,
+        #velocity_smoother,
         lifecycle_manager,
+        LogInfo(msg=['Map file passed to launch: ', map_file]),
     ])

@@ -12,6 +12,8 @@ class SSHKeyTeleop(Node):
         super().__init__('teleop_ssh_node')
         self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
         
+        self.stdscr = None
+        
         # Настройки шага скорости
         self.lin_step = 0.01
         self.ang_step = 0.05  
@@ -28,8 +30,21 @@ class SSHKeyTeleop(Node):
         # Создаем ROS2 таймер на 20 Гц (0.05 секунды)
         #self.timer = self.create_timer(0.05, self.timer_callback)
         self.timer = self.create_timer(0.2, self.timer_callback)
+        
+        self.wdg_update = time.time()
+        self.wdg_timeout = 15
 
     def timer_callback(self):
+        wdg_diff = time.time() - self.wdg_update
+        if wdg_diff > self.wdg_timeout:
+            self.target_linear = 0.0
+            self.target_angular = 0.0
+            self.stdscr.addstr(4, 0, "Watchdog timeout: 0")
+        else:
+            self.stdscr.addstr(4, 0, f"Watchdog timeout: {round(wdg_diff, 3)}")
+        
+        self.stdscr.refresh()
+            
         with self.lock:
             if self.is_run_action:
                 # Публикуем скорость с фиксированной частотой
@@ -44,6 +59,7 @@ class SSHKeyTeleop(Node):
 
 
 def keyboard_listener(stdscr, node: Node):
+    node.stdscr = stdscr
     # Оставляем curses БЛОКИРУЮЩИМ (nodelay НЕ вызываем)
     curses.cbreak()
     stdscr.keypad(True)
@@ -52,6 +68,7 @@ def keyboard_listener(stdscr, node: Node):
     stdscr.addstr(0, 0, "=== SSH ROS2 TELEOP (TIMERS EDITION) ===")
     stdscr.addstr(1, 0, "Используйте СТРЕЛКИ для управления.")
     stdscr.addstr(2, 0, "ПРОБЕЛ — экстренный стоп. 'Q' — выход.")
+    stdscr.addstr(4, 0, "Watchdog timeout: 0")
     stdscr.refresh()
 
     try:
@@ -63,15 +80,21 @@ def keyboard_listener(stdscr, node: Node):
                 match key:
                     case curses.KEY_UP:
                         node.target_linear += node.lin_step
+                        node.wdg_update = time.time()
                     case curses.KEY_DOWN:
                         node.target_linear -= node.lin_step
+                        node.wdg_update = time.time()
                     case curses.KEY_LEFT:
                         node.target_angular += node.ang_step
+                        node.wdg_update = time.time()
                     case curses.KEY_RIGHT:
                         node.target_angular -= node.ang_step
+                        node.wdg_update = time.time()
                     case _ if key == ' ':
                         node.target_linear = 0.0
                         node.target_angular = 0.0
+                    case 581:
+                        node.wdg_update = time.time()
                     case _ if  key in ['q', 'Q', 'й', 'Й']:
                         break
                 
@@ -98,9 +121,9 @@ def keyboard_listener(stdscr, node: Node):
                 dir += ' и не поворачивает          '
 
             # Обновляем интерфейс
-            stdscr.addstr(4, 0, f"Линейная (X): {node.target_linear:0.2f} м/с   ")
-            stdscr.addstr(5, 0, f"Угловая  (Z): {node.target_angular:0.2f} рад/с  ")
-            stdscr.addstr(7, 0, f"Состояние: {dir}")
+            stdscr.addstr(6, 0, f"Линейная (X): {node.target_linear:0.2f} м/с   ")
+            stdscr.addstr(7, 0, f"Угловая  (Z): {node.target_angular:0.2f} рад/с  ")
+            stdscr.addstr(9, 0, f"Состояние: {dir}")
             stdscr.refresh()
 
     finally:

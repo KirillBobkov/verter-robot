@@ -60,19 +60,20 @@ ekf_filter_node:
     # Абсолютная позиция (x, y) и абсолютный yaw от энкодеров.
     # Скорости НЕ берём — EKF выведет их из позиции.
 
-    odom0: /odom
+    odom0: /odom_raw
     odom0_config: [
       # Position: [x,    y,    z,    roll, pitch, yaw]
-                   true,  true, false, false, false, true,
-      # Velocity: [vx,   vy,   vz,   vroll, vpitch, vyaw]
                    false, false, false, false, false, false,
+      # Velocity: [vx,   vy,   vz,   vroll, vpitch, vyaw]
+                   true, true, false, false, false, true,
       # Acceleration: [ax, ay, az, aroll, apitch, ayaw]
                    false, false, false, false, false, false
     ]
 
-    odom0_differential: true
+    odom0_differential: false
     odom0_relative: false
     odom0_queue_size: 10
+    odom0_nodelay: false
 
     # ---------- IMU DATA — DISABLED 2026-06-04 ----------
     # BMX055 гироскоп даёт bias ~−0.001 рад/с по z (3.4°/мин), что
@@ -80,19 +81,21 @@ ekf_filter_node:
     # пока не сделаем bias-компенсацию или калибровку гироскопа.
     # Чтобы вернуть IMU в фьюжн — раскомментировать блок ниже.
     #
-    # imu0: /imu/data
-    # imu0_config: [
-    #   # Position: [x,    y,    z,    roll, pitch, yaw]
-    #                false, false, false, false, false, false,
-    #   # Velocity: [vx,   vy,   vz,   vroll, vpitch, vyaw]
-    #                false, false, false, false, false, true,
-    #   # Acceleration: ОТКЛЮЧЕНО — акселерометр не откалиброван
-    #                false, false, false, false, false, false
-    # ]
-    #
-    # imu0_differential: false
-    # imu0_relative: false
-    # imu0_queue_size: 10
+    imu0: /imu/data
+    imu0_config: [
+      # Position: [x,    y,    z,    roll, pitch, yaw]
+                   false, false, false, false, false, false,
+      # Velocity: [vx,   vy,   vz,   vroll, vpitch, vyaw]
+                   false, false, false, false, false, true,
+      # Acceleration: ОТКЛЮЧЕНО — акселерометр не откалиброван
+                   false, false, false, false, false, false
+    ]
+
+    imu0_differential: false
+    imu0_relative: false
+    imu0_queue_size: 20
+    imu0_nodelay: false
+    imu0_remove_gravitational_acceleration: false
 
     # ========================================================================
     # PROCESS NOISE COVARIANCE

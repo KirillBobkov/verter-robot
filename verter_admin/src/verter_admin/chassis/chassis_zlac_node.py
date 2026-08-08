@@ -15,8 +15,9 @@ import math
 import traceback
 
 
-STATE_MODBUS_INIT = 0
-STATE_READY       = 1
+STATE_MODBUS_INIT  = 0
+STATE_READY        = 1
+STATE_DRIVER_FAULT = 2
 
 MODBUS_ADDR = 1
 
@@ -27,6 +28,8 @@ REG_SERIAL_WATCHDOG = 0x2000
 SERIAL_WATCHDOG_MS = 1000
 
 REG_CONTROL_WORD = 0x200E
+CONTROL_CLEAR_FAULT = 0x06
+CONTROL_DISABLE = 0x07
 CONTROL_ENABLE = 0x08
 
 REG_DRIVER_STATUS = 0x20A5
@@ -76,8 +79,8 @@ class ZlacNode(Node):
         self.state: int = STATE_MODBUS_INIT
         
         self.sub = self.create_subscription(Twist, '/cmd_vel', self.callback, 10)
-        self.odom_pub = self.create_publisher(Odometry, "/odom", 10)
-        self.tf_broadcaster = TransformBroadcaster(self)
+        self.odom_pub = self.create_publisher(Odometry, "/odom_raw", 10)
+        #self.tf_broadcaster = TransformBroadcaster(self)
         self.modbus_init_timer = self.create_timer(2.0, self.modbus_init_handler)
         self.modbus_states_timer = self.create_timer(0.02, self.modbus_states_handler)
         
@@ -93,6 +96,9 @@ class ZlacNode(Node):
         self.odom.last_enc_left = None
         self.odom.last_enc_right = None
         self.odom.updated = self.get_clock().now()
+        
+        self.last_l_rpm = 0
+        self.last_r_rpm = 0
     
     def cmd_vel_to_target_rpm(self, linear: float, angular: float) -> tuple[int, int]:
         left_vel = linear - angular * self.wheel_base * 0.5
@@ -124,34 +130,48 @@ class ZlacNode(Node):
 
     def callback(self, msg: Twist):
         if self.state == STATE_READY:
-            self.get_logger().info(f"speed={msg.linear.x} turn={msg.angular.z}")
+            #self.get_logger().info(f"speed={msg.linear.x} turn={msg.angular.z}")
             l_rpm, r_rpm = self.cmd_vel_to_target_rpm(msg.linear.x, msg.angular.z)
-            self.get_logger().info(f"left_rpm={l_rpm} right_rpm={r_rpm}")
+            #self.get_logger().info(f"left_rpm={l_rpm} right_rpm={r_rpm}")
+        
+            if self.last_l_rpm != l_rpm or self.last_r_rpm != r_rpm:
+                self.get_logger().info(f"Set new target: [linear.x {msg.linear.x} : angular.z {msg.angular.z}] -> [{l_rpm}:{r_rpm}]")
+                self.last_l_rpm = l_rpm
+                self.last_r_rpm = r_rpm
         
             try:
                 self.master.execute(1, cst.WRITE_MULTIPLE_REGISTERS, REG_TARGET_RPM_M1, output_value=[l_rpm, r_rpm])
             except:
                 self.get_logger().warning(f'Modbus write error: {traceback.format_exc()}')
-                self.master.close()
-                self.serial.close()
-                self.state = STATE_MODBUS_INIT
+                self.modbus_deinit_handler()
 
     def modbus_states_handler(self):
         if self.state == STATE_READY:
             try:
                 res = self.master.execute(MODBUS_ADDR, cst.READ_HOLDING_REGISTERS, REG_DRIVER_STATUS, 8)
                 #self.get_logger().info(str(res))
-                self.odom_handler(res[2:-2])
+                self.odom_handler(res)
             except:
                 self.get_logger().warning(f'Modbus read error: {traceback.format_exc()}')
-                self.master.close()
-                self.serial.close()
-                self.state = STATE_MODBUS_INIT
+                self.modbus_deinit_handler()
     
     def odom_handler(self, regs: list[int]):
         now = self.get_clock().now()
-        enc_left =  (regs[0] << 16) + regs[1]
-        enc_right = (regs[2] << 16) + regs[3]
+        
+        error_left = regs[0]
+        error_right = regs[1]
+        
+        if error_left > 0 or error_right > 0:
+            self.state = STATE_DRIVER_FAULT
+            self.odom.last_enc_left = None
+            self.odom.last_enc_right = None
+            self.get_logger().warning(f'Wheels error: left {error_left} | right {error_right}')
+            self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_CONTROL_WORD, output_value=CONTROL_DISABLE)
+            self.get_logger().info('ZLAC driver control disabled')
+            return
+        
+        enc_left =  (regs[2] << 16) + regs[3]
+        enc_right = (regs[4] << 16) + regs[5]
         
         if enc_left & 0x80000000:
             enc_left -= 0x100000000
@@ -223,48 +243,71 @@ class ZlacNode(Node):
         odom.twist.twist.angular.z = angular_velocity
         
         odom.twist.covariance = [
-            1e-4, 0.0,  0.0,  0.0,  0.0,  0.0,
-            0.0,  1e6, 0.0,  0.0,  0.0,  0.0,
-            0.0,  0.0,  1e6,  0.0,  0.0,  0.0,
-            0.0,  0.0,  0.0,  1e6,  0.0,  0.0,
-            0.0,  0.0,  0.0,  0.0,  1e6,  0.0,
-            0.0,  0.0,  0.0,  0.0,  0.0,  1e-4
+            2.5e-3, 0.0,    0.0,  0.0,  0.0,  0.0,
+            0.0,    1.0e-3, 0.0,  0.0,  0.0,  0.0,
+            0.0,    0.0,    1.0,  0.0,  0.0,  0.0,
+            0.0,    0.0,    0.0,  1.0,  0.0,  0.0,
+            0.0,    0.0,    0.0,  0.0,  1.0,  0.0,
+            0.0,    0.0,    0.0,  0.0,  0.0,  1.0e-2
         ]
         
         self.odom_pub.publish(odom)
         
-        t = TransformStamped()
-        t.header.stamp = now.to_msg()
-        t.header.frame_id = 'odom'
-        t.child_frame_id = 'base_footprint'
+        #t = TransformStamped()
+        #t.header.stamp = now.to_msg()
+        #t.header.frame_id = 'odom'
+        #t.child_frame_id = 'base_footprint'
         
-        t.transform.translation.x = self.odom.x
-        t.transform.translation.y = self.odom.y
+        #t.transform.translation.x = self.odom.x
+        #t.transform.translation.y = self.odom.y
         
-        t.transform.rotation.w = math.cos(half)
-        t.transform.rotation.x = 0.0
-        t.transform.rotation.y = 0.0
-        t.transform.rotation.z = math.sin(half)
+        #t.transform.rotation.w = math.cos(half)
+        #t.transform.rotation.x = 0.0
+        #t.transform.rotation.y = 0.0
+        #t.transform.rotation.z = math.sin(half)
         
-        self.tf_broadcaster.sendTransform(t)
-      
+        #self.tf_broadcaster.sendTransform(t)
+    
     def modbus_init_handler(self):
-        if self.state == STATE_MODBUS_INIT:
-            try:
-                self.serial = serial.Serial(port=self.port, baudrate=self.baudrate, bytesize=8, parity='N', stopbits=1, xonxoff=0)
-                self.master = modbus_rtu.RtuMaster(self.serial)
-                self.master.set_timeout(0.1)
-                self.master.set_verbose(True)
-                self.get_logger().info('Modbus master created')
+        match self.state:
+            case _ if self.state == STATE_MODBUS_INIT:
+                try:
+                    if self.serial is None:
+                        self.serial = serial.Serial(port=self.port, baudrate=self.baudrate, bytesize=8, parity='N', stopbits=1, xonxoff=0)
+                    
+                    if self.master is None:
+                        self.master = modbus_rtu.RtuMaster(self.serial)
+                    
+                    self.master.set_timeout(0.1)
+                    self.master.set_verbose(True)
+                    self.get_logger().info('Modbus master created')
                 
-                self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_OPERATION_MODE, output_value=OPERATION_MODE_VELOCITY)
-                self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_SERIAL_WATCHDOG, output_value=SERIAL_WATCHDOG_MS)
-                self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_CONTROL_WORD, output_value=CONTROL_ENABLE)
+                    self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_OPERATION_MODE, output_value=OPERATION_MODE_VELOCITY)
+                    self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_SERIAL_WATCHDOG, output_value=SERIAL_WATCHDOG_MS)
+                    self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_CONTROL_WORD, output_value=CONTROL_ENABLE)
+                    self.get_logger().info('ZLAC driver control enabled')
                 
-                self.state = STATE_READY
-                self.get_logger().info('ZLAC driver initialized successfully')
-            except:
-                self.get_logger().warning(f'Could not create modbus master: {traceback.format_exc()}')
+                    self.state = STATE_READY
+                    self.get_logger().info('ZLAC driver initialized successfully')
+                except:
+                    self.get_logger().warning(f'Could not create modbus master: {traceback.format_exc()}')
+            case _ if self.state == STATE_DRIVER_FAULT:
+                try:
+                    self.master.execute(MODBUS_ADDR, cst.WRITE_SINGLE_REGISTER, REG_CONTROL_WORD, output_value=CONTROL_CLEAR_FAULT)
+                    self.get_logger().info('ZLAC driver fault reset successfully')
+                    self.state = STATE_MODBUS_INIT
+                except:
+                    self.get_logger().warning(f'Could not reset ZLAC driver fault: {traceback.format_exc()}')
+                    self.modbus_deinit_handler()
+
+    def modbus_deinit_handler(self):
+        self.master.close()
+        self.master = None
+        self.serial.close()
+        self.serial = None
+        self.state = STATE_MODBUS_INIT
+        self.odom.last_enc_left = None
+        self.odom.last_enc_right = None
 
 
 def main(args=None):

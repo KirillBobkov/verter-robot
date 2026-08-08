@@ -1,0 +1,13 @@
+chassis_zlac_node:
+    ros__parameters:
+    
+        modbus.port: "/dev/chassis"
+        modbus.baudrate: 115200
+        modbus.addr: 1
+    
+        wheels.base: 0.356
+        wheels.left_diameter: 0.196
+        wheels.right_diameter: 0.196
+        wheels.gear_ratio: 1.0
+        wheels.max_motor_rpm: 50
+        wheels.encoder_ticks_per_rev: 4096

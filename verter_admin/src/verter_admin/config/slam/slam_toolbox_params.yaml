@@ -1,21 +1,7 @@
-# SLAM Toolbox — async online mapping
-#
-# Robot:   Verter differential drive
-# LiDAR:   RPLiDAR A1M8 in Express mode (~10 Hz)
-# Odom:    Wheel encoders via odometry_node → EKF → /odometry/filtered
-# Scan:    /scan (laser_filter, front 180°, 0.20–6.0 m)
-#
-# Scan intake rate (Express @ ~10 Hz via Python rplidar-roboticia, mapping speed ≤ 0.15 m/s):
-#   robot moves ~1.5 cm per scan  →  process every 5 cm / ~2.9°
-#
-# Frames:  map → odom handled by SLAM toolbox (via /tf)
-#          odom → base_footprint published by EKF
-#          base_footprint → lidar_link from robot_state_publisher
-
 slam_toolbox:
   ros__parameters:
 
-    # ---- Solver ----------------------------------------------------------------
+    # Solver
     solver_plugin: solver_plugins::CeresSolver
     ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
@@ -23,58 +9,80 @@ slam_toolbox:
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: None
 
-    # ---- Mode / frames ---------------------------------------------------------
+    # Mode / frames
     mode: mapping
-    odom_frame:  odom
-    #odom_frame:  base_footprint
-    map_frame:   map
-    base_frame:  base_footprint
-    scan_topic:  /scan_raw
+    odom_frame: odom
+    map_frame: map
+    base_frame: base_footprint
+    scan_topic: /scan
     use_map_saver: true
 
-    # ---- Map -------------------------------------------------------------------
-    resolution: 0.05           # 5 cm/cell
-    minimum_range: 0.2         # matches laser_filter lower_threshold
-    max_laser_range: 5.5       # slightly below laser_filter upper (6.0 m)
-    map_update_interval: 5.0   # seconds between map saves
+    # Async input
+    scan_queue_size: 1
+    throttle_scans: 1
 
-    # ---- Scan intake -----------------------------------------------------------
-    # At ≤ 0.15 m/s and 10 Hz:  robot moves ~1.5 cm per scan.
-    # Process a scan every 3 cm of travel or ~1.7° of rotation.
-    minimum_travel_distance: 0.05   # m  (at 10 Hz, 0.15 m/s → ~1.5 cm/scan → process every ~3 scans)
-    minimum_travel_heading:  0.05   # rad (~2.9°)
-    minimum_time_interval:   0.05   # s  (cap at 20 Hz intake)
+    # Map
+    resolution: 0.03
+    min_laser_range: 0.2
+    max_laser_range: 8.0
+    map_update_interval: 3.0
 
-    # ---- Scan buffer (for pose-graph linking) -----------------------------------
+    # Scan intake
+    minimum_travel_distance: 0.08
+    minimum_travel_heading: 0.0873
+    minimum_time_interval: 0.05
+    check_min_dist_and_heading_precisely: true
+
+    # Scan buffer
     scan_buffer_size: 10
-    scan_buffer_maximum_scan_distance: 5.5
+    scan_buffer_maximum_scan_distance: 5.0
 
-    # ---- Scan matching ---------------------------------------------------------
-    use_scan_matching:   true
+    # Scan matching
+    use_scan_matching: true
     use_scan_barycenter: true
-    minimum_score: 0.5          # reject scans that match poorly (default 0.0 → too loose)
 
-    # ---- Scan linker (consecutive scan pair quality) ---------------------------
-    link_match_minimum_response_fine: 0.1
+    # Consecutive scan linking
+    link_match_minimum_response_fine: 0.15
     link_scan_maximum_distance: 1.5
 
-    # ---- Loop closure ----------------------------------------------------------
-    do_loop_closure: true
-    loop_search_space_dimension: 8.0
-    loop_match_search_maximum_distance: 4.0
+    # Loop closure
+    do_loop_closing: true
+    loop_search_maximum_distance: 3.0
+    loop_match_minimum_chain_size: 10
+    loop_match_maximum_variance_coarse: 3.0
     loop_match_minimum_response_coarse: 0.35
-    loop_match_minimum_response_fine:   0.45
+    loop_match_minimum_response_fine: 0.45
 
-    # ---- Pose graph ------------------------------------------------------------
-    distance_penalty_gain: 0.5
-    angle_penalty_gain:    1.0
+    # Normal correlation search
+    correlation_search_space_dimension: 0.5
+    correlation_search_space_resolution: 0.01
+    correlation_search_space_smear_deviation: 0.1
 
-    # ---- TF / timing -----------------------------------------------------------
+    # Loop closure correlation search
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.05
+    loop_search_space_smear_deviation: 0.03
+
+    # Scan matcher penalties/search
+    distance_variance_penalty: 0.5
+    angle_variance_penalty: 1.5
+
+    fine_search_angle_offset: 0.00349
+    coarse_search_angle_offset: 0.0873
+    coarse_angle_resolution: 0.01745
+
+    minimum_angle_penalty: 0.9
+    minimum_distance_penalty: 0.5
+    use_response_expansion: true
+
+    # TF / timing
+    transform_publish_period: 0.02
     transform_timeout: 0.2
     tf_buffer_duration: 30.0
+    restamp_tf: false
 
-    # ---- Runtime ---------------------------------------------------------------
+    # Runtime
     use_multicore: true
     stack_size_to_use: 40000000
-    enable_interactive_mode: true   # allows pausing/resuming from RViz
+    enable_interactive_mode: true
     debug_logging: false

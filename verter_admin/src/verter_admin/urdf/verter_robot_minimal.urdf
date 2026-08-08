@@ -87,7 +87,7 @@
   <joint name="wheel_left_joint" type="fixed">
     <parent link="base_link"/>
     <child link="wheel_left"/>
-    <origin xyz="0.120 0.178 0" rpy="0 0 0"/>
+    <origin xyz="0 0.178 0" rpy="0 0 0"/>
   </joint>
 
   <!-- Right Wheel -->
@@ -120,7 +120,7 @@
   <joint name="wheel_right_joint" type="fixed">
     <parent link="base_link"/>
     <child link="wheel_right"/>
-    <origin xyz="0.120 -0.178 0" rpy="0 0 0"/>
+    <origin xyz="0 -0.178 0" rpy="0 0 0"/>
   </joint>
 
   <!-- Caster Wheel (Back) -->
@@ -322,9 +322,9 @@
   <joint name="lidar_joint" type="fixed">
     <parent link="base_link"/>
     <child link="lidar_link"/>
-    <!-- Position: 120mm forward from center, 700mm above base_link (800mm from ground) -->
+    <!-- Position: 120mm forward from center, 760mm above base_link (860mm from ground) -->
     <!-- Лидар развёрнут на 180° вокруг Z (физическая ориентация) -->
-    <origin xyz="0.12 0 0.70" rpy="0 0 3.14159"/>
+    <origin xyz="0 0 0.76" rpy="0 0 3.14159"/>
   </joint>
 
   <!-- IMU (Trema BMX055 9 DOF) -->
@@ -341,8 +341,9 @@
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
     <child link="imu_link"/>
-    <!-- Центр робота, 39см от пола = 29см от base_link, смещён вперёд на 90мм -->
-    <origin xyz="0.09 0 0.29" rpy="0 0 0"/>
+    <!-- #Центр робота, 39см от пола = 29см от base_link, смещён вперёд на 90мм -->
+    <!-- Центр робота, 40.5см от пола = 29см от base_link, смещён вперёд на 0 мм -->
+    <origin xyz="0 0 0.305" rpy="0 0 0"/>
   </joint>
 
   <!--

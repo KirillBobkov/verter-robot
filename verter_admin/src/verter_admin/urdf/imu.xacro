@@ -1,0 +1,17 @@
+<!-- IMU (Trema BMX055 9 DOF) -->
+<link name="imu_link">
+    <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <box size="0.03 0.03 0.01"/>
+        </geometry>
+        <material name="red"/>
+    </visual>
+</link>
+
+<joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <!-- Центр робота, 39см от пола = 29см от base_link, смещён вперёд на 90мм -->
+    <origin xyz="0.09 0 0.29" rpy="0 0 0"/>
+</joint>

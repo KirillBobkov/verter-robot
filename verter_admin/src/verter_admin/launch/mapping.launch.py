@@ -42,22 +42,22 @@ def generate_launch_description() -> LaunchDescription:
 
     # ---- Launch arguments ------------------------------------------------------
 
-    esp32_port_arg = DeclareLaunchArgument(
-        'esp32_port', default_value='/dev/esp32_chassis',
-        description='Serial port for ESP32 chassis micro-ROS agent',
-    )
-    imu_port_arg = DeclareLaunchArgument(
-        'imu_esp32_port', default_value='/dev/esp32_imu',
-        description='Serial port for ESP32 IMU micro-ROS agent',
-    )
+    #esp32_port_arg = DeclareLaunchArgument(
+    #    'esp32_port', default_value='/dev/esp32_chassis',
+    #    description='Serial port for ESP32 chassis micro-ROS agent',
+    #)
+    #imu_port_arg = DeclareLaunchArgument(
+    #    'imu_esp32_port', default_value='/dev/esp32_imu',
+    #    description='Serial port for ESP32 IMU micro-ROS agent',
+    #)
     lidar_port_arg = DeclareLaunchArgument(
         'lidar_port', default_value='/dev/rplidar',
         description='Serial port for RPLiDAR',
     )
-    agent_extra_arg = DeclareLaunchArgument(
-        'micro_ros_agent_extra_args', default_value='',
-        description='Extra args for micro_ros_agent (e.g. -v6 for verbose)',
-    )
+    #agent_extra_arg = DeclareLaunchArgument(
+    #    'micro_ros_agent_extra_args', default_value='',
+    #    description='Extra args for micro_ros_agent (e.g. -v6 for verbose)',
+    #)
 
     # ---- micro-ROS agents (auto-restart loops) ---------------------------------
 
@@ -67,14 +67,16 @@ def generate_launch_description() -> LaunchDescription:
                 'bash', '-c',
                 [
                     'trap "kill 0; exit" TERM INT; '
+                    'PORT=', LaunchConfiguration(port_cfg), '; '
                     'while true; do '
+                    'echo "[micro_ros_agent {name}] resetting ESP32 on $PORT via DTR..."; '
+                    'python3 ~/verter-robot/verter_admin/scripts/reset_esp32_dtr.py $PORT || true; '
                     'source ~/microros_ws/install/setup.bash && '
                     'ros2 run micro_ros_agent micro_ros_agent serial '
-                    '--dev ', LaunchConfiguration(port_cfg),
-                    ' -b 921600 ',
+                    '--dev $PORT -b 921600 ',
                     LaunchConfiguration('micro_ros_agent_extra_args'),
                     '; '
-                    f'echo "[micro_ros_agent {name}] exited, restarting in 2 s..."; '
+                    'echo "[micro_ros_agent {name}] exited, restarting in 2 s..."; '
                     'sleep 2; done',
                 ],
             ],
@@ -83,8 +85,8 @@ def generate_launch_description() -> LaunchDescription:
             sigkill_timeout='10',
         )
 
-    micro_ros_chassis = micro_ros_agent('chassis', 'esp32_port')
-    micro_ros_imu     = micro_ros_agent('imu',     'imu_esp32_port')
+    #micro_ros_chassis = micro_ros_agent('chassis', 'esp32_port')
+    #micro_ros_imu     = micro_ros_agent('imu',     'imu_esp32_port')
 
     # ---- Core nodes ------------------------------------------------------------
 
@@ -134,10 +136,12 @@ def generate_launch_description() -> LaunchDescription:
                 parameters=[{
                     'serial_port':      LaunchConfiguration('lidar_port'),
                     'frame_id':         'lidar_link',
-                    'scan_mode':        'Express',
+                    #'scan_mode':        'Express',
+                    'scan_mode':        'Sensitivity',
+                    #'scan_mode':        'Standard',
                     'serial_baudrate':  115200,
                     'inverted':         False,
-                    'angle_compensate': True,
+                    'angle_compensate': False,
                 }],
                 remappings=[('scan', '/scan_raw')],
                 respawn=True,
@@ -169,17 +173,17 @@ def generate_launch_description() -> LaunchDescription:
     # ---- Launch description ----------------------------------------------------
 
     return LaunchDescription([
-        esp32_port_arg,
-        imu_port_arg,
+        #esp32_port_arg,
+        #imu_port_arg,
         lidar_port_arg,
-        agent_extra_arg,
-        micro_ros_chassis,
-        micro_ros_imu,
-        twist_mux,
-        odometry_node,
+        #agent_extra_arg,
+        #micro_ros_chassis,
+        #micro_ros_imu,
+        #twist_mux,
+        #odometry_node,
         ekf_node,
         robot_state_publisher,
         rplidar,
         laser_filter,
-        slam_toolbox,
+        #slam_toolbox,
     ])

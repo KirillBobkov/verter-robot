@@ -5,6 +5,7 @@ import modbus_tk.defines as cst
 from modbus_tk import modbus_rtu
 
 import time
+import sys
 
 PORT = '/dev/chassis'
 BAUDRATE = 115200
@@ -22,6 +23,8 @@ master.set_verbose(True)
 print('Modbus master created...')
 time.sleep(1)
 
+
+
 res = master.execute(1, cst.WRITE_SINGLE_REGISTER, 0x200D, output_value=3)
 print(f'Set velocity mode: {res}')
 
@@ -29,6 +32,13 @@ res = master.execute(1, cst.WRITE_SINGLE_REGISTER, 0x2000, output_value=0)
 print(f'Set watchdog ms: {res}')
 time.sleep(1)
 
+
+res = master.execute(1, cst.READ_HOLDING_REGISTERS, 0x20A5, 8)
+print(res)
+
+master.close()
+ser.close()
+sys.exit()
 
 res = master.execute(1, cst.WRITE_SINGLE_REGISTER, 0x200E, output_value=0x0008)
 print(f'Driver enable: {res}')

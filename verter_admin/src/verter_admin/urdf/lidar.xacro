@@ -1,0 +1,19 @@
+<!-- RPLiDAR A1M8 -->
+<!-- Positioned at top-center of robot -->
+<link name="lidar_link">
+    <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry>
+            <cylinder radius="0.035" length="0.04"/>
+        </geometry>
+        <material name="black"/>
+    </visual>
+</link>
+
+<joint name="lidar_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="lidar_link"/>
+    <!-- Position: 120mm forward from center, 700mm above base_link (800mm from ground) -->
+    <!-- Лидар развёрнут на 180° вокруг Z (физическая ориентация) -->
+    <origin xyz="0.12 0 0.70" rpy="0 0 3.14159"/>
+</joint>

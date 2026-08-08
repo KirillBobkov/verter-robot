@@ -1,29 +1,10 @@
-# Laser Filter Configuration for Verter Robot (ROS2 format)
-#
-# Problem: RPLiDAR A1M8 is mounted at the front of the robot (~25cm forward).
-# The back sector (180°) sees the robot body.
-#
-# Solution: Filter out the back 180°, keeping only the front 180° FOV.
-#
-# Angle convention (ROS standard):
-#   0° (0 rad)      = forward (+X)
-#   90° (π/2 rad)   = left (+Y)
-#   180° (π rad)    = back (-X)
-#   -90° (-π/2 rad) = right (-Y)
-#
-# We keep: -90° to +90° (front 180°)
-# We filter out: 90° to 270° (back 180°)
 
 laser_filter:
   ros__parameters:
     filter1:
-      name: range_filter
-      type: laser_filters/LaserScanRangeFilter
+      name: angular_filter
+      type: laser_filters/LaserScanAngularBoundsFilterInPlace
       params:
-        # Strip points closer than 20 cm (sensor noise / near-field) and beyond 6 m.
-        # Angular filter removed: lidar is at 0.80 m height, robot body top is at
-        # 0.65 m — robot body is below the scan plane so angular clipping is
-        # unnecessary and was incorrectly removing the front-of-robot sector.
-        lower_threshold: 0.20
-        upper_threshold: 6.0
-        use_message_range_limits: false
+        lower_angle: -0.7
+        upper_angle: 0.7
+        replace_with_nan: true

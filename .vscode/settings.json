@@ -1,0 +1,23 @@
+{
+    "ROS2.distro": "humble",
+    "python.autoComplete.extraPaths": [
+        "/home/jetson/verter-robot/verter_admin/build/verter_admin/src",
+        "/home/jetson/verter-robot/verter_admin/install/verter_admin/lib/python3.10/site-packages",
+        "/home/jetson/ros2_ws/install/verter_admin_msgs/local/lib/python3.10/dist-packages",
+        "/home/jetson/ros2_ws/build/verter_admin/src",
+        "/home/jetson/ros2_ws/install/verter_admin/lib/python3.10/site-packages",
+        "/home/jetson/microros_ws/install/micro_ros_msgs/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/jetson/verter-robot/verter_admin/build/verter_admin/src",
+        "/home/jetson/verter-robot/verter_admin/install/verter_admin/lib/python3.10/site-packages",
+        "/home/jetson/ros2_ws/install/verter_admin_msgs/local/lib/python3.10/dist-packages",
+        "/home/jetson/ros2_ws/build/verter_admin/src",
+        "/home/jetson/ros2_ws/install/verter_admin/lib/python3.10/site-packages",
+        "/home/jetson/microros_ws/install/micro_ros_msgs/local/lib/python3.10/dist-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}

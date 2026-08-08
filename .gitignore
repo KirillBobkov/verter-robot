@@ -40,3 +40,5 @@ verter_admin/journal-error.log
 **/node_modules
 
 .git.bak
+
+.vscode/

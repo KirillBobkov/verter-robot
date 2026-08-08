@@ -1,0 +1,61 @@
+<xacro:property name="base_length" value="0.589"/>
+<xacro:property name="base_width" value="0.533"/>
+<xacro:property name="base_height" value="1.0"/>
+
+
+<!-- Materials -->
+<material name="blue">
+    <color rgba="0.0 0.0 0.8 1.0"/>
+</material>
+
+<material name="black">
+    <color rgba="0.0 0.0 0.0 1.0"/>
+</material>
+
+<material name="red">
+    <color rgba="0.8 0.0 0.0 1.0"/>
+</material>
+
+<material name="gray">
+    <color rgba="0.5 0.5 0.5 1.0"/>
+</material>
+
+<visual>
+    <origin xyz="0 0 ${base_height/2}" rpy="0 0 0"/>
+    <geometry>
+        <box size="${base_length} ${base_width} ${base_height}"/>
+    </geometry>
+</visual>
+
+<link name="base_link">
+    <visual>
+        <origin xyz="0 0 0.275" rpy="0 0 0"/>
+        <geometry>
+            <box size="${base_length} ${base_width} ${base_height}"/>
+        </geometry>
+        <material name="blue"/>
+    </visual>
+
+    <collision>
+        <origin xyz="0 0 0.275" rpy="0 0 0"/>
+        <geometry>
+            <box size="${base_length} ${base_width} ${base_height}"/>
+        </geometry>
+    </collision>
+
+    <inertial>
+        <origin xyz="0 0 0.275" rpy="0 0 0"/>
+        <mass value="2.0"/>
+        <inertia
+            ixx="0.01" ixy="0.0" ixz="0.0"
+            iyy="0.01" iyz="0.0"
+            izz="0.01"/>
+    </inertial>
+</link>
+
+<joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <!-- base_link на высоте радиуса колеса (0.1м) от пола -->
+    <origin xyz="0 0 0.1" rpy="0 0 0"/>
+</joint>
