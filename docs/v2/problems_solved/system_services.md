@@ -26,7 +26,7 @@ systemctl --user restart verter-admin.service
 
 **Диагностика:**
 - `journalctl --user -u verter-admin.service --since "10 minutes ago" | grep -i error`
-- `cat /home/verter/verter-robot/verter_admin/journal-error.log` — логи ошибок
+- `cat /home/jetson/verter-robot/verter_admin/journal-error.log` — логи ошибок
 - `pactl list sinks short` — проверка доступности аудио
 
 ---
@@ -34,7 +34,7 @@ systemctl --user restart verter-admin.service
 ## Установка сервиса
 
 ```bash
-cd /home/verter/verter-robot/verter_admin/services
+cd /home/jetson/verter-robot/verter_admin/services
 chmod +x start_verter_admin.sh stop_verter_admin.sh
 mkdir -p ~/.config/systemd/user
 cp verter-admin.service ~/.config/systemd/user/verter-admin.service
@@ -66,15 +66,15 @@ journalctl --user -u verter-admin.service --since today
 
 Логи из файлов:
 ```bash
-tail -f /home/verter/verter-robot/verter_admin/journal.log
-tail -f /home/verter/verter-robot/verter_admin/journal-error.log
+tail -f /home/jetson/verter-robot/verter_admin/journal.log
+tail -f /home/jetson/verter-robot/verter_admin/journal-error.log
 ```
 
 ## Ручной запуск (без systemd)
 
 ```bash
-cd /home/verter/verter-robot/verter_admin/services && ./start_verter_admin.sh
-cd /home/verter/verter-robot/verter_admin/services && ./stop_verter_admin.sh
+cd /home/jetson/verter-robot/verter_admin/services && ./start_verter_admin.sh
+cd /home/jetson/verter-robot/verter_admin/services && ./stop_verter_admin.sh
 ```
 
 ## Диагностика аудио
@@ -86,7 +86,7 @@ arecord -f cd -d 5 test.wav  # записать 5 секунд
 aplay test.wav               # воспроизвести
 ```
 
-## Диагностика USB/Arduino
+## Диагностика USB/ESP32
 
 ```bash
 ls /dev/ttyUSB* /dev/ttyACM*
@@ -141,6 +141,6 @@ systemctl --user daemon-reload
 ## Автозапуск при входе пользователя
 
 ```bash
-sudo loginctl enable-linger verter
-loginctl show-user verter | grep Linger
+sudo loginctl enable-linger jetson
+loginctl show-user jetson | grep Linger
 ```

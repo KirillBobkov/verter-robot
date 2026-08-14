@@ -13,9 +13,9 @@
 7. `ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/rplidar` — ручной запуск драйвера
 8. `ros2 topic echo /scan --once` — данные с лидара
 
-Переопределение порта при запуске:
+Переопределение порта при запуске (параметр `lidar_port` доступен в `mapping.launch.py` и `autonomous_mapping_real.launch.py`, но не в `nav2_navigation.launch.py`):
 ```bash
-ros2 launch verter_admin nav2_navigation.launch.py lidar_port:=/dev/ttyUSB0
+ros2 launch verter_admin mapping.launch.py lidar_port:=/dev/ttyUSB0
 ```
 
 Создание symlink:
@@ -29,11 +29,6 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="r
 ```
 ```bash
 sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-Скрипт автоматической проверки:
-```bash
-bash /home/jetson/verter-robot/verter_admin/check_lidar_connection.sh
 ```
 
 ### Сценарии решения
@@ -89,9 +84,9 @@ sudo usermod -a -G dialout $USER
 
 ## 5. Робот дрожит/вибрирует
 
-**Причина:** Слишком высокие gains в DWB planner.
+**Причина:** Слишком агрессивные параметры углового управления в RegulatedPurePursuitController.
 
-**Решение:** Уменьшить `velocity_gain` в конфиге Nav2.
+**Решение:** Уменьшить `max_angular_accel` и/или `rotate_to_heading_angular_vel` в конфиге Nav2 (`config/nav2/nav2_navigation_params.yaml`, секция `FollowPath`).
 
 ---
 
@@ -105,23 +100,21 @@ sudo usermod -a -G dialout $USER
 
 ## 7. EKF: `odom0_differential: false`
 
-**Симптом:** EKF доверяет абсолютному yaw от энкодеров, что накапливает дрейф.
-
-**Решение:** Установлено `odom0_differential: true` — EKF использует только изменения yaw.
+**Конфигурация:** `odom0_differential: false` в `config/robot_localization/ekf.yaml`. Источник `odom0: /odom_raw` отдаёт в EKF только скорости (vx, vy, vyaw), позиции и ускорения отключены. EKF сам выводит позицию и yaw из скоростей.
 
 ---
 
-## 8. IMU отключён (известное ограничение)
+## 8. IMU в EKF
 
-**Причина:** BMX055 гироскоп даёт дрейф, временно отключён в EKF.
+**Конфигурация:** `imu0: /imu/data` раскомментирован в `config/robot_localization/ekf.yaml` (строка 84). Из IMU используется только угловая скорость vyaw (yaw_rate); ускорения отключены. Заголовок файла отмечает IMU DISABLED, но фактически IMU включён в фьюжн.
 
 ---
 
 ## Известные ограничения
 
-- **Задний обзор:** LiDAR видит только передние 180°
-- **Максимальная скорость:** 0.3 м/с (ограничено Nav2 и ESP32)
-- **Разрешение карты:** 5 см/ячейка (может не видеть мелкие препятствия)
+- **Задний обзор:** LiDAR видит только передние ~80° (AngularBoundsFilterInPlace ±0.7 рад в `config/laser_filters/laser_filter.yaml`)
+- **Максимальная скорость:** 0.3 м/с (ограничено Nav2 и ESP32); `desired_linear_vel: 0.04` в RegulatedPurePursuitController
+- **Разрешение карты:** 3 см/ячейка (`resolution: 0.03` в `config/slam/slam_toolbox_params.yaml`)
 
 ## Топики LiDAR
 

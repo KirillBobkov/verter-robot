@@ -55,8 +55,7 @@ Environment="PULSE_SERVER=unix:/run/user/%U/pulse/native"
 ```bash
 pactl list sinks short
 pactl list sources short
-lsusb | grep -i audio
-python3 -c "import sounddevice as sd; print(sd.query_devices())"
+lsusb | grep -i "audio\|repeater\|arrayuac10"
 ```
 
 ---

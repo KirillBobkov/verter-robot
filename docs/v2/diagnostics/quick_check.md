@@ -48,7 +48,7 @@ ros2 topic echo /verter_commands --once    # последняя обработа
 
 ```bash
 ros2 topic echo /amcl_pose --once          # текущая оценка позы
-ros2 lifecycle get /waypoint_manager       # состояние Lifecycle-ноды
+ros2 node info /waypoint_manager           # состояние ноды (обычный Node, не LifecycleNode)
 ```
 
 ## Web-UI

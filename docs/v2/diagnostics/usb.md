@@ -4,7 +4,7 @@
 
 ```bash
 ls /dev/ttyUSB* /dev/ttyACM*
-ls -la /dev/rplidar /dev/esp32_chassis /dev/esp32_imu /dev/arduino_chassis /dev/arduino_sensors
+ls -la /dev/rplidar /dev/esp32_chassis /dev/esp32_imu /dev/esp32_ctrl /dev/chassis /dev/arduino_sensors
 ```
 
 ## Физический USB-порт

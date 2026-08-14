@@ -8,36 +8,43 @@
 
 | # | Проблема | Статус |
 |---|----------|--------|
-| 0 | `odom0_differential: false` — EKF доверяет абсолютному yaw | ✅ Исправлено → `true` |
-| 1 | Laser filter обрезает до 180° | 🔲 Рекомендуется расширить до ±150° |
+| 0 | `odom0_differential: false` — EKF берёт из odom0 только скорости (vx, vy, vyaw), позиция отключена | ✅ Актуально → `false` (соответствует коду) |
+| 1 | Laser filter обрезает до ±0.7 рад (~80°) | 🔲 Рекомендуется расширить до ±150° |
 | 2 | Wheel slip при вращении на месте | 🔲 Снизить скорость, использовать arc-повороты |
-| 3 | `link_match_minimum_response_fine: 0.1` — слишком мягкий порог | 🔲 Поднять до 0.45 |
-| 4 | `angular_scale: 2.0` в cmd_vel fallback одометрии | 🔲 Убрать масштабирование |
-| 5 | URDF wheel_base (0.356) ≠ calibrated (0.374) | 🔲 Измерить реальное расстояние |
-| 6 | Высокая скорость auto-mapping — motion distortion | 🔲 Снизить до 0.10-0.15 м/с |
-| 7 | Nav2 провоцирует развороты в тесных местах | 🔲 Настроить DWB на forward-only |
-| 8 | Агрессивные угловые ограничения в controller | 🔲 Снизить max_angular_accel |
-| 9 | AMCL стартует с фиксированной позой (0, 0, 0) | 🔲 Требуется указание через RViz |
-| 10 | Odom covariance не зависит от режима движения | 🔲 Сделать адаптивную covariance |
+| 3 | `link_match_minimum_response_fine: 0.15` — мягкий порог | 🔲 Поднять до 0.45 |
+| 4 | `angular_scale: 1.0` в cmd_vel fallback одометрии | ✅ Уже 1.0 (масштабирования нет) |
+| 5 | URDF wheel_base (0.3642) = calibrated (0.3642), но y=±0.178 даёт 0.356 | 🔲 Привести origin к ±0.1821 |
+| 6 | Низкая скорость авто-картирования (`desired_linear_vel: 0.04`) | 🔲 Проверить достаточность для mapping |
+| 7 | Nav2 провоцирует развороты в тесных местах | 🔲 Настроить RegulatedPurePursuit на forward-only |
+| 8 | Агрессивные угловые ограничения в controller | 🔲 Снизить max_angular_accel (сейчас 1.0) |
+| 9 | AMCL: `set_initial_pose` не задан (по умолчанию false) | 🔲 Требуется указание через RViz |
+| 10 | Odom covariance зависит только от encoder_fresh, не от режима движения | 🔲 Сделать адаптивную covariance |
 | 11 | IMU и odom в разных временных базах | 🔲 Синхронизировать источники |
 | 12 | IMU — только angular velocity, нет абсолютного yaw | Известное ограничение |
-| 13 | Ультразвук в costmap, но тракт топиков не сходится | 🔲 Сверить naming-конвенции |
+| 13 | Ультразвук: proximity_safety ждёт LaserScan на /ultrasonic/ranges, но нет публикатора | 🔲 Сверить naming-конвенции |
 
 ---
 
-## 1. Laser filter: только передние 180°
+## 1. Laser filter: только передние ±0.7 рад (~80°)
 
 **Файл:** `config/laser_filters/laser_filter.yaml`
 
-Лидар видит только переднюю полусферу. В узком коридоре при повороте сцена меняется кардинально от скана к скану, стены создают симметричную геометрию — matcher может спутать стороны.
+Лидар видит только узкий передний сектор (±0.7 рад ≈ ±40°, всего ~80°). В узком коридоре при повороте сцена меняется кардинально от скана к скану, стены создают симметричную геометрию — matcher может спутать стороны.
+
+Текущие значения в конфиге:
+
+```yaml
+lower_angle: -0.7
+upper_angle:  0.7
+```
 
 ### Рекомендация
 
 Расширить фильтр до ±150° (быстрый тест):
 
 ```yaml
-angle_min: -2.618  # -150°
-angle_max:  2.618  # +150°
+lower_angle: -2.618  # -150°
+upper_angle:  2.618  # +150°
 ```
 
 Или оставить полный 360° и вырезать только секторы корпуса точечно.
@@ -67,23 +74,24 @@ ros2 topic echo /odom --once | grep -A3 orientation
 
 ### Рекомендация
 
-В `nav2_navigation_params.yaml`:
+В `nav2_navigation_params.yaml` (контроллер — `RegulatedPurePursuitController`, не DWB):
 
 ```yaml
-# Снизить скорость вращения
-max_vel_theta: 0.4
+# Снизить скорость вращения при rotate_to_heading
+rotate_to_heading_angular_vel: 0.15  # текущее значение
 
-# Или запретить вращение на месте — использовать arc-повороты
-min_vel_x: 0.05  # небольшой forward drift при повороте
+# Запретить вращение на месте — использовать arc-повороты
+use_rotate_to_heading: false          # отключит spin на месте
+min_approach_linear_velocity: 0.02    # текущее значение
 ```
 
 ---
 
-## 3. `link_match_minimum_response_fine: 0.1`
+## 3. `link_match_minimum_response_fine: 0.15`
 
 **Файл:** `config/slam/slam_toolbox_params.yaml`
 
-SLAM принимает scan match как валидный при score ≥ 0.1 — практически любое совпадение. Типичные рабочие значения: 0.45–0.55.
+SLAM принимает scan match как валидный при score ≥ 0.15 — очень мягкий порог. Типичные рабочие значения: 0.45–0.55.
 
 ### Рекомендация
 
@@ -95,42 +103,43 @@ link_match_minimum_response_fine: 0.45
 
 ---
 
-## 4. `angular_scale: 2.0` в cmd_vel fallback
+## 4. `angular_scale: 1.0` в cmd_vel fallback
 
 **Файл:** `src/verter_admin/control/domain/odometry_policy.py`
 
-При fallback на cmd_vel (если энкодеры не приходят >1 сек) угловая скорость умножается на 2. Кратковременный скачок yaw ×2 во время разворота.
+При fallback на cmd_vel (если энкодеры не приходят >1 сек, `encoder_timeout: 1.0`) угловая скорость используется как есть — масштабирования нет (`angular_scale: 1.0`, `linear_scale: 1.0`). Ранее предполагалось значение 2.0, но в коде оно уже равно 1.0.
 
-### Рекомендация
+### Текущее состояние
 
 ```python
-angular_scale: float = 1.0  # убрать масштабирование
+angular_scale: float = 1.0  # масштабирования нет
+linear_scale: float = 1.0
 ```
 
 ---
 
-## 5. URDF wheel_base ≠ calibrated
+## 5. URDF wheel_base: свойство vs origin
 
-URDF: `y=±0.178` → wheel_base = **0.356m**, calibrated: **0.374m**. Модель в RViz неточная.
+`wheels.xacro` определяет `wheel_base = 0.3642` (совпадает с `odometry_policy.py`), но origin-координаты колёс `y=±0.178` дают расстояние 0.356 m — рассогласование между свойством и фактической геометрией в URDF.
 
 ### Рекомендация
 
-Измерить расстояние между центрами точек контакта колёс с полом. Обновить URDF и привести к единому значению.
+Привести `origin xyz` в `wheels.xacro` к `y=±0.1821`, чтобы геометрия совпадала со значением `wheel_base = 0.3642`.
 
 ---
 
-## 6. Слишком высокая скорость в auto-mapping
+## 6. Скорость в auto-mapping
 
 **Файлы:** `config/slam/slam_toolbox_params.yaml`, `config/nav2/nav2_navigation_params.yaml`
 
-При `desired_linear_vel: 0.25` скан "растягивается" по времени — стены двоются и расходятся параллельно.
+Текущее значение `desired_linear_vel: 0.04` (в `nav2_navigation_params.yaml`, контроллер `RegulatedPurePursuitController`). Для авто-картирования с RPLidar A1M8 это может быть слишком медленно — скан обновляется ~10 Гц, робот едва движется.
 
 ### Рекомендация
 
-Для RPLidar A1M8 безопасный диапазон:
+Для авто-картирования подобрать скорость в диапазоне 0.10–0.15 м/с:
 
 ```yaml
-desired_linear_vel: 0.12  # было 0.25
+desired_linear_vel: 0.12  # текущее 0.04
 ```
 
 ---
@@ -150,28 +159,26 @@ desired_linear_vel: 0.12  # было 0.25
 
 ## 8. Агрессивные угловые ограничения
 
-Высокие `max_rotational_vel`, `rotational_acc_lim`, `max_angular_accel` усиливают проскальзывание. Ошибка yaw растёт по цепочке: wheel slip → плохой odom → плохой map→odom → лидар не совпадает с картой.
+Текущие значения: `max_rotational_vel: 0.5`, `rotational_acc_lim: 1.0` (behavior_server), `max_angular_accel: 1.0` (controller). Высокие угловые ускорения усиливают проскальзывание. Ошибка yaw растёт по цепочке: wheel slip → плохой odom → плохой map→odom → лидар не совпадает с картой.
 
 ---
 
-## 9. AMCL стартует с фиксированной позой (0, 0, 0)
+## 9. AMCL: начальная поза не задана в конфиге
 
-`set_initial_pose: true` + фиксированная поза. Если робот стартует не из этой точки — локализация получает ложную гипотезу. В симметричных коридорах AMCL долго не сходится.
+В `nav2_navigation_params.yaml` параметры `set_initial_pose` и `initial_pose.*` отсутствуют — AMCL использует значения по умолчанию (`set_initial_pose: false`). Начальная поза должна задаваться через RViz (2D Pose Estimate), иначе локализация стартует с (0, 0, 0). В симметричных коридорах AMCL долго не сходится без явного указания.
 
 ### Диагностика
 
 ```bash
-ros2 param get /amcl set_initial_pose
-ros2 param get /amcl initial_pose.x
-ros2 param get /amcl initial_pose.y
-ros2 param get /amcl initial_pose.yaw
+ros2 param get /amcl set_initial_pose   # ожидается false (по умолчанию)
+# initial_pose.* параметры отсутствуют в конфиге — поза задаётся через RViz
 ```
 
 ---
 
-## 10. Odom covariance фиксирована
+## 10. Odom covariance зависит только от encoder_fresh
 
-Фиксированные covariance — EKF слишком доверяет odom при вращении на месте, пробуксовке или fallback-режиме.
+Covariance переключается между двумя значениями: `_SMALL = 1e-4` (энкодеры свежие) и `_LARGE = 0.5` (энкодеры устарели >1 сек). Covariance не зависит от режима движения (прямой ход / разворот / пробуксовка) — EKF одинаково доверяет odom и при вращении на месте.
 
 ### Диагностика
 
@@ -184,7 +191,7 @@ ros2 topic echo /odom --once
 
 ## 11. IMU и odom — разное время
 
-IMU публикует stamp из `millis()` ESP32, odometry_node ставит время по хосту. На быстрых поворотах gyro и wheel odom описывают разные моменты времени.
+IMU публикует stamp из `rmw_uros_epoch_nanos()` (время синхронизированной сессии micro-ROS на ESP32), odometry_node ставит время по часам хоста (`get_clock().now()`). При рассинхронизации часов на быстрых поворотах gyro и wheel odom описывают разные моменты времени. ESP32 периодически вызывает `rmw_uros_sync_session()` (каждые 60 с) для синхронизации.
 
 ### Диагностика
 
@@ -196,22 +203,28 @@ ros2 topic echo /odom --once
 
 ---
 
-## 12. IMU — только angular velocity
+## 12. IMU — только angular velocity + acceleration
 
-IMU публикует только гироскопический `angular_velocity.z`. Ориентация отсутствует — нет независимого абсолютного yaw-источника.
+IMU публикует `angular_velocity` (x, y, z) и `linear_acceleration` (x, y, z). Поля `orientation` и `orientation_covariance` не заполняются (остаются нулевыми по умолчанию) — нет независимого абсолютного yaw-источника.
 
 ### Диагностика
 
 ```bash
 ros2 topic echo /imu/data --once
-# orientation_covariance: -1 — абсолютная ориентация не используется
+# orientation: x=0, y=0, z=0, w=0 — ориентация не заполняется
+# orientation_covariance: все нули (не -1)
 ```
 
 ---
 
-## 13. Ультразвук в costmap — тракт топиков не сходится
+## 13. Ультразвук — тракт топиков не сходится
 
-Конфиги costmap ждут `LaserScan` на `/ultrasonic/ranges`, но сенсоры публикуют `Float32MultiArray` и набор `Range`. Робот не получает ближний обзор, на который рассчитывает конфигурация.
+`proximity_safety_node` ожидает `LaserScan` на `/ultrasonic/ranges` (параметр `ultrasonic_topic`), но ни один узел не публикует `LaserScan` на этот топик. Цепочка данных:
+
+- ESP32 (`esp32_sensors_refab`) публикует `Float32MultiArray` на `/ultrasonics`
+- `range_converter_node` подписывается на `/ultrasonic/distances` и публикует 7 отдельных `Range` на `/verter/distance_sensors/{name}`
+
+Ни одна из цепочек не создаёт `LaserScan` на `/ultrasonic/ranges` — safety-узел не получает ближний обзор.
 
 ### Диагностика
 
@@ -224,8 +237,8 @@ ros2 topic info /ultrasonic/ranges
 
 ## Корневые причины (по приоритету)
 
-1. Несогласованная кинематика: `wheel_base`, scale, поведение при slip
-2. Бедная геометрия лидара: front-only фильтр
-3. Высокая скорость и угловая динамика при картографировании
-4. Слишком сильное доверие к wheel odom в EKF
-5. Слабая наблюдаемость в узких местах + агрессивная логика Nav2
+1. Несогласованная кинематика: `wheel_base` (свойство 0.3642 vs origin 0.356), поведение при slip
+2. Бедная геометрия лидара: фильтр ±0.7 рад (~80°)
+3. Угловая динамика при картографировании (`max_angular_accel: 1.0`, `rotational_acc_lim: 1.0`)
+4. EKF: odom0 только по скоростям; imu0:/imu/data раскомментирован (вопреки заголовку «IMU DISABLED»), bias гироскопа ~-0.001 рад/с по z
+5. Слабая наблюдаемость в узких местах + агрессивная логика Nav2 (spin, rotate_to_heading)

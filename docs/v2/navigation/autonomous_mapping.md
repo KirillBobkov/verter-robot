@@ -6,23 +6,28 @@
 
 ```
 Датчики
-  RPLiDAR A1M8          (80 см, 180, 12 м)
-  7x HC-SR04             (5 см, ~150, 4 м)
+  RPLiDAR A1M8          (86 см, ~80° после фильтра, физически 12 м)
+  7x HC-SR04             (2 см, ~30° FOV, 2.5 м)
         |
-        +--> /scan                   (LaserScan)
+        +--> /scan_raw --> laser_filter --> /scan   (LaserScan, ~10 Hz)
+        |                                         |
+        |                                         +--> Nav2 Costmap Layers
+        |                                               voxel_layer (local, VoxelLayer)       (препятствия, /scan)
+        |                                               obstacle_layer (global, ObstacleLayer) (препятствия, /scan)
+        |                                               inflation_layer
+        |                                               (Ultrasonic Layer — запланировано, не реализован)
         |
-        +--> /verter/distance_sensors/*  (Range x7)
+        +--> /ultrasonic/distances  (Float32MultiArray, ESP32)
                |
                v
-         range_to_laserscan Converter
+         range_converter_node
                |
-               +--> /ultrasonic/ranges   (LaserScan)
-        |
-        v
-    Nav2 Costmap Layers
-      Lidar Layer        (высокие препятствия)
-      Ultrasonic Layer   (низкие препятствия)
-      Inflation Layer
+               +--> /verter/distance_sensors/*   (Range x7)
+
+  /ultrasonic/ranges (LaserScan) — НЕ публикуется (конвертер Range->LaserScan не реализован)
+               |
+               +--> proximity_safety_node --> /safety/cmd_vel (приоритет 200, twist_mux)
+                    (пока работает только по /scan — /ultrasonic/ranges нет данных)
         |
         v
     SLAM Toolbox         (построение карты -> /map)
@@ -31,36 +36,45 @@
     Explore Lite         (frontier exploration -> goal_pose)
         |
         v
-    Nav2 Navigation      (планирование пути -> /cmd_vel)
+    Nav2 Navigation      (планирование пути -> /cmd_vel напрямую, минуя twist_mux)
 ```
 
 ## Порядок запуска компонентов
 
 Автономное картографирование требует строгого порядка инициализации:
 
-| Время  | Компоненты                                     |
-|--------|------------------------------------------------|
-| 0 с    | micro-ROS, twist_mux, одометрия, EKF, LiDAR, SLAM |
-| 18 с   | Nav2-стек (локализация, планирование)          |
-| 60 с   | Explore Lite (автономное исследование)         |
+| Время  | Компоненты                                                     |
+|--------|----------------------------------------------------------------|
+| 0 с    | micro-ROS (chassis + IMU), twist_mux, одометрия, EKF, robot_state_publisher, laser_filter, range_converter, proximity_safety, SLAM |
+| 1 с    | RPLiDAR (TimerAction 1 с)                                      |
+| 18 с   | Nav2-стек (локализация, планирование, TimerAction 18 с)        |
+| 60 с   | Explore Lite (автономное исследование, TimerAction 60 с)       |
 
 SLAM должен инициализироваться и начать строить карту до того, как Nav2 попытается локализироваться.
 
 ## Поток данных
 
-1. RPLiDAR публикует `/scan` (LaserScan, ~10 Hz).
-2. Семь ультразвуковых сенсоров публикуют отдельные Range-сообщения.
-3. Нода `range_to_laserscan` объединяет 7 Range в единый LaserScan `/ultrasonic/ranges`.
-4. Оба LaserScan поступают в costmap-слои Nav2.
+1. RPLiDAR публикует `/scan_raw`, который фильтруется laser_filter в `/scan` (LaserScan, ~10 Hz).
+2. Семь ультразвуковых сенсоров ESP32 публикуют массив `Float32MultiArray` на `/ultrasonic/distances`.
+3. Нода `range_converter_node` преобразует `Float32MultiArray` в 7 отдельных `Range`-сообщений на `/verter/distance_sensors/*`.
+4. `/scan` поступает в costmap-слои Nav2 (VoxelLayer local / ObstacleLayer global). Ультразвук НЕ входит в costmap. Узел `proximity_safety_node` подписан на `/ultrasonic/ranges` (LaserScan), но этот топик не публикуется — ультразвук пока не поступает в safety-слой (см. ниже).
 5. SLAM Toolbox строит карту `/map` на основе данных лидара.
 6. Explore Lite находит фронтиры на карте и отправляет цели в Nav2.
-7. Nav2 планирует путь и выдаёт команды `/cmd_vel` через twist_mux.
+7. Nav2 планирует путь и выдаёт команды напрямую в `/cmd_vel` (ремап `cmd_vel`→`/nav2/cmd_vel` и velocity_smoother закомментированы в `nav2_navigation.launch.py` — цепочка безопасности twist_mux при standalone-запуске Nav2 разорвана).
 
-## Конвертер ultrasonic (range_to_laserscan)
+## Конвертер ultrasonic (range_converter_node)
 
-**Файл:** `src/verter_admin/distance_sensors/range_to_laserscan.py`
+**Файл:** `src/verter_admin/control/adapters/ros/range_converter_node.py`
 
-### Входные топики
+Нода подписывается на массив `Float32MultiArray` от ESP32 и публикует 7 отдельных `Range`-сообщений. Параметры каждого датчика: `min_range=0.02`, `max_range=2.5`, `field_of_view=30°`.
+
+### Входной топик
+
+| Топик                    | Тип               |
+|--------------------------|-------------------|
+| `/ultrasonic/distances`  | Float32MultiArray |
+
+### Выходные топики
 
 | Топик                                      | Тип   |
 |--------------------------------------------|-------|
@@ -72,20 +86,9 @@ SLAM должен инициализироваться и начать стро�
 | `/verter/distance_sensors/left`             | Range |
 | `/verter/distance_sensors/right`            | Range |
 
-### Выход
+### Топик `/ultrasonic/ranges` (LaserScan)
 
-| Топик                | Тип       |
-|----------------------|-----------|
-| `/ultrasonic/ranges` | LaserScan |
-
-### Параметры выходного LaserScan
-
-| Параметр       | Значение            |
-|----------------|---------------------|
-| FOV            | 180 (-90..+90)      |
-| Разрешение     | ~1 (181 луч)        |
-| Частота        | 10 Hz               |
-| Диапазон       | 0.02 -- 4.0 м       |
+Узел `proximity_safety_node` ожидает `LaserScan` на топике `/ultrasonic/ranges` (см. `contracts/motion.py`, `TopicContract.ULTRASONIC_SCAN`). Конвертер `Range → LaserScan` для этого топика запланирован, но в текущем коде не реализован — ультразвуковые данные пока не поступают в safety-слой через этот канал.
 
 ### Расстановка сенсоров
 
@@ -96,48 +99,65 @@ SLAM должен инициализироваться и начать стро�
 | front_left_outer    | +13.2  | (0.262, 0.152, 0.048) |
 | front_right_inner   | -5.7   | (0.277, -0.074, 0.048) |
 | front_right_outer   | -13.2  | (0.262, -0.152, 0.048) |
-| left                | +76    | (0.18, 0.28, 0.048) |
-| right               | -76    | (0.18, -0.28, 0.048) |
+| left                | +76    | (0.180, 0.228, 0.048) |
+| right               | -76    | (0.180, -0.228, 0.048) |
 
 ## Costmap-слои Nav2
 
-### Lidar Layer (VoxelLayer)
+**Конфигурация:** `config/nav2/nav2_navigation_params.yaml` — эталонная конфигурация. В `autonomous_mapping_real.launch.py` передаётся пустой `nav2_mapping_real_params.yaml` (0 байт) → Nav2 запускается со встроенными дефолтами, а не с параметрами из `nav2_navigation_params.yaml`. Параметры ниже описаны по эталонному файлу.
+
+> **Важно:** ультразвуковый слой ОТСУТСТВУЕТ в costmap. Узел `proximity_safety_node` подписан на `/ultrasonic/ranges` (LaserScan), но этот топик не публикуется — фактически safety работает только по лидару (`/scan`). Слои costmap:
+
+### Local Costmap: voxel_layer (VoxelLayer)
 
 ```yaml
-lidar_scan:
-  sensor_frame: lidar_link
-  data_type: LaserScan
-  topic: /scan
-  min_obstacle_height: 0.0
-  max_obstacle_height: 2.0
-  obstacle_max_range: 5.0
-  raytrace_max_range: 5.5
-  marking: true
-  clearing: true
+voxel_layer:
+  plugin: nav2_costmap_2d::VoxelLayer
+  observation_sources: scan
+  scan:
+    topic: /scan
+    data_type: LaserScan
+    max_obstacle_height: 2.0
+    clearing: true
+    marking: true
+    raytrace_max_range: 5.5
+    obstacle_max_range: 5.0
 ```
 
-### Ultrasonic Layer (VoxelLayer)
+### Global Costmap: obstacle_layer (ObstacleLayer)
 
 ```yaml
-ultrasonic:
-  sensor_frame: base_link
-  data_type: LaserScan
-  topic: /ultrasonic/ranges
-  min_obstacle_height: 0.0
-  max_obstacle_height: 0.8
-  obstacle_max_range: 1.0
-  marking: true
-  clearing: false   # Только маркируем, не чистим
+obstacle_layer:
+  plugin: nav2_costmap_2d::ObstacleLayer
+  observation_sources: scan
+  scan:
+    topic: /scan
+    data_type: LaserScan
+    max_obstacle_height: 2.0
+    clearing: true
+    marking: true
+    raytrace_max_range: 5.5
+    obstacle_max_range: 5.0
+```
+
+### Inflation Layer (local и global)
+
+```yaml
+inflation_layer:
+  plugin: nav2_costmap_2d::InflationLayer
+  cost_scaling_factor: 3.0
+  inflation_radius: 0.40
 ```
 
 ### Local / Global Costmap
 
-| Параметр             | Local     | Global            |
-|----------------------|-----------|-------------------|
-| Размер               | 3x3 м     | 20x20 м (авто)    |
-| Разрешение           | 5 см      | 5 см              |
-| Частота обновления   | 5 Hz      | 1 Hz              |
-| track_unknown_space  | --        | true (критично для exploration) |
+| Параметр             | Local              | Global            |
+|----------------------|--------------------|-------------------|
+| Размер               | 4x4 м (rolling)    | авто (static)     |
+| Разрешение           | 5 см               | 5 см              |
+| Частота обновления   | 10 Hz              | 1 Hz              |
+| Плагины              | voxel_layer, inflation_layer | static_layer, obstacle_layer, inflation_layer |
+| track_unknown_space  | --                 | true (критично для exploration) |
 
 ## SLAM Toolbox
 
@@ -147,18 +167,18 @@ ultrasonic:
 |------------------------------------|--------------|------------------------------------|
 | `mode`                             | mapping      | Асинхронное картирование           |
 | `solver_plugin`                    | CeresSolver  | Оптимизатор pose graph             |
-| `resolution`                       | 0.05 м       | 5 см на ячейку                     |
-| `minimum_range`                    | 0.2 м        | Совпадает с laser_filter           |
-| `max_laser_range`                  | 5.5 м        | Ниже предела фильтра (6.0 м)       |
-| `minimum_travel_distance`          | 0.05 м       | Мин. расстояние между сканами      |
-| `minimum_travel_heading`           | 0.05 рад     | Мин. поворот между сканами         |
-| `minimum_score`                    | 0.5          | Отклонять слабые scan-match        |
-| `link_match_minimum_response_fine` | 0.1          | Порог качества пар сканов          |
-| `do_loop_closure`                  | true         | Закрытие цикла                     |
+| `resolution`                       | 0.03 м       | 3 см на ячейку                     |
+| `min_laser_range`                  | 0.2 м        | Минимальная дальность скана        |
+| `max_laser_range`                  | 8.0 м        | Ограничение дальности скана        |
+| `minimum_travel_distance`          | 0.08 м       | Мин. расстояние между сканами      |
+| `minimum_travel_heading`           | 0.0873 рад   | Мин. поворот между сканами (~5°)   |
+| `link_match_minimum_response_fine` | 0.15         | Порог качества пар сканов          |
+| `do_loop_closing`                  | true         | Закрытие цикла                     |
 | `loop_match_minimum_response_fine` | 0.45         | Порог loop closure                 |
 | `scan_buffer_size`                 | 10           | Буфер сканов для linking           |
+| `use_multicore`                    | true         | Многопоточное сканирование         |
 
-Рекомендуемая скорость при картировании: не более 0.15 м/с. При 10 Hz лидара робот проходит ~1.5 см за скан, что обеспечивает качество scan matching.
+Рекомендуемая скорость при картировании: не более 0.15 м/с (при 10 Hz лидара — ~1.5 см за скан). Фактическая скорость задаётся в Nav2 (`desired_linear_vel: 0.04` в `nav2_navigation_params.yaml` — при 10 Hz лидара ~0.4 см за скан). Оба значения обеспечивают качество scan matching.
 
 ## Explore Lite
 
@@ -188,7 +208,7 @@ ultrasonic:
 
 **Важное требование:** Global costmap обязан иметь `track_unknown_space: true` -- без этого Explore Lite не находит frontiers.
 
-## Высота лидара: обоснование 80 см
+## Высота лидара: обоснование 86 см
 
 ### Что видит лидар на разных высотах
 
@@ -196,41 +216,41 @@ ultrasonic:
 |---------|---------------------------------|---------------|
 | 200 см  | Головы, верхушки; пропускает столы, детей | Плохо   |
 | 150 см  | Плечи, высокие столы; может пропустить низкие   | Допустимо |
-| **80 см** | Туловища людей, столы, тележки, стулья | **Оптимально** |
+| **86 см** | Туловища людей, столы, тележки, стулья | **Оптимально** |
 | 40 см   | Ноги, ножки мебели               | Допустимо    |
-| 5 см    | Пороги, кабели, бордюры (ультразвук) | Комплементарно |
+| 15 см   | Низкие объекты, ножки мебели (ультразвук) | Комплементарно |
 
-### Почему 80 см
+### Почему 86 см
 
 1. Покрывает 90 %+ типичных препятствий в больницах и офисных зданиях.
 2. Надёжная детекция людей -- туловище на высоте 80-100 см всегда видно.
-3. Комплементарность с ультразвуком -- датчики на 5 см покрывают низкие объекты.
+3. Комплементарность с ультразвуком -- датчики на ~15 см покрывают низкие объекты.
 4. Чистые карты SLAM -- минимум шума от мелких деталей на полу.
 5. Соответствует индустриальным стандартам мобильных роботов.
 
 ### Двухуровневая защита
 
 ```
-[ЛИДАР 80 см]
+[ЛИДАР 86 см]
   Покрытие:  60--200 см
-  Дальность: 0.15--12 м
-  FOV:       180 спереди
+  Дальность: 0.15--12 м (физически); SLAM max_laser_range=8.0 м; AMCL laser_max_range=5.5 м
+  FOV:       ~80° спереди (laser_filter ±0.7 рад)
   Роль:      Основная навигация, SLAM
 
-[7x HC-SR04 ~5 см]
+[7x HC-SR04 ~15 см]
   Покрытие:  0--40 см
-  Дальность: 0.02--4 м (точно до 1 м)
-  FOV:       ~150 спереди
-  Роль:      Safety layer, низкие объекты
+  Дальность: 0.02--2.5 м
+  FOV:       ~30° на датчик (7 датчиков спереди и по бокам)
+  Роль:      Safety layer, низкие объекты (через proximity_safety_node — пока не работает, /ultrasonic/ranges не публикуется)
 ```
 
-Комбинация обеспечивает полное покрытие по высоте от 0 до 200 см. LiDAR -- дальняя точная детекция, ультразвук -- ближняя зона безопасности.
+Комбинация обеспечит полное покрытие по высоте от 0 до 200 см (ультразвук в safety пока не активен — `/ultrasonic/ranges` не публикуется). LiDAR -- дальняя точная детекция, ультразвук -- ближняя зона безопасности.
 
 ### Риски
 
-- **Маленькие дети (рост <80 см)** -- лидар может не увидеть. Компенсация: ультразвук на близком расстоянии + низкая скорость 0.3 м/с.
+- **Маленькие дети (рост <86 см)** -- лидар может не увидеть. Компенсация: ультразвук на близком расстоянии (пока не работает в safety) + низкая скорость (`desired_linear_vel: 0.04` м/с).
 - **Прозрачное стекло** -- лидар плохо видит. Ультразвук надёжнее; стекло обычно в рамах.
-- **Столы с тонкими ножками** -- лидар видит столешницу, ножки покрывает ультразвуковой слой и inflation radius.
+- **Столы с тонкими ножками** -- лидар видит столешницу, ножки должен покрывать ультразвук (через proximity_safety_node — пока не работает) и inflation radius.
 
 ## Рекомендации по настройке
 
@@ -256,14 +276,14 @@ ultrasonic:
 |-----------------|------------------------|----------|
 | Explore Lite    | `planner_frequency`    | 2.0      |
 | Explore Lite    | `progress_timeout`     | 15.0     |
-| Nav2 Controller | `desired_linear_vel`   | 0.3      |
+| Nav2 Controller | `desired_linear_vel`   | 0.3 (дефолт в коде: 0.04) |
 
 ### Осторожное исследование
 
 | Компонент      | Параметр               | Значение |
 |----------------|------------------------|----------|
-| Nav2 Costmap   | `inflation_radius`     | 0.70     |
-| Nav2 Costmap   | `robot_radius`         | 0.45     |
+| Nav2 Costmap   | `inflation_radius`     | 0.70 (дефолт в коде: 0.40) |
+| Nav2 Costmap   | `robot_radius`         | 0.45 (дефолт в коде: 0.25) |
 | Explore Lite   | `goal_dist_tolerance`  | 0.4      |
 
 ## Запуск
@@ -283,6 +303,7 @@ rviz2
 | `lidar_port`         | `/dev/rplidar`       | Путь к LiDAR                   |
 | `esp32_port`         | `/dev/esp32_chassis` | ESP32 шасси                    |
 | `imu_esp32_port`     | `/dev/esp32_imu`     | ESP32 IMU                      |
+| `micro_ros_agent_extra_args` | `''`         | Доп. аргументы micro_ros_agent (напр. `-v6`) |
 | `stop_distance`      | `0.15` м             | Расстояние экстренной остановки|
 | `resume_distance`    | `0.20` м             | Расстояние для возобновления   |
 
@@ -293,9 +314,12 @@ rviz2
 ros2 topic echo /scan --once
 ros2 topic hz /scan
 
-# Данные ультразвука
-ros2 topic echo /ultrasonic/ranges --once
-ros2 topic hz /ultrasonic/ranges
+# Данные ультразвука (массив от ESP32)
+ros2 topic echo /ultrasonic/distances --once
+ros2 topic hz /ultrasonic/distances
+
+# Индивидуальные Range-топики (от range_converter_node)
+ros2 topic echo /verter/distance_sensors/front_center --once
 
 # Карта
 ros2 topic echo /map --once
@@ -303,8 +327,8 @@ ros2 topic hz /map
 
 # Ключевые ноды
 ros2 node list
-# Ожидаемые: /range_to_laserscan, /slam_toolbox, /explore_node,
-#            /controller_server, /planner_server, /bt_navigator
+# Ожидаемые: /range_converter_node, /slam_toolbox, /explore_node,
+#            /controller_server, /planner_server, /bt_navigator, /proximity_safety_node
 ```
 
 ### Робот не двигается
@@ -330,7 +354,7 @@ ros2 node list
 Добавьте дисплеи:
 - **Map** -- построенная карта.
 - **LaserScan** (`/scan`) -- данные лидара.
-- **LaserScan** (`/ultrasonic/ranges`) -- данные ультразвука.
+- **Range** (`/verter/distance_sensors/*`) -- данные ультразвуковых датчиков.
 - **Local Costmap** -- динамические препятствия вокруг робота.
 - **Global Costmap** -- статическая карта с препятствиями.
 - **MarkerArray** -- зелёные маркеры frontiers.

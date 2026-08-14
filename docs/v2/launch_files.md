@@ -1,6 +1,6 @@
 # Запуск проекта
 
-В проекте Verter Robot существует шесть launch-файлов. Каждый из них запускает определённый набор ROS2-узлов для конкретной задачи. Понимание назначения каждого файла помогает быстро подобрать нужный режим работы.
+В проекте Verter Robot существует восемь launch-файлов. Каждый из них запускает определённый набор ROS2-узлов для конкретной задачи. Понимание назначения каждого файла помогает быстро подобрать нужный режим работы.
 
 ## Карта launch-файлов
 
@@ -10,8 +10,10 @@
 | `mapping.launch.py` | SLAM-картографирование с ручным управлением (teleop) | Основной |
 | `nav2_navigation.launch.py` | Навигация по готовой карте (локализация + планирование) | Основной |
 | `autonomous_mapping_real.launch.py` | Полностью автономное картографирование (SLAM + Nav2 + Explore Lite) | Продвинутый |
-| `main.launch.py` | Голосовой интерфейс (STT + AI-ассистент + TTS) | Дополнительный |
+| `main.launch.py` | Голосовой интерфейс (STT + AI-ассистент + TTS) + шасси/LiDAR/EKF | Дополнительный |
 | `waypoint_ui.launch.py` | Web-UI для управления путевыми точками | Дополнительный |
+| `beta.launch.py` | Запуск только `chassis_zlac_node` (стендовая отладка ZLAC) | Базовый |
+| `ssh_keyboard.launch.py` | Заготовка запуска `chassis_zlac_node` (debug) | Базовый |
 
 ---
 
@@ -53,19 +55,21 @@ ros2 launch verter_admin mapping.launch.py
 
 **Параметры:**
 - `lidar_port` — путь к LiDAR (по умолчанию `/dev/rplidar`)
-- `esp32_port` — ESP32 шасси (по умолчанию `/dev/esp32_chassis`)
-- `imu_esp32_port` — ESP32 IMU (по умолчанию `/dev/esp32_imu`)
-- `micro_ros_agent_extra_args` — дополнительные аргументы micro-ROS agent
+- `esp32_port` — ESP32 шасси (по умолчанию `/dev/esp32_chassis`) — **в данный момент закомментирован**
+- `imu_esp32_port` — ESP32 IMU (по умолчанию `/dev/esp32_imu`) — **в данный момент закомментирован**
+- `micro_ros_agent_extra_args` — дополнительные аргументы micro-ROS agent — **в данный момент закомментирован**
 
 **Что запускается:**
-1. **micro-ROS agent** — связь с ESP32 (шасси + IMU)
-2. **twist_mux** — мультиплексор команд скорости, арбитрирует источники по приоритетам
-3. **odometry_node** — вычисляет одометрию по данным энкодеров колёс
+1. **micro-ROS agent** — связь с ESP32 (шасси + IMU) — *закомментирован*
+2. **twist_mux** — мультиплексор команд скорости, арбитрирует источники по приоритетам — *закомментирован*
+3. **odometry_node** — вычисляет одометрию по данным энкодеров колёс — *закомментирован*
 4. **ekf_node** — фильтр Калмана, объединяет одометрию и IMU в `/odometry/filtered`
 5. **robot_state_publisher** — публикует TF-дерево на основе URDF-модели
-6. **rplidar_node** — драйвер LiDAR (задержка 3 с для инициализации USB-устройств)
+6. **rplidar_node** — драйвер LiDAR (задержка 3 с для инициализации USB-устройств, режим `Sensitivity`)
 7. **laser_filter** — фильтрация сырых сканов LiDAR
-8. **slam_toolbox** — строит карту, публикует на `/map`
+8. **slam_toolbox** — строит карту, публикует на `/map` — *закомментирован*
+
+> **Примечание:** в текущем состоянии файла `mapping.launch.py` большая часть узлов (micro-ROS agents, `twist_mux`, `odometry_node`, `slam_toolbox`) закомментирована — активно запускаются только `ekf_node`, `robot_state_publisher`, `rplidar_node` и `laser_filter`. Полный стек картографирования используется через `autonomous_mapping_real.launch.py`.
 
 **После построения карты** сохраните её:
 ```bash
@@ -99,22 +103,25 @@ ros2 launch verter_admin nav2_navigation.launch.py map:=~/maps/my_map.yaml
 **Что запускается:**
 1. **map_server** — загружает и хранит карту
 2. **amcl** — локализация робота на карте (Монте-Карло)
-3. **controller_server** — локальный планировщик траектории (DWB)
+3. **controller_server** — локальный планировщик траектории (RegulatedPurePursuitController)
 4. **planner_server** — глобальный планировщик пути (NavFn)
 5. **smoother_server** — сглаживание траекторий
 6. **behavior_server** — поведенческие примитивы (разворот, ожидание)
 7. **bt_navigator** — BehaviorTree-навигатор
 8. **waypoint_follower** — последовательный объезд точек
-9. **velocity_smoother** — сглаживание выходных скоростей
-10. **lifecycle_manager** — управление жизненным циклом всех узлов
+9. **lifecycle_manager** — управление жизненным циклом всех узлов
+
+> **Примечание:** `velocity_smoother` присутствует в файле и конфиге закомментированным и в активный стек не входит.
 
 **Важно:** После запуска в RViz укажите начальную позу робота с помощью «2D Pose Estimate» — AMCL стартует с фиксированной позой (0, 0, 0) и без корректной инициализации робот не будет знать своё положение.
 
 **Цепочка команд скорости:**
 ```
-bt_navigator/waypoint_follower → controller_server → velocity_smoother
+bt_navigator/waypoint_follower → controller_server
 → /nav2/cmd_vel → twist_mux → /cmd_vel → ESP32
 ```
+
+(`velocity_smoother` убран из цепочки — узел закомментирован в launch-файле и конфиге.)
 
 Этот файл также может **включаться** в другие launch-файлы (например, `autonomous_mapping_real.launch.py`) через `IncludeLaunchDescription`.
 
@@ -143,10 +150,14 @@ ros2 launch verter_admin autonomous_mapping_real.launch.py
 - `resume_distance` — расстояние для возобновления движения (по умолчанию `0.20` м)
 
 **Что запускается:**
-Всё из `mapping.launch.py` плюс дополнительно:
-- **range_converter_node** — конвертация данных ультразвуковых датчиков
-- **proximity_safety_node** — аварийная остановка при обнаружении близко расположенного препятствия
-- **Nav2 стек** — включается с задержкой 18 секунд (ждёт инициализации SLAM и LiDAR)
+Собственный полный стек картографирования (не через `mapping.launch.py`, а отдельным набором узлов) плюс дополнительные компоненты:
+- **micro-ROS agents** — связь с ESP32 (шасси + IMU)
+- **twist_mux**, **odometry_node**, **ekf_node**, **robot_state_publisher** — базовый стек
+- **rplidar_node** + **laser_filter** — LiDAR
+- **slam_toolbox** — построение карты
+- **range_converter_node** — конвертация данных ультразвуковых датчиков (`/ultrasonic/distances` → 7× Range в `/verter/distance_sensors/*`)
+- **proximity_safety_node** — аварийная остановка при обнаружении близко расположенного препятствия (публикует `/safety/cmd_vel`)
+- **Nav2 стек** — включается через `IncludeLaunchDescription` `nav2_navigation.launch.py` с задержкой 18 секунд (ждёт инициализации SLAM и LiDAR); используется params-файл `config/nav2/nav2_mapping_real_params.yaml`
 - **explore_lite** — модуль автономного исследования, запускается через 60 секунд
 
 **Порядок запуска компонентов:**
@@ -173,12 +184,17 @@ ros2 launch verter_admin main.launch.py
 ```
 
 **Что запускается:**
-1. **speech_to_text_node** — распознавание речи (Sherpa-ONNX)
-2. **recognition_node** — обработка распознанной речи (NLU, определение намерений)
-3. **ai_assistant_node** — AI-ассистент (YandexGPT)
-4. **text_to_speech_node** — синтез речи (Piper TTS через PulseAudio)
-5. **sound_player_node** — воспроизведение звуковых эффектов
-6. **doa_node** — определение направления на источник звука
+1. **micro-ROS agents** — два агента: сенсорный ESP32 (`esp32_imu`, по умолчанию `/dev/esp32_imu`) и управляющий ESP32 (`esp32_ctrl`, по умолчанию `/dev/esp32_ctrl`, BLE + DOA)
+2. **speech_to_text_node** — распознавание речи (Sherpa-ONNX CTC)
+3. **recognition_node** — обработка распознанной речи (NLU, определение намерений)
+4. **ai_assistant_node** — AI-ассистент (YandexGPT)
+5. **silero_tts_node** — синтез речи (Silero TTS). Узел Piper `text_to_speech_node` и `vosk_tts_node` присутствуют в файле закомментированными.
+6. **sound_player_node** — воспроизведение звуковых эффектов (PulseAudio)
+7. **chassis_zlac_node** — управление моторами через ZLAC8015D по Modbus RTU (конфиг `chassis/params.yaml`)
+8. **doa_node** — определение направления на источник звука
+9. **rplidar_node** + **laser_filter** — LiDAR (задержка 3 с)
+10. **robot_state_publisher** — публикация TF-дерева (URDF)
+11. **ekf_node** — фильтр Калмана (`/odometry/filtered`)
 
 **Важно:** Этот launch-файл **не запускает** навигационный стек. Для голосового управления движением запустите `main.launch.py` параллельно с `mapping.launch.py` или `nav2_navigation.launch.py` в отдельном терминале.
 
@@ -214,7 +230,7 @@ ros2 launch verter_admin waypoint_ui.launch.py
 - `nav2_action_server` — имя action-сервера Nav2 (по умолчанию `navigate_to_pose`)
 
 **Что запускается:**
-1. **waypoint_manager_node** — LifecycleNode для CRUD-операций с путевыми точками
+1. **waypoint_manager_node** — обычный `Node` (не LifecycleNode) для CRUD-операций с путевыми точками
 2. **web_server_node** — HTTP-сервер статического веб-интерфейса
 3. **rosbridge_websocket** — WebSocket-мост между браузером и ROS2
 
@@ -242,12 +258,13 @@ ros2 launch verter_admin waypoint_ui.launch.py
 
 ## Безопасность
 
-Все команды движения проходят через **twist_mux** — мультиплексор, который арбитрирует источники команд (`/cmd_vel`) по приоритетам:
-1. **Экстренная остановка** (наивысший приоритет)
-2. **Teleop** (ручное управление)
-3. **Nav2** (автономная навигация)
+Все команды движения проходят через **twist_mux** — мультиплексор, который арбитрирует источники команд (`/cmd_vel`) по приоритетам (см. `contracts/motion.py`):
+1. **`/safety/cmd_vel`** — экстренная/близостная остановка (приоритет 200, наивысший)
+2. **`/teleop_keyboard/cmd_vel`** — teleop с клавиатуры (приоритет 100)
+3. **`/teleop_joy/cmd_vel`** — teleop с джойстика (приоритет 90)
+4. **`/nav2/cmd_vel`** — автономная навигация Nav2 (приоритет 10)
 
-В режиме автономного картографирования дополнительно работает **proximity_safety_node**, который блокирует движение при обнаружении препятствия ближе 15 см.
+В режиме автономного картографирования дополнительно работает **proximity_safety_node**, который блокирует движение при обнаружении препятствия ближе `stop_distance` (по умолчанию в launch-файле `0.15` м; в самой ноде по умолчанию `0.20` м), возобновление — после `resume_distance` (`0.20` м в launch, `0.25` м в ноде).
 
 
 
@@ -261,7 +278,7 @@ source install/setup.bash
 
 ros2 run verter_admin speech_to_text_node
 ros2 run verter_admin recognition_node
-ros2 run verter_admin text_to_speech_node
+ros2 run verter_admin silero_tts_node
 ros2 run verter_admin sound_player_node
 ```
 

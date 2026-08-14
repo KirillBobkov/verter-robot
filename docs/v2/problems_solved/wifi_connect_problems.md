@@ -22,14 +22,14 @@
 
 ## 2. iPhone не получает IP от точки доступа
 
-**Причина:** UFW (firewall) блокировал DHCP (порты 67/68), DNS (порт 53), HTTP (порт 80) на интерфейсе wlan0.
+**Причина:** UFW (firewall) блокировал DHCP (порты 67/68), DNS (порт 53), HTTP (порт 80) на интерфейсе wlP1p1s0.
 
 **Решение:**
 ```bash
-sudo ufw allow in on wlan0 to any port 67 proto udp  # DHCP server
-sudo ufw allow in on wlan0 to any port 68 proto udp  # DHCP client
-sudo ufw allow in on wlan0 to any port 53 proto udp  # DNS
-sudo ufw allow in on wlan0 to any port 80 proto tcp  # HTTP captive portal
+sudo ufw allow in on wlP1p1s0 to any port 67 proto udp  # DHCP server
+sudo ufw allow in on wlP1p1s0 to any port 68 proto udp  # DHCP client
+sudo ufw allow in on wlP1p1s0 to any port 53 proto udp  # DNS
+sudo ufw allow in on wlP1p1s0 to any port 80 proto tcp  # HTTP captive portal
 sudo ufw reload
 ```
 
@@ -37,7 +37,7 @@ sudo ufw reload
 
 ## 3. Сеть подключается и сразу отключается
 
-**Причина:** `Restart=always` в systemd-сервисе. После успешного подключения wifi-connect перезапускался и поднимал AP заново на wlan0, конфликтуя с NetworkManager. Бесконечный цикл.
+**Причина:** `Restart=always` в systemd-сервисе. После успешного подключения wifi-connect перезапускался и поднимал AP заново на wlP1p1s0, конфликтуя с NetworkManager. Бесконечный цикл.
 
 **Решение:** `Restart=no` вместо `Restart=always`. Сервис запускается 1 раз при загрузке.
 
@@ -61,7 +61,7 @@ sudo ufw reload
 
 ## 6. Конфликт NetworkManager и wifi-connect
 
-**Причина:** Оба процесса пытались управлять wlan0 одновременно: NetworkManager пытался подключиться к сети, а wifi-connect уже поднял AP.
+**Причина:** Оба процесса пытались управлять wlP1p1s0 одновременно: NetworkManager пытался подключиться к сети, а wifi-connect уже поднял AP.
 
 **Решение:** Timing-подход: дать NetworkManager 15 секунд на подключение к известной сети перед запуском wifi-connect.
 
@@ -74,7 +74,7 @@ nmcli connection show
 nmcli device status
 
 # Проверка WiFi интерфейса
-ip link show wlan0
+ip link show wlP1p1s0
 iwgetid -r
 
 # Проверка автоподключения
@@ -110,7 +110,7 @@ sudo journalctl -u wifi-connect -n 100
 - Minimal wrapper — не дублировать логику проверки интернета
 - Single run — `Restart=no`, сервис запускается 1 раз
 - dnsmasq management — остановить системный dnsmasq перед запуском
-- Firewall rules — открыть порты 67/68/53/80 на wlan0
+- Firewall rules — открыть порты 67/68/53/80 на wlP1p1s0
 - НЕ запускать wifi-connect слишком рано — дать NM 15 секунд
 
 См. также: [wifi-connect GitHub](https://github.com/balena-os/wifi-connect), [Официальный start.sh](https://github.com/balena-os/wifi-connect/blob/master/scripts/start.sh)

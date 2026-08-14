@@ -12,7 +12,7 @@
 | `play` | `std_msgs/String` | `recognition_node` | Команда звука (`trigger.wav`/`success.wav`/`fail_timeout.wav`) |
 | `dialog_control` | `std_msgs/String` | `recognition_node` | `start_dialog`/`end_dialog` для AI |
 | `speech_control` | `std_msgs/Bool` | `recognition_node` | Включить/выключить STT |
-| `tts_control` | `std_msgs/Bool` | `text_to_speech_node` | Пауза/возобновление распознавания на время синтеза |
+| `tts_control` | `std_msgs/Bool` | `silero_tts_node` (активен в `main.launch.py`; `text_to_speech_node`/`vosk_tts_node` публикуют тот же топик при включении) | Пауза/возобновление распознавания на время синтеза |
 
 ## Подписчики (subscribers)
 
@@ -22,7 +22,7 @@
 | `tts_control` | `recognition_node` | `_handle_tts_control` |
 | `tts_control` | `speech_to_text_node` | `_handle_activation` |
 | `speech_control` | `speech_to_text_node` | `_handle_activation` |
-| `text_to_speech` | `text_to_speech_node` | `text_callback` |
+| `text_to_speech` | `silero_tts_node` (активен; также `text_to_speech_node`/`vosk_tts_node` при включении) | `text_callback` |
 | `ai_question` | `ai_assistant_node` | обработчик вопроса |
 | `dialog_control` | `ai_assistant_node` | управление контекстом |
 | `play` | `sound_player_node` | `sound_command_callback` |
@@ -37,8 +37,8 @@
 !!! warning "QoS"
     QoS depth=10, Reliability=Reliable. Командные пути (управление микрофоном, диалог) должны быть надёжными — потеря команды на путь аудио критична. Сенсорные потоки (аудио-чанки внутри STT) обрабатываются в процессе, не через ROS-топики.
 
-## Удалённые топики
+## Топик голосового управления движением
 
-| Топик | Статус |
-|-------|--------|
-| `verter_commands` | **removed** — издатель удалён из `recognition_node` и `distance_sensors_node`. Голосовое управление движением не работало (не было подписчика). См. [refactor_notes.md](refactor_notes.md). |
+| Топик | Тип | Издатель | Подписчик | Статус |
+|-------|-----|----------|-----------|--------|
+| `verter_commands` | `std_msgs/String` | `recognition_node`, `distance_sensors_node` | нет | Издатель присутствует в коде обеих нод, но подписчиков нет ни в Python, ни в firmware — голосовое управление движением фактически не работает. `recognition_node` публикует команды формата `CHASSIS:LEFT:ASK:<dist>:<pwm>;CHASSIS:RIGHT:...` и `CHASSIS:STOP` (`default_distance=0.5`, `default_pwm=98`, `turn_distance=0.25`). |

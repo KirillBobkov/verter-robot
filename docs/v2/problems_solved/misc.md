@@ -17,23 +17,23 @@
 
 ### Датчики
 
-**Передние (5):** `sensor_front_center` (0°), `sensor_front_left_inner` (~25°), `sensor_front_left_outer` (~45°), `sensor_front_right_inner` (≈-25°), `sensor_front_right_outer` (≈-45°)
+**Передние (5):** `sensor_front_center` (0°), `sensor_front_left_inner` (~5.7°), `sensor_front_left_outer` (~13.2°), `sensor_front_right_inner` (~-5.7°), `sensor_front_right_outer` (~-13.2°)
 
-**Боковые (2):** `sensor_left` (90°), `sensor_right` (-90°)
+**Боковые (2):** `sensor_left` (~76°), `sensor_right` (~-76°)
 
 Задних датчиков нет.
 
-### IMU placeholder
+### IMU
 
-В URDF добавлена закомментированная секция IMU (гироскоп, акселерометр, магнитометр). Статус: на этапе подбора, не установлен. Для активации: раскомментировать, измерить позицию, обновить координаты.
+В URDF добавлена активная (незакомментированная) секция IMU — `imu_link` (Trema BMX055 9 DOF), позиция `xyz="0 0 0.305"` от base_link (40.5 см от пола).
 
 ### Параметры, требующие точных измерений
 
-1. Размеры корпуса (длина ~0.30 м, ширина ~0.20 м, высота ~0.10 м)
-2. Точные позиции колёс (X: ~0.10 м, Y: ±0.11 м)
-3. Точная позиция опорного колеса (X: ~-0.12 м, Z: ~-0.07 м)
-4. Позиции всех 7 датчиков (X, Y, Z, углы Yaw, высота установки)
-5. Масса робота (сейчас ~2.0 кг)
+1. Размеры корпуса (длина 0.560 м, ширина 0.534 м, высота 0.550 м — по CAD)
+2. Точные позиции колёс (X: 0 м, Y: ±0.178 м)
+3. Точная позиция опорного колеса (X: -0.22 м, Z: -0.07 м)
+4. Позиции всех 7 датчиков (X, Y, Z, углы Yaw, высота установки 0.048 м от base_link)
+5. Масса робота (сейчас base_link 2.0 кг + колёса 0.5+0.5 + опорное 0.1 = 3.1 кг)
 
 ---
 
@@ -55,14 +55,13 @@
 **Симптом:** В проекте остались неиспользуемые entry points и build-артефакты.
 
 **Решение:**
-- Создан `.gitignore`: `build/`, `install/`, `log/`, `__pycache__/`, `*.pyc`, `*.egg-info/`, `.venv/`, `venv/`, `.idea/`, `.vscode/`, `*.log`, `journal.log`
+- Создан `.gitignore`: `build/`, `install/`, `log/`, `__pycache__/`, `*.pyc`, `.venv/`, `venv/`, `.idea/`, `.vscode/`, `verter_admin/journal.log`, `verter_admin/journal-error.log`
 - Удалены `__pycache__`, `.pyc`, egg-info (освобождено ~7.1 MB: egg-info ~100KB, __pycache__ ~5MB, .pyc ~2MB)
 - Из `setup.py` удалены entry points: `tof_camera_node`, `pointcloud_to_laserscan`, `safety_monitor` (связан с ToF)
 
 **Что НЕ удалено намеренно:**
-1. URDF-секция ToF-камеры — закомментирована, может пригодиться как пример
+1. URDF-секция ToF-камеры (`camera_tof`, `camera_tof_optical`) — оставлена активной (незакомментированной), может пригодиться как пример
 2. Комментарии в конфигах — упоминают ToF для контекста
-3. `ultrasonic_to_laserscan_node` — рабочий узел, используется
 
 **После очистки:**
 ```bash

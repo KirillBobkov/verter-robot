@@ -1,14 +1,14 @@
 # Заметки о рефакторинге голосовой подсистемы
 
-Документ фиксирует, что изменено в текущем раунде работ (масштаб: **тесты + документация**, точечные правки мёртвого кода), и известные риски на будущее.
+Документ фиксирует, что планировалось изменить в текущем раунде работ (масштаб: **тесты + документация**, точечные правки мёртвого кода), и известные риски на будущее. Часть пунктов (удаление голосового движения, unit-тесты) на текущий момент **не реализована** — см. пометки ниже.
 
 ## Что сделано
 
-### Удалено голосовое управление движением
+### Голосовое управление движением (запланировано, не реализовано)
 
-**Проблема:** `recognition_node` формировал команды `CHASSIS:LEFT:ASK:distance:pwm;...` и публиковал в топик `verter_commands`. Подписчика на этот топик **не было нигде** в кодовой базе — никто не парсит протокол `CHASSIS:`. Голосовые команды движения («вперёд»/«назад»/«влево»/«вправо») фактически не двигали робота.
+**Проблема:** `recognition_node` формирует команды `CHASSIS:LEFT:ASK:distance:pwm;...` и публикует их в топик `verter_commands`. Подписчика на этот топик **нет нигде** в кодовой базе — никто не парсит протокол `CHASSIS:`. Голосовые команды движения («вперёд»/«назад»/«влево»/«вправо») фактически не двигают робота.
 
-**Удалено из `recognition_node.py`:**
+**Планировалось удалить из `recognition_node.py`, но на текущий момент код присутствует:**
 
 - словарь `chassis_commands`, параметры `default_distance`/`default_pwm`/`turn_distance`;
 - метод `get_chassis_command`, `chassis_pattern`;
@@ -16,11 +16,11 @@
 - `_process_chassis_command` и его вызов;
 - `_execute_chassis_command`.
 
-Приоритет обработки в active-listening стал **stop → AI** (без ступени chassis).
+Приоритет обработки в active-listening сейчас **stop → chassis → AI** (стадия chassis всё ещё в цепочке, `recognition_node.py`, метод `_handle_active_listening`).
 
-**Удалено из `distance_sensors_node.py`:** мёртвый publisher `verter_commands` (создавался, но никогда не использовался) и лог его создания.
+**В `distance_sensors_node.py`** мёртвый publisher `verter_commands` (создаётся, но никогда не используется) также **остался** в коде (`_setup_publisher`).
 
-Проверка: `ros2 topic info /verter_commands` → 0 издателей, 0 подписчиков.
+Проверка: `ros2 topic info /verter_commands` → 2 издателя (`recognition_node`, `distance_sensors_node`), 0 подписчиков.
 
 ### Документация
 
@@ -28,13 +28,13 @@
 
 ### Тесты (см. план)
 
-Unit-тесты чистых классов (`SpeechConfig`, `CommandProcessor`, `StateManager`, `TimerManager`) и интеграционные сценарии FSM.
+Unit-тесты чистых классов (`SpeechConfig`, `CommandProcessor`, `StateManager`, `TimerManager`) и интеграционные сценарии FSM (запланировано, не реализовано — в `tests/` тестов голосовой подсистемы нет).
 
 ## Не тронуто (по решению)
 
-- **STT-движки** (4 файла в `speech_to_text/`) — только задокументированы. Дублирование поиска устройства/VAD/буферизации сохранено.
+- **STT-движки** (3 node-файла в `speech_to_text/`: `speech_to_text_node.py`, `speech_to_text_sherpa_node.py`, `speech_to_text_transducer_node.py`; в `setup.py` объявлена также точка входа `speech_to_text_parakeet_node`, но сам `.py`-файл отсутствует) — только задокументированы. Дублирование поиска устройства/VAD/буферизации сохранено.
 - **AI-диалог**, звуки, напоминания, pause/resume, `dialog_control` — поведение сохранено.
-- **Safety-цепочка движения** (twist_mux, proximity_safety) — осталась для teleop/Nav2; голос к ней больше не подключён.
+- **Safety-цепочка движения** (twist_mux, proximity_safety) — осталась для teleop/Nav2; голос к ней не подключён (голосовое управление движением публикует в `verter_commands`, у которого нет подписчиков, и не входит в twist_mux).
 
 ## Известные риски и рекомендации на будущее
 
@@ -44,7 +44,7 @@ Unit-тесты чистых классов (`SpeechConfig`, `CommandProcessor`,
 
 ### TTS: `import time` внутри функции
 
-`time` импортируется локально в `_synthesize_and_play` — вынести на верхний уровень файла.
+`time` импортируется локально в `_synthesize_and_play` в `text_to_speech_node.py` (в `silero_tts_node.py` импорт уже на верхнем уровне) — вынести на верхний уровень файла.
 
 ### TTS: магическая задержка 0.1с после синтеза
 
@@ -52,7 +52,7 @@ Unit-тесты чистых классов (`SpeechConfig`, `CommandProcessor`,
 
 ### STT: массовое дублирование кода
 
-4 реализации содержат идентичные `_find_audio_device`, `_vad_predict`, `_handle_activation`, `_process_chunk_logic`. Рекомендация: общий базовый класс/миксин, специфика только инференс. Не сделано в этом раунде.
+3 реализации (`speech_to_text_node.py`, `speech_to_text_sherpa_node.py`, `speech_to_text_transducer_node.py`) содержат дублированные `_vad_predict`, `_handle_activation`, `_process_chunk_logic`; `_find_audio_device` есть в sherpa- и transducer-вариантах, но отсутствует в `speech_to_text_node.py`. Рекомендация: общий базовый класс/миксин, специфика только инференс. Не сделано в этом раунде.
 
 ### AI: нет retry и мониторинга vector store
 
@@ -64,4 +64,4 @@ Unit-тесты чистых классов (`SpeechConfig`, `CommandProcessor`,
 
 ## Источник решений
 
-План работ: `.claude/plans/tidy-coalescing-fairy.md`. Масштаб и решения согласованы с пользователем: «только тесты + документация», голосовое движение удаляется, STT не трогается.
+План работ: `.claude/plans/tidy-coalescing-fairy.md` (файл плана в репозитории отсутствует). Масштаб и решения согласованы с пользователем: «только тесты + документация», голосовое движение удаляется, STT не трогается. Фактически удаление голосового движения и unit-тесты **не выполнены** — соответствующий код (`chassis_commands`, `_process_chassis_command`, `_execute_chassis_command`, publisher `verter_commands`) остался в `recognition_node.py` и `distance_sensors_node.py`.

@@ -28,8 +28,8 @@ systemctl --user daemon-reload && systemctl --user restart verter-admin.service
 Пользовательский systemd-сервис работает только после входа пользователя. Для headless-режима:
 
 ```bash
-sudo loginctl enable-linger verter
-loginctl show-user verter | grep Linger      # должно показать Linger=yes
+sudo loginctl enable-linger jetson
+loginctl show-user jetson | grep Linger      # должно показать Linger=yes
 ```
 
 ## Ручной запуск (без systemd)

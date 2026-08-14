@@ -2,26 +2,30 @@
 
 ## Text-to-Speech
 
-Два движка TTS, переключаются в `main.launch.py`. Активен **Piper**, Silero закомментирован.
+Два движка TTS, переключаются в `main.launch.py`. Активен **Silero** (`silero_tts_node`); Piper (`text_to_speech_node`) закомментирован. Также в коде присутствует `vosk_tts_node.py` (закомментирован в `main.launch.py`).
 
 ### Piper (`text_to_speech_node.py`)
 
+Закомментирован в `main.launch.py`.
+
 | Параметр | Значение |
 |----------|----------|
-| Модель | `ru_RU-ruslan-medium.onnx` (63 МБ) |
+| Модель | `ru_RU-ruslan-medium.onnx` (~60 МиБ) |
 | Путь | `share/verter_admin/text_to_speech/ru_RU-ruslan-medium.onnx` |
 | Sample rate | из конфигурации модели |
 | Вывод | `aplay -D pulse -q -f S16_LE -r <rate> -c 1 --buffer-size=4096 --period-size=512` |
 
 ### Silero (`silero_tts_node.py`)
 
+Активен в `main.launch.py`.
+
 | Параметр | Значение |
 |----------|----------|
-| Модель | `v5_ru.pt` |
-| Speaker | `eugene` |
+| Модель | `{model_version}.pt` (по умолчанию `v5_5_ru.pt`; допустимо `v5_ru`) |
+| Speaker | `eugene` (допустимо: `aidar`, `baya`, `kseniya`, `xenia`, `eugene`) |
 | Sample rate | 24000 Гц |
-| Вывод | `sounddevice.OutputStream` (device=None → default) |
-| Тишина в начале | 0.25с (фикс «глотания» первого слога) |
+| model_version | `v5_5_ru` |
+| Вывод | `sounddevice.OutputStream` (device=None → default при `audio_device='pulse'`) |
 
 ### Очередь синтеза
 
@@ -36,7 +40,7 @@
 
 ### Управление микрофоном (защита от эха)
 
-Перед синтезом TTS публикует `tts_control=False` → `RecognitionNode` → `PAUSED`, `speech_control=False` (микрофон off). После синтеза: `sleep(0.1)` → `tts_control=True` → микрофон on.
+Перед синтезом TTS публикует `tts_control=False` → `RecognitionNode` переходит в `PAUSED` и публикует `speech_control=False` (микрофон off в `speech_to_text_node`). После синтеза: `sleep(0.1)` → `tts_control=True` → `RecognitionNode` публикует `speech_control=True` → микрофон on. TTS публикует только `tts_control`; `speech_control` издаёт `recognition_node`.
 
 ## Sound player (`sound_player_node.py`)
 

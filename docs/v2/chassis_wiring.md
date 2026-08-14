@@ -3,8 +3,9 @@
 Все электрические соединения в архитектуре шасси после миграции на ZLAC8015D + хаб-моторы ZLLG80ASM250. Используется как чертёж для сборки и референс при обслуживании.
 
 > **Отсутствие аппаратного E-stop.** Физическая кнопка E-stop не устанавливается.
-> Аварийная остановка — Modbus comm-loss watchdog в драйвере + ChassisPolicy
-> software watchdog + twist_mux safety priority + главный силовой выключатель.
+> Аварийная остановка — Modbus comm-loss watchdog в драйвере + software watchdog
+> (ESP32 firmware, 500 мс; `MotionTimeouts.CHASSIS_WATCHDOG_MS` в contracts/motion.py)
+> + twist_mux safety priority + главный силовой выключатель.
 
 ---
 
@@ -189,7 +190,7 @@
 ### Соответствие лево/право
 
 - M1 → левое колесо, M2 → правое колесо
-- Знаки: Left sign=-1, Right sign=+1 (калибровать на bench)
+- Знаки: Left sign=+1, Right sign=-1 (калибровать на bench; подтверждено сканером 2026-05-31)
 
 ### Прокладка проводов
 
@@ -213,7 +214,7 @@
    ZLAC8015D 485: A, B, GND + терминатор 120Ω
 ```
 
-- udev-правило: `/dev/zlac_chassis`
+- udev-правило: `/dev/chassis` (params.yaml: `modbus.port: "/dev/chassis"`)
 - 115200 / 8N1, slave-адрес: 1
 
 ---
@@ -221,11 +222,15 @@
 ## 7. Аварийная остановка
 
 ```
-Уровень 1  ZLAC8015D Modbus comm-loss watchdog (~200 мс)
+Уровень 1  ZLAC8015D Modbus comm-loss watchdog
+            Python chassis_zlac_node: рег. 0x2000, 1000 мс (прямой USB-RS485)
+            ESP32 firmware: рег. 0x2007, 200 мс (микро-ROS путь)
             Если Modbus не приходит → target RPM=0 автоматически
 
-Уровень 2  ChassisPolicy software watchdog (500 мс)
-            /cmd_vel не приходит → ACTIVE→SAFE_STOP, WheelTargets.zero()
+Уровень 2  Software watchdog (только ESP32 firmware, 500 мс)
+            /cmd_vel не приходит → ACTIVE→SAFE_STOP, target RPM=0
+            (Python chassis_zlac_node не имеет software watchdog —
+            при ошибке Modbus: STATE_READY→STATE_MODBUS_INIT→reinit)
 
 Уровень 3  twist_mux SAFETY_CMD_VEL (priority=200)
             proximity_safety_node публикует стоп
@@ -239,9 +244,9 @@
 | Сценарий | Восстановление |
 |---|---|
 | Comm-loss watchdog | Автоматически при возобновлении Modbus |
-| Software watchdog | Новый `/cmd_vel` → автоматический переход в ACTIVE |
-| Драйвер fault | Убрать причину → lifecycle cleanup → configure → activate |
-| Главный выключатель | Вернуть выключатель → перезапустить lifecycle |
+| Software watchdog | Новый `/cmd_vel` → автоматический переход в ACTIVE (ESP32 firmware) |
+| Драйвер fault | Python: STATE_DRIVER_FAULT → auto-reinit (CONTROL_CLEAR_FAULT). ESP32: FAULT → auto-clear каждые 2 с |
+| Главный выключатель | Вернуть выключатель → перезапустить ноду |
 
 ---
 
@@ -249,10 +254,11 @@
 
 | Symlink | Описание |
 |---|---|
-| `/dev/zlac_chassis` | USB-RS485 → ZLAC8015D |
+| `/dev/chassis` | USB-RS485 → ZLAC8015D (Python chassis_zlac_node, params.yaml) |
 | `/dev/esp32_imu` | ESP32 IMU (без изменений) |
 | `/dev/rplidar` | RPLidar (без изменений) |
-| ~~`/dev/esp32_chassis`~~ | **УДАЛИТЬ** после миграции |
+| `/dev/esp32_chassis` | ESP32 chassis (micro-ROS, chassis_bringup.launch.py — bench-тест) |
+| `/dev/esp32_ctrl` | ESP32 BLE/DOA (main.launch.py) |
 
 Все три CP210x имеют одинаковый VID:PID — udev-правила должны использовать `ATTRS{serial}` для различения.
 
@@ -313,16 +319,17 @@
 ### Включение
 1. Главный выключатель → ON
 2. Jetson загружается (~30 сек)
-3. ROS2 стек, `zlac_chassis_node`: unconfigured → inactive → active
+3. ROS2 стек, `chassis_zlac_node`: STATE_MODBUS_INIT → STATE_READY
+   (plain Node, не LifecycleNode — lifecycle-команды не применяются)
 
 ### Штатное выключение
 1. Стоп миссии в ROS2
-2. `zlac_chassis_node` → deactivate
+2. `chassis_zlac_node` → Ctrl+C (deactivate неприменим — plain Node)
 3. `sudo shutdown -h now`
 4. Главный выключатель → OFF
 
 ### Аварийная остановка
-1. Софт: стоп в `/safety/cmd_vel` (priority 200), или `ros2 lifecycle set /zlac_chassis_node deactivate`
+1. Софт: стоп в `/safety/cmd_vel` (priority 200), или остановка `chassis_zlac_node`
 2. Механика: главный выключатель → OFF
 
 ---
@@ -341,14 +348,14 @@
 ### После включения (без моторов)
 - [ ] Ток покоя ZLAC < 0.5 А
 - [ ] LED: power ON, нет fault
-- [ ] `/dev/zlac_chassis` существует
+- [ ] `/dev/chassis` существует
 - [ ] Modbus: версия прошивки, fault = 0
 
 ### Моторы в воздухе
 - [ ] +50 RPM M1 → левое вперёд
 - [ ] +50 RPM M2 → правое вперёд
 - [ ] -50 RPM → реверс
-- [ ] Снятие USB-RS485 → остановка через comm-loss ≤ 500 мс
+- [ ] Снятие USB-RS485 → остановка через comm-loss ≤ 1000 мс (Python: 1000 мс; ESP32: 200 мс)
 - [ ] Выключатель OFF → тормоз мгновенно
 
 ### На полу
@@ -366,8 +373,12 @@
 
 ## 14. Что удаляется после миграции
 
-- Прошивка `firmware/esp32_chassis/`
-- ESP32 chassis hardware, USB-кабель
-- udev-правило `/dev/esp32_chassis`
+> **Внимание:** на текущий момент эти компоненты ЕЩЁ ПРИСУТСТВУЮТ в репозитории
+> и используются. Раздел описывает плановое завершение миграции.
+
+- Прошивка `firmware/esp32_chassis/` (запланировано, не реализовано —
+  `chassis_bringup.launch.py` активно использует `/dev/esp32_chassis`)
+- ESP32 chassis hardware, USB-кабель (запланировано, не реализовано)
+- udev-правило `/dev/esp32_chassis` (запланировано, не реализовано)
 - Один micro-ROS Agent (оставить только для IMU)
 - Cytron MD10C, AS5600 энкодеры

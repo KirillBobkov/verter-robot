@@ -9,13 +9,13 @@ description: Полное описание аппаратной части ро�
 | Подсистема | Компонент | Интерфейс | Назначение |
 |---|---|---|---|
 | Бортовой компьютер | NVIDIA Jetson Orin Nano Super 8 GB | USB 3.2, CSI, NVMe | ROS2 Humble, Nav2, SLAM, AI-ассистент |
-| Лидар | RPLiDAR A1M8 | USB-serial (115200) | 2D-сканирование, 180, 12 м |
-| Шасси-контроллер | ESP32 (WROOM-32 DevKit) | USB-serial (921600) | Управление моторами, энкодеры AS5600 |
-| IMU-контроллер | ESP32 + Trema IMU 9 DOF V2 (Bosch BMX055) | USB-serial (921600) | Акселерометр, гироскоп |
-| Ультразвук | 5 x HC-SR04 (передняя дуга) + 2 x HC-SR04 (бока) | GPIO (через Arduino/ESP32) | Обнаружение препятствий |
+| Лидар | RPLiDAR A1M8 | USB-serial (115200) | 2D-сканирование, 360°, 12 м |
+| Шасси-контроллер | ESP32 (WROOM-32 DevKit) | USB-serial (921600) | Управление моторами (ZLAC8015D), энкодеры |
+| IMU-контроллер | ESP32 + Trema IMU 9 DOF V2 (Bosch BMX055) | USB-serial (921600) | Акселерометр, гироскоп, магнитометр |
+| Ультразвук | 7 x HC-SR04 (5 передних + 2 бока) | GPIO (через ESP32) | Обнаружение препятствий |
 | Аудио входы | ReSpeaker USB Mic Array | USB 2.0 | Распознавание речи, DOA |
-| Аудио выход | Динамик / наушники | 3.5 мм jack | Синтез речи (Piper / Silero) |
-| Питание робота | Li-Ion/LiPo аккумулятор | DC-DC конвертеры | 12 V для моторов, 5 V для сенсоров, 19 V для Jetson |
+| Аудио выход | Динамик / наушники | 3.5 мм jack | Синтез речи (Silero) |
+| Питание робота | LiFePO4 аккумулятор | DC-DC конвертеры | 24 V для моторов (ZLAC8015D), 5 V для сенсоров, 19 V для Jetson |
 
 ### Jetson Orin Nano
 
@@ -97,13 +97,13 @@ sudo apt install arduino
 pip install platformio
 ```
 
-Проект шасси: `verter_admin/firmware/esp32_chassis/`
+Проект шасси: `verter_admin/firmware/esp32_chassis/esp32_chassis_modbus/`
 
 ```bash
-cd verter_admin/firmware/esp32_chassis
+cd verter_admin/firmware/esp32_chassis/esp32_chassis_modbus
 pio run                      # компиляция
 pio run --target upload      # прошивка
-pio device monitor --baud 115200
+pio device monitor --baud 921600
 ```
 
 ### Прошивка ESP32
@@ -145,10 +145,10 @@ ros2 run micro_ros_setup build_agent.sh
 
 ```bash
 # Шасси (921600 baud)
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/esp32_chassis --baud 921600
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/esp32_chassis -b 921600
 
 # IMU (921600 baud)
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/esp32_imu --baud 921600
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/esp32_imu -b 921600
 ```
 
 Для отладки добавь `-v6` для verbose-логов.
@@ -194,70 +194,56 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}}" --once   # 
 
 | Устройство | GPIO | Примечание |
 |---|---|---|
-| Левый мотор PWM | GPIO 19 | Cytron MD10C |
-| Левый мотор DIR | GPIO 27 | LOW = вперёд |
-| Правый мотор PWM | GPIO 18 | Cytron MD10C |
-| Правый мотор DIR | GPIO 25 | HIGH = вперёд |
-| Левый энкодер SDA | GPIO 21 | AS5600, I2C0 |
-| Левый энкодер SCL | GPIO 22 | AS5600, I2C0 |
-| Правый энкодер SDA | GPIO 32 | AS5600, I2C1 |
-| Правый энкодер SCL | GPIO 4 | AS5600, I2C1 |
+| Modbus TX2 | GPIO 16 | TTL-RS485 → ZLAC8015D |
+| Modbus RX2 | GPIO 17 | TTL-RS485 → ZLAC8015D |
 | LED статус | GPIO 2 | Индикатор micro-ROS-подключения |
 
-### Схема подключения моторов
+Шасси управляется драйвером ZLAC8015D по Modbus RTU (UART2, 115200 бод).
+ESP32 — L1-посредник между Jetson (micro-ROS) и ZLAC8015D; всей замкнутой
+моторной петлёй владеет ZLAC, ESP32 лишь задаёт целевые RPM и читает
+обратную связь (позиция, RPM, fault-коды).
+
+### Схема подключения
 
 ```
-                        Cytron MD10C
-                    ┌──────────────────────┐
-                    │  +12V  GND           │
-                    │   │     │            │
-ESP32               │   ○     ○            │
-┌──────┐            │                      │
-│ G18  ├────────────┼──► ENA (PWM Left)    │
-│ G27  ├────────────┼──► DIR-A (Left)      │
-│ G19  ├────────────┼──► ENB (PWM Right)   │
-│ G25  ├────────────┼──► DIR-B (Right)     │
-│ GND  ├────────────┼──► GND (общий)       │
-└──────┘            │                      │
-                    │  OUT1  OUT2  OUT3 OUT4│
-                    │   │    │    │    │   │
-                    └───┼────┼────┼────┼───┘
-                        │    │    │    │
-                    ┌───┴────┴┐ ┌─┴────┴───┐
-                    │ Motor L  │ │ Motor R  │
-                    └──────────┘ └──────────┘
+Jetson ── USB CDC (921600) ── ESP32 ── UART2/TTL-RS485 (115200) ── ZLAC8015D ── моторы
+         (micro-ROS)                                                  (Modbus RTU)
 ```
 
 ### Направления движения
 
-| Колесо | DIR (вперёд) | Знак энкодера (вперёд) |
-|---|---|---|
-| Левый | LOW | -1 |
-| Правый | HIGH | +1 |
+Знаки энкодеров (firmware `LEFT_SIGN` / `RIGHT_SIGN`):
+
+| Колесо | Знак (вперёд) |
+|---|---|
+| Левый | +1 |
+| Правый | -1 |
+
+Знаки применяются к позиции и RPM колеса так, чтобы при движении вперёд
+оба значения возрастали.
 
 ### Моторный драйвер
 
 | Параметр | Значение |
 |---|---|
-| Модель | Cytron MD10C (PWM + DIR) |
-| PWM-частота | 20 кГц |
-| PWM-разрешение | 8 бит (0--255) |
-| MAX_PWM | 200 |
-| MIN_PWM (мёртвая зона) | 25 |
-| MAX_VELOCITY | 0.5 м/с |
+| Модель | ZLAC8015D (Modbus RTU, ведомый адрес 0x01) |
+| Modbus baud | 115200 (UART2, TTL-RS485) |
+| Режим | Velocity (регистр 0x200D = 3) |
+| Comm-watchdog (ESP32) | 0x2007 = 200 мс |
+| Comm-watchdog (Python) | 0x2000 = 1000 мс |
+| MAX_MOTOR_RPM (ESP32) | 200 |
+| MAX_MOTOR_RPM (Python `chassis_zlac_node`) | 50 |
+| MAX_LINEAR_VEL | 0.5 м/с |
+| MAX_ANGULAR_VEL | 1.0 рад/с |
 
-### Энкодеры AS5600
+### Энкодеры ZLAC8015D
 
 | Параметр | Значение |
 |---|---|
-| Тип | AS5600 магнитный абсолютный |
-| Разрешение | 4096 шагов/оборот (12 бит) |
-| I2C-адрес | 0x36 |
-| Регистр угла | 0x0C (RAW_ANGLE) |
-| Левый энкодер | I2C0 (SDA=21, SCL=22) |
-| Правый энкодер | I2C1 (SDA=32, SCL=4) |
-
-Проблема: правый энкодер (I2C1) периодически зависает на ~1 с. Причина — баг arduino-esp32 v2.x: `Wire.setTimeout()` не работает для значений < 1000 мс.
+| Тип | Встроенные энкодеры ZLAC8015D (чтение по Modbus) |
+| Позиция | int32 на канал (регистры 0x20A7–0x20AA), накапливается через int32-обёртки |
+| RPM | int16 на канал (регистры 0x20AB, 0x20AC) |
+| Разрешение | 4096 шагов/оборот (используется одометрией) |
 
 ### ESP32 IMU Controller
 
@@ -271,9 +257,9 @@ ESP32               │   ○     ○            │
 | Модуль | Trema IMU 9 DOF V2.0 (Bosch BMX055) |
 | Акселерометр | сырые данные, м/с^2 |
 | Гироскоп | сырые данные, рад/с, bias вычитается при старте |
-| Магнитометр | отключён (помехи от моторов) |
-| Частота публикации | 50 Гц |
-| Физическое положение | центр робота, 0.29 м над base_link |
+| Магнитометр | публикуется на `/imu/mag_raw` (Float32MultiArray), 10 Гц |
+| Частота публикации IMU | 50 Гц (`IMU_PUBLISH_MS = 20`) |
+| Физическое положение | центр робота, 0.405 м от пола (0.305 м над base_link) |
 
 ---
 
@@ -281,47 +267,50 @@ ESP32               │   ○     ○            │
 
 | Параметр | Значение | Примечание |
 |---|---|---|
-| WHEEL_CIRCUMFERENCE | 0.576 м | Определяется прокаткой колеса на один оборот |
-| GEAR_RATIO | 4.0007 | Передаточное число редуктора |
-| WHEEL_BASE | 0.386 м | Расстояние между осями колёс (новая рама) |
-| ENCODER_RESOLUTION | 4096 | Шагов на оборот колеса (AS5600, 12 бит) |
-| METERS_PER_STEP | ~3.52e-5 м | circumference / (resolution x gear_ratio) |
+| WHEEL_CIRCUMFERENCE | 0.6158 м | π × 0.196 (rolling-loaded диаметр) |
+| GEAR_RATIO | 1.0 | Direct-drive (без редуктора) |
+| WHEEL_BASE | 0.3642 м | Откалибровано 2026-06-02 (chassis_calibrate.py) |
+| ENCODER_RESOLUTION | 4096 | Шагов на оборот колеса |
+| METERS_PER_STEP | ~1.503e-4 м | circumference / (resolution × gear_ratio) |
+| MAX_LINEAR_VEL | 0.5 м/с | Ограничение в firmware |
+| MAX_ANGULAR_VEL | 1.0 рад/с | Ограничение в firmware |
 
-### PID-регулятор скорости
-
-| Параметр | Значение |
-|---|---|
-| Kp | 80 |
-| Ki | 50 |
-| Kd | 5 |
-| MAX_INTEGRAL | 100 |
-| PID_INTERVAL | 50 мс |
-| MAX_PWM_CHANGE | 15 за итерацию (ramp limiter) |
+Замкнутый контур скорости реализован внутри ZLAC8015D; отдельный программный
+PID в ESP32/Python отсутствует.
 
 ### Коммуникация ESP32 <-> Jetson
 
 | Параметр | Значение |
 |---|---|
-| Baud rate | 921600 |
-| RX buffer | 4096 байт |
-| Transport read timeout | 10 мс |
-| Transport write | неблокирующий (drop при полном TX) |
+| Baud rate (micro-ROS) | 921600 |
+| Modbus baud (ESP32 ↔ ZLAC) | 115200 |
+| Comm-watchdog (ESP32) | 200 мс |
+| Comm-watchdog (Python) | 1000 мс |
+| CMD_TIMEOUT (ESP32 cmd_vel) | 500 мс |
 
 ---
 
 ## Ультразвуковые датчики HC-SR04
 
-| Датчик | Позиция | Угол (по base_link) | Назначение |
-|---|---|---|---|
-| Front 1 | левый передний угол | +45 градусов | Дуга препятствий |
-| Front 2 | левый центр | +22.5 градусов | Дуга препятствий |
-| Front 3 | центр спереди | 0 градусов | Фронтальное обнаружение |
-| Front 4 | правый центр | -22.5 градусов | Дуга препятствий |
-| Front 5 | правый передний угол | -45 градусов | Дуга препятствий |
-| Left | левый бок | +90 градусов | Боковое препятствие |
-| Right | правый бок | -90 градусов | Боковое препятствие |
+7 датчиков подключены к ESP32 (esp32_sensors_refab). Порядок в массиве
+соответствует пинам прошивки (см. `us_task.cpp`):
 
-Все датчики публикуют на `/ultrasonic/measurements` (sensor\_msgs/msg/Range).
+| Индекс | Датчик | Пины (trig, echo) | Угол (rpy Z, по base_link) | Назначение |
+|---|---|---|---|---|
+| 0 | right | G16, G34 | -76° (1.3265 рад) | Боковое препятствие |
+| 1 | front_right_outer | G17, G35 | -13.2° (0.2304 рад) | Дуга препятствий |
+| 2 | front_right_inner | G18, G32 | -5.7° (0.0995 рад) | Дуга препятствий |
+| 3 | front_center | G19, G33 | 0° | Фронтальное обнаружение |
+| 4 | front_left_inner | G23, G25 | +5.7° (0.0995 рад) | Дуга препятствий |
+| 5 | front_left_outer | G26, G27 | +13.2° (0.2304 рад) | Дуга препятствий |
+| 6 | left | G14, G12 | +76° (1.3265 рад) | Боковое препятствие |
+
+ESP32 публикует `std_msgs/Float32MultiArray` на `/ultrasonics`. Узел
+`range_converter_node` подписывается на `/ultrasonic/distances` и публикует
+7 отдельных `sensor_msgs/Range` на `/verter/distance_sensors/<имя>`.
+Параллельный узел `distance_sensors_node` (Arduino Mega, `BAUD_RATE = 9600`)
+также публикует Range на `/verter/distance_sensors/<имя>` и IMU на
+`/verter/imu/data`.
 
 ---
 
@@ -332,11 +321,11 @@ ESP32               │   ○     ○            │
 | Фрейм | X, Y, Z (м) | Примечание |
 |---|---|---|
 | base_footprint | 0, 0, 0 | Ноль на полу |
-| base_link | 0, 0, 0.10 | Центр шасси |
-| lidar_link | 0.12, 0, 0.70 | Повёрнут 180 deg по Z |
-| imu_link | 0, 0, 0.29 | Центр робота |
-| wheel_left | 0, +0.178, 0.05 | Левое колесо |
-| wheel_right | 0, -0.178, 0.05 | Правое колесо |
+| base_link | 0, 0, 0.10 | Центр шасси (0.10 м от base_footprint) |
+| lidar_link | 0, 0, 0.86 | 0.76 м над base_link, повёрнут 180° по Z |
+| imu_link | 0, 0, 0.405 | 0.305 м над base_link, центр робота |
+| wheel_left | 0, +0.178, 0.10 | 0 м над base_link (на высоте центра колеса) |
+| wheel_right | 0, -0.178, 0.10 | 0 м над base_link (на высоте центра колеса) |
 
 ---
 
@@ -344,12 +333,20 @@ ESP32               │   ○     ○            │
 
 | Топик | Тип | Частота | QoS | Направление |
 |---|---|---|---|---|
-| `/wheel_encoders` | Int64MultiArray | 20 Гц | BEST\_EFFORT | ESP32 -> ROS |
+| `/wheel_encoders` | Int64MultiArray | 50 Гц | BEST\_EFFORT | ESP32 -> ROS |
 | `/cmd_vel` | Twist | по мере поступления | RELIABLE | ROS -> ESP32 |
-| `/imu/data` | Imu | 50 Гц | default | ESP32 IMU -> ROS |
+| `/chassis/state` | UInt8 | 2 Гц | RELIABLE | ESP32 -> ROS |
+| `/chassis/fault` | UInt32 | 2 Гц | RELIABLE | ESP32 -> ROS |
+| `/chassis/cmd_watchdog` | Bool | 2 Гц | RELIABLE | ESP32 -> ROS |
+| `/chassis/wheel_rpm` | Int16MultiArray | 20 Гц | BEST\_EFFORT | ESP32 -> ROS |
+| `/chassis/modbus_fails` | UInt32 | 2 Гц | RELIABLE | ESP32 -> ROS |
+| `/imu/data` | Imu | 50 Гц | BEST\_EFFORT | ESP32 IMU -> ROS |
+| `/imu/mag_raw` | Float32MultiArray | 10 Гц | BEST\_EFFORT | ESP32 IMU -> ROS |
+| `/ultrasonics` | Float32MultiArray | по опросу | BEST\_EFFORT | ESP32 -> ROS |
+| `/odom_raw` | Odometry | 50 Гц | default | chassis\_zlac\_node |
 | `/odom` | Odometry | 50 Гц | default | odometry\_node |
-| `/scan_raw` | LaserScan | ~6 Гц | default | rplidar\_node |
-| `/scan` | LaserScan | ~6 Гц | default | laser\_filter |
+| `/scan_raw` | LaserScan | ~10 Гц | default | rplidar_node (Express/Sensitivity) |
+| `/scan` | LaserScan | ~10 Гц | default | laser_filter (после AngularBounds ±0.7 рад) |
 
 ---
 
@@ -357,8 +354,9 @@ ESP32               │   ○     ○            │
 
 | Линия | Потребитель | Источник |
 |---|---|---|
-| 12 V | Моторы (через Cytron MD10C) | Li-Ion/LiPo аккумулятор |
+| 24 V | Моторы (через ZLAC8015D) | LiFePO4 аккумулятор |
+| 12 V | ESP32 (питание линии, E-stop в этой же линии) | DC-DC с аккумулятора |
 | 5 V | ESP32, RPLiDAR, HC-SR04, USB-hub | DC-DC с линии 12 V |
 | 19 V | Jetson Orin Nano | Отдельный DC-DC / адаптер |
 
-**Правило**: питание Jetson должно быть отделено от моторной линии отдельным DC-DC с фильтрацией. Общий ground между ESP32 и моторным драйвером обязателен.
+**Правило**: питание Jetson должно быть отделено от моторной линии отдельным DC-DC с фильтрацией. Аппаратный E-stop размыкает линию 12 V — при этом ESP32 холодно перезагружается. Общий ground между ESP32 и TTL-RS485/ZLAC обязателен.

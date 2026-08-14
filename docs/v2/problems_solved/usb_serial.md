@@ -34,16 +34,16 @@ udevadm info --query=property --name=/dev/ttyUSB0
 
 ### Стабильное имя порта (udev-правило)
 
-Файл `/etc/udev/rules.d/99-robot-serial.rules`:
+Файл `/etc/udev/rules.d/99-robot-devices.rules` (CH340 = ESP32 chassis, VID:PID 1a86:7523):
 ```
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="robot_serial"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="esp32_chassis", MODE="0666"
 ```
 
 Применить:
 ```bash
 sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
-Результат: `/dev/robot_serial` как постоянный symlink.
+Результат: `/dev/esp32_chassis` как постоянный symlink (используется в `chassis_bringup.launch.py`). Полный набор udev-правил для всех устройств — в `docs/v2/udev_rules.md`.
 
 ---
 
@@ -59,7 +59,7 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 ### Автоматическая установка
 
 ```bash
-cd /home/jetson/verter-robot/verter_admin && sudo bash setup_respeaker_usb.sh
+cd /home/jetson/verter-robot/verter_admin/diagnostics && sudo bash setup_respeaker_usb.sh
 ```
 После этого отключить и снова подключить ReSpeaker, перезапустить DOA node.
 

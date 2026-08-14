@@ -53,13 +53,15 @@ lsof /dev/rplidar
 ros2 pkg list | grep rplidar_ros
 ```
 
-Если не установлен: `sudo apt install ros-humble-rplidar-ros`.
+Если не установлен: на Jetson Orin нужен патченый `rplidar_ros` (исправление зависания `cp210x` на `tegra-xusb`). Используйте скрипт `scripts/setup_rplidar_ros.sh` — он клонирует репозиторий, применяет патч и собирает пакет.
 
 ## 7. Запуск драйвера
 
 ```bash
-ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/rplidar
+ros2 run rplidar_ros rplidar_node --ros-args -p serial_port:=/dev/rplidar -p frame_id:=lidar_link -p serial_baudrate:=115200
 ```
+
+> **Примечание:** в launch-файлах проекта (`main.launch.py`, `mapping.launch.py`) нода `rplidar_ros` запускается с `scan_mode:='Sensitivity'` и публикует сырые данные в `/scan_raw`, а не напрямую в `/scan`. Топик `/scan` публикуется отдельным узлом `laser_filter`.
 
 В другом терминале:
 ```bash
@@ -85,9 +87,23 @@ ros2 topic hz /scan
 | Порт | `/dev/rplidar` |
 | Скорость | 115200 бод |
 | Frame ID | `lidar_link` |
-| Топик сырых данных | `/scan_raw` |
-| Топик отфильтрованных | `/scan` |
+| Scan mode | `Sensitivity` (`main.launch.py`, `mapping.launch.py`); не задан в `autonomous_mapping_real.launch.py` |
+| Топик сырых данных | `/scan_raw` (remap `scan`→`/scan_raw`) |
+| Топик отфильтрованных | `/scan` (laser_filter, remap `scan_filtered`→`/scan`) |
 
-Автоматическая проверка: `bash ~/verter-robot/verter_admin/check_lidar_connection.sh`
+### laser_filter
+
+Узел `laser_filters/scan_to_scan_filter_chain` (`config/laser_filters/laser_filter.yaml`) фильтрует `/scan_raw` → `/scan`:
+
+| Параметр | Значение |
+|---|---|
+| Тип фильтра | `LaserScanAngularBoundsFilterInPlace` |
+| `lower_angle` | -0.7 рад |
+| `upper_angle` | 0.7 рад |
+| `replace_with_nan` | `true` |
+
+Дуга обзора ≈ 80° (±0.7 рад), не 180°. Углы вне диапазона заменяются на `NaN`.
+
+Автоматическая проверка: `bash ~/verter-robot/verter_admin/diagnostics/lidar_monitor.sh`
 
 Конкретные проблемы с LiDAR: [Навигация — LiDAR не виден](../problems_solved/navigation.md).

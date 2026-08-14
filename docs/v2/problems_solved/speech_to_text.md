@@ -38,7 +38,7 @@ Audio Callback  (каждые 100 мс, никогда не блокируетс
 Recognition Thread  (отдельный поток)
 ├── Extract features (fbank)
 ├── ONNX inference
-├── CTC decode
+├── Transducer decode
 └── Publish result
 ```
 
@@ -51,7 +51,7 @@ Recognition Thread  (отдельный поток)
 ### Параметры
 
 - `SILENCE_CHUNKS: 6 → 4` (триггер 400 мс вместо 600 мс)
-- `NUM_THREADS: 2 → 1` (лучше для ARM, меньше context switching)
+- `NUM_THREADS: 4` (все ядра Cortex-A72)
 - ONNX graph optimization (`ORT_ENABLE_ALL` + memory arena)
 - Timing-логи для диагностики задержек
 
@@ -105,7 +105,7 @@ Recognition Thread  (отдельный поток)
 ### Проверка работы
 
 ```bash
-ros2 launch verter_admin admin.launch.py
+ros2 launch verter_admin main.launch.py
 ```
 Говорить и смотреть в логи:
 1. Не должно быть `input overflow`

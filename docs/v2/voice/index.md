@@ -10,10 +10,10 @@ ros2 launch verter_admin main.launch.py
 
 | Компонент | Пакет / файл | Назначение |
 |-----------|--------------|------------|
-| STT | `speech_to_text/` | Распознавание речи с VAD (Silero), 4 движка на выбор |
+| STT | `speech_to_text/` | Распознавание речи с VAD (Silero), 3 движка на выбор |
 | Recognition (FSM) | `recognition/recognition_node.py` | Конечный автомат диалога, парсинг команд, таймауты |
 | AI-ассистент | `ai_assistant/ai_assistant_node.py` | YandexGPT, контекст диалога, векторный поиск |
-| TTS | `text_to_speech/text_to_speech_node.py` | Синтез речи (Piper, активен; Silero закомментирован) |
+| TTS | `text_to_speech/silero_tts_node.py` | Синтез речи (Silero, активен; Piper закомментирован) |
 | Sound player | `sound_player/sound_player_node.py` | Короткие звуковые эффекты (триггер, успех, таймаут) |
 
 ## Сквозная схема
@@ -23,9 +23,9 @@ ReSpeaker MIC ──▶ speech_to_text_node ──/recognized_text──▶ Reco
  (VAD Silero)     (CTC по умолчанию)                           │
                                                               ├─/ai_question────▶ ai_assistant_node (YandexGPT)
                                                               │                       │
-                                                              │                       └─/text_to_speech──▶ text_to_speech_node (Piper)
+                                                              │                       └─/text_to_speech──▶ silero_tts_node (Silero)
                                                               │                                                  │
-                                                              ├─/text_to_speech──▶ text_to_speech_node ─────────┤
+                                                              ├─/text_to_speech──▶ silero_tts_node ─────────┤
                                                               ├─/play────────────▶ sound_player_node            │
                                                               ├─/dialog_control──▶ ai_assistant_node            │
                                                               ├─/speech_control──▶ speech_to_text_node (on/off) │
@@ -46,7 +46,7 @@ ReSpeaker MIC ──▶ speech_to_text_node ──/recognized_text──▶ Reco
 - [Топики](topics.md) — матрица интерфейсов с QoS и направлением.
 - [Тайминги и паузы](timings.md) — все временные константы.
 - [Бизнес-кейсы диалога](dialog_cases.md) — сценарии взаимодействия.
-- [STT-движки](stt_engines.md) — 4 реализации распознавания.
+- [STT-движки](stt_engines.md) — 3 реализации распознавания.
 - [TTS и звук](tts_soundplayer.md) — синтез и звуковые эффекты.
 - [AI-ассистент](ai_assistant.md) — YandexGPT, контекст, векторный поиск.
 - [Заметки о рефакторинге](refactor_notes.md) — что изменено и известные риски.

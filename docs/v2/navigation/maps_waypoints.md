@@ -13,16 +13,17 @@ cd ~/verter-robot/verter_admin
 ./scripts/save_map.sh ~/maps/my_map
 ```
 
-Сохраняется полный граф SLAM (`.posegraph`) и изображение карты (`.pgm`, `.yaml`). Все файлы помещаются в указанную директорию.
+Скрипт вызывает `nav2_map_server map_saver_cli` и сохраняет изображение карты (`.pgm`) и метаданные (`.yaml`) в указанную директорию. Полный граф поз SLAM (`.posegraph`) этим скриптом не сохраняется — для этого используйте сервис `/slam_toolbox/serialize_map` (см. ниже).
 
 ### Способ 2: ROS2 сервис
 
 ```bash
 mkdir -p ~/maps
 
-# Сохранить граф поз SLAM Toolbox
-ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap \
-  "{name: {data: '$HOME/maps/my_map'}}"
+# Сохранить граф поз SLAM Toolbox (.posegraph)
+ros2 service call /slam_toolbox/serialize_map \
+  slam_toolbox/srv/SerializePoseGraph \
+  "{filename: {data: '$HOME/maps/my_map'}}"
 
 # Сохранить как PGM/YAML для Nav2
 ros2 run nav2_map_server map_saver_cli -f ~/maps/my_map
@@ -38,15 +39,17 @@ ros2 run nav2_map_server map_saver_cli -f ~/maps/my_map
 
 ## Структура сохранённой карты
 
-После сохранения карты `my_map`:
+После сохранения карты `my_map` возможны следующие файлы:
 
 ```
 ~/maps/
-+-- my_map.posegraph   # Полный граф SLAM
-+-- my_map.data        # Вспомогательные данные
-+-- my_map.pgm         # Изображение (чёрно-белое)
-+-- my_map.yaml        # Метаданные (разрешение, origin)
++-- my_map.posegraph   # Полный граф SLAM (через /slam_toolbox/serialize_map)
++-- my_map.data        # Вспомогательные данные графа (вместе с .posegraph)
++-- my_map.pgm         # Изображение (чёрно-белое, через map_saver / /slam_toolbox/save_map)
++-- my_map.yaml        # Метаданные (разрешение, origin, вместе с .pgm)
 ```
+
+Скрипт `save_map.sh` и `map_saver_cli` создают только `.pgm` + `.yaml`. Граф поз (`.posegraph` + `.data`) сохраняется отдельно сервисом `/slam_toolbox/serialize_map`.
 
 ### Форматы файлов
 
@@ -67,7 +70,7 @@ ros2 run nav2_map_server map_saver_cli -f ~/maps/my_map
 ```yaml
 image: my_map.pgm
 mode: trinary
-resolution: 0.05
+resolution: 0.03
 origin: [-5.23, -3.87, 0.0]
 negate: 0
 occupied_thresh: 0.65
@@ -156,95 +159,97 @@ ros2 service list | grep slam_toolbox
 
 Waypoint -- это сохранённая позиция на карте с именем. Примеры: «Ресепшен», «Кабинет 101», «Зарядная станция».
 
-### CRUD через shell-скрипты
+### CRUD через ROS2-сервисы
 
-| Команда | Описание |
-|---------|----------|
-| `./save_waypoint.sh <имя> [<описание>]` | Сохранить текущую позицию робота |
-| `./goto_waypoint.sh <имя>` | Отправить робота к точке |
-| `./list_waypoints.sh` | Показать все сохранённые точки |
-| `./delete_waypoint.sh <имя>` | Удалить точку |
+Точки управляются сервисами ноды `waypoint_manager` (сервисы определены в пакете `verter_admin_msgs`):
+
+| Сервис | Тип | Описание |
+|--------|-----|----------|
+| `/save_waypoint` | `verter_admin_msgs/srv/SaveWaypoint` | Сохранить точку (name, x, y, theta) |
+| `/navigate_to_waypoint` | `verter_admin_msgs/srv/NavigateToWaypoint` | Отправить робота к точке |
+| `/list_waypoints` | `verter_admin_msgs/srv/ListWaypoints` | Показать все сохранённые точки |
+| `/delete_waypoint` | `verter_admin_msgs/srv/DeleteWaypoint` | Удалить точку |
+| `/start_patrol` | `std_srvs/srv/Trigger` | Запустить патрульный обход |
+| `/stop_patrol` | `std_srvs/srv/Trigger` | Остановить патрулирование |
 
 ### Примеры
 
 ```bash
-# Отвезите робота в нужное место, затем сохраните
-./save_waypoint.sh "Ресепшен" "Главный вход, у стойки"
+# Сохранить текущую позицию робота (x, y, theta берутся из /amcl_pose)
+ros2 service call /save_waypoint verter_admin_msgs/srv/SaveWaypoint \
+  "{name: 'Ресепшен', x: 0.5, y: 1.2, theta: 0.0}"
 
 # Посмотреть все точки
-./list_waypoints.sh
+ros2 service call /list_waypoints verter_admin_msgs/srv/ListWaypoints
 
 # Отправить робота
-./goto_waypoint.sh "Ресепшен"
+ros2 service call /navigate_to_waypoint verter_admin_msgs/srv/NavigateToWaypoint \
+  "{name: 'Ресепшен'}"
 
 # Удалить точку
-./delete_waypoint.sh "Старый офис"
-
-# Обновить точку -- сохранить с тем же именем
-./save_waypoint.sh "Ресепшен"
+ros2 service call /delete_waypoint verter_admin_msgs/srv/DeleteWaypoint \
+  "{name: 'Старый офис'}"
 ```
 
-### CRUD через ROS2 action
+### Нода waypoint_manager
 
-Waypoint manager реализован как lifecycle-нода с ROS2 action-интерфейсом.
+`waypoint_manager` реализована как обычная нода (`rclpy.node.Node`, не LifecycleNode) с ROS2-сервисным интерфейсом. Навигация к точке выполняется через Nav2 action `navigate_to_pose`. Нода запускается launch-файлом `waypoint_ui.launch.py`.
 
 ```bash
-# Проверить состояние
-ros2 lifecycle get /waypoint_manager
+# Проверить, что нода запущена
+ros2 node list | grep waypoint_manager
 
-# Активировать при необходимости
-ros2 lifecycle set /waypoint_manager configure
-ros2 lifecycle set /waypoint_manager activate
+# Параметр waypoints_file (по умолчанию ~/verter-robot/verter_admin/waypoints.yaml)
+# задаёт файл хранения точек.
 ```
 
 ### YAML-формат файла точек
 
-Файл `waypoints.yaml`:
+Файл `waypoints.yaml` (по умолчанию `~/verter-robot/verter_admin/waypoints.yaml`). Текущий формат — отображение имени в поля `x`, `y`, `theta`:
 
 ```yaml
-waypoints:
-  - name: "Кабинет директора"
-    x: 5.2       # метры от origin карты
-    y: 3.1       # метры от origin карты
-    yaw: 1.57    # радианы (0=восток, 1.57=север, 3.14=запад)
-    description: "Второй этаж, справа"
+"Кабинет директора":
+  x: 5.2       # метры от origin карты
+  y: 3.1       # метры от origin карты
+  theta: 1.57  # радианы (0=восток, 1.57=север, 3.14=запад)
 
-  - name: "Ресепшен"
-    x: 0.5
-    y: 1.2
-    yaw: 0.0
-    description: "Главный вход"
+"Ресепшен":
+  x: 0.5
+  y: 1.2
+  theta: 0.0
 ```
 
-| Поле          | Тип     | Описание                                |
-|---------------|---------|-----------------------------------------|
-| `name`        | string  | Уникальное имя точки                    |
-| `x`           | float   | Координата X в метрах (система `map`)   |
-| `y`           | float   | Координата Y в метрах (система `map`)   |
-| `yaw`         | float   | Ориентация в радианах                   |
-| `description` | string  | Свободное описание (необязательно)      |
+Поддерживается и обратная совместимость при загрузке со старым форматом (список `waypoints:` с полями `name`, `x`, `y`, `yaw`), но новые точки сохраняются в текущем формате.
+
+| Поле    | Тип    | Описание                                |
+|---------|--------|-----------------------------------------|
+| (ключ)  | string | Уникальное имя точки                    |
+| `x`     | float  | Координата X в метрах (система `map`)   |
+| `y`     | float  | Координата Y в метрах (система `map`)   |
+| `theta` | float  | Ориентация (yaw) в радианах             |
+
+> Примечание: поле `description` моделью данных не поддерживается — сервис `SaveWaypoint` принимает только `name`, `x`, `y`, `theta`.
 
 ### Патрульные маршруты
 
-Патрульный маршрут -- последовательный обход нескольких точек:
+Патрульный маршрут -- последовательный обход всех сохранённых точек (в порядке добавления). Запускается и останавливается сервисами `/start_patrol` / `/stop_patrol`:
 
 ```bash
-./goto_waypoint.sh "Ресепшен"
-# Дождаться прибытия...
-./goto_waypoint.sh "Кабинет 1"
-# Дождаться прибытия...
-./goto_waypoint.sh "Кабинет 2"
-# Дождаться прибытия...
-./goto_waypoint.sh "Зарядная станция"
+# Запустить патрулирование
+ros2 service call /start_patrol std_srvs/srv/Trigger "{}"
+
+# Остановить патрулирование
+ros2 service call /stop_patrol std_srvs/srv/Trigger "{}"
 ```
 
-Автоматический цикл (например, экскурсия):
+Точки обходятся в порядке их добавления в хранилище. Политика патрулирования (`patrol_warn_threshold`/`patrol_fault_threshold`) отслеживает повторные неудачи достижения точек и переводит маршрут в состояние `DEGRADED`/`FAULT`.
+
+Для разового обхода нескольких точек можно последовательно вызывать `/navigate_to_waypoint`:
 
 ```bash
-for place in "Ресепшен" "Кабинет 1" "Кабинет 2" "Зарядка"; do
-    ./goto_waypoint.sh "$place"
-    sleep 30   # Пауза между остановками
-done
+ros2 service call /navigate_to_waypoint verter_admin_msgs/srv/NavigateToWaypoint "{name: 'Ресепшен'}"
+# Дождаться прибытия...
+ros2 service call /navigate_to_waypoint verter_admin_msgs/srv/NavigateToWaypoint "{name: 'Кабинет 1'}"
 ```
 
 ### Web-интерфейс
@@ -296,10 +301,10 @@ convert ~/maps/my_map.pgm ~/maps/my_map.png
 cp -r ~/maps ~/maps_backup_$(date +%Y%m%d)
 
 # Копия waypoints
-cp waypoints.yaml waypoints_backup.yaml
+cp ~/verter-robot/verter_admin/waypoints.yaml waypoints_backup.yaml
 
 # Перенести на другой робот
-scp waypoints.yaml robot2:~/verter-robot/verter_admin/
+scp ~/verter-robot/verter_admin/waypoints.yaml robot2:~/verter-robot/verter_admin/
 ```
 
 ---
@@ -308,7 +313,7 @@ scp waypoints.yaml robot2:~/verter-robot/verter_admin/
 
 1. **Ориентация при сохранении точки важна.** Разверните робота в нужную сторону перед сохранением.
 2. **Используйте понятные имена.** «Кабинет 101», «Зарядная станция» -- хорошо; «Точка 1» -- плохо.
-3. **Тестируйте новые точки сразу.** После создания выполните `./goto_waypoint.sh` и убедитесь, что робот приезжает правильно.
+3. **Тестируйте новые точки сразу.** После создания вызовите `/navigate_to_waypoint` и убедитесь, что робот приезжает правильно.
 4. **Создайте базовые точки:** стартовая позиция, зарядная станция, безопасное место парковки.
 5. **Сохраняйте карту перед выключением.** SLAM Toolbox не сохраняет автоматически.
 6. **Разные карты для разных этажей.** Именуйте `building_A_floor_1`, `building_A_floor_2`.
@@ -335,7 +340,7 @@ ros2 node list | grep slam_toolbox
 ```bash
 ros2 topic hz /map
 ros2 run tf2_tools view_frames
-# Убедитесь, что map -> base_link существует
+# Убедитесь, что цепочка map -> odom -> base_footprint существует
 ```
 
 ### «Точка не найдена»
@@ -343,9 +348,9 @@ ros2 run tf2_tools view_frames
 Проверьте точное имя с учётом регистра:
 
 ```bash
-./list_waypoints.sh
-./goto_waypoint.sh "Кабинет директора"   # правильно
-./goto_waypoint.sh "Кабинет Директора"   # неправильно
+ros2 service call /list_waypoints verter_admin_msgs/srv/ListWaypoints
+ros2 service call /navigate_to_waypoint verter_admin_msgs/srv/NavigateToWaypoint "{name: 'Кабинет директора'}"   # правильно
+ros2 service call /navigate_to_waypoint verter_admin_msgs/srv/NavigateToWaypoint "{name: 'Кабинет Директора'}"   # неправильно
 ```
 
 ### «Робот не может добраться до точки»
@@ -358,4 +363,4 @@ ros2 run tf2_tools view_frames
 
 1. Отвезите робота вручную: `ros2 run verter_admin teleop_keyboard`.
 2. Разверните точно в нужную сторону.
-3. Пересохраните: `./save_waypoint.sh "Имя"`.
+3. Пересохраните, вызвав сервис `/save_waypoint` с текущими координатами из `/amcl_pose`.
