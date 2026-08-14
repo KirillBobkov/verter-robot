@@ -51,5 +51,4 @@ LISTENING_FOR_TRIGGER ───────▶ CAPTURING_COMMAND ─────
 Распознавание STT включается/выключается через `speech_control` (Bool). `RecognitionNode` деактивирует распознавание:
 
 - при отправке вопроса в AI (чтобы не накапливать буфер во время обработки);
-- при таймауте напоминания (TTS сам вернёт `tts_control=True` после озвучки);
 - при получении `tts_control=False` от TTS.

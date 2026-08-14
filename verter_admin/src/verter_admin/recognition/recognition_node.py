@@ -15,8 +15,7 @@ class SpeechConfig:
     # Таймауты
     NO_SPEECH_TIMEOUT: float = 10.0
     DIALOG_TIMEOUT: float = 30.0
-    REMINDER_INTERVAL: float = 180.0
-    
+
     # Ограничения текста
     MIN_COMMAND_LENGTH: int = 5
     MAX_TEXT_LENGTH_FOR_TRIGGER: int = 100
@@ -219,10 +218,7 @@ class RecognitionNode(Node):
         # Инициализация системы
         self._setup_ros_communication()
         self.timer_manager = TimerManager(self, self.config)
-        
-        # Запуск подсистем
-        self._start_reminder_timer()
-        
+
         self._log_system_startup()
 
     # === ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ ===
@@ -436,11 +432,7 @@ class RecognitionNode(Node):
             self._send_farewell_message()
         
         self.state_manager.end_dialog()
-        
-        # Восстанавливаем таймер напоминаний после завершения диалога
-        if self.state_manager.is_passive_listening():
-            self._start_reminder_timer()
-        
+
         self.get_logger().info("🔚 Диалог завершен")
 
     def _transition_to_dialog_if_needed(self) -> None:
@@ -453,11 +445,7 @@ class RecognitionNode(Node):
         """Сброс в состояние пассивного прослушивания"""
         self.state_manager.end_dialog()
         self.timer_manager.stop_timer('command_timeout')
-        
-        # Восстанавливаем таймер напоминаний
-        if self.state_manager.is_passive_listening():
-            self._start_reminder_timer()
-        
+
         self.get_logger().debug("🔄 Возврат в режим прослушивания")
 
     def _send_farewell_message(self) -> None:
@@ -467,15 +455,6 @@ class RecognitionNode(Node):
         self.text_to_speech_pub.publish(msg)
 
     # === УПРАВЛЕНИЕ ТАЙМЕРАМИ ===
-    
-    def _start_reminder_timer(self) -> None:
-        """Запуск таймера напоминаний"""
-        self.timer_manager.start_timer(
-            'reminder', 
-            self.config.REMINDER_INTERVAL, 
-            self._send_user_reminder
-        )
-        self.get_logger().info("⏰ Таймер напоминаний запущен")
 
     def _start_command_timeout_timer(self) -> None:
         """Запуск таймера таймаута команды"""
@@ -507,27 +486,6 @@ class RecognitionNode(Node):
         self._play_sound(self.config.SOUND_TIMEOUT)
         self._end_dialog()
 
-    def _send_user_reminder(self) -> None:
-        """Отправка напоминания пользователю"""
-        try:
-            if self.state_manager.is_passive_listening():
-                # Отключаем распознавание перед напоминанием
-                # TTS сам включит его обратно после воспроизведения
-                self._deactivate_recognition()
-                
-                reminder_msg = String()
-                reminder_msg.data = "Чтобы задать вопрос начните с ключевого слова Вертер, Или робот, и задайте свой вопрос."
-                self.text_to_speech_pub.publish(reminder_msg)
-                
-                self.get_logger().info("🔔 Напоминание отправлено")
-                self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
-            else:
-                self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
-                
-        except Exception as e:
-            self.get_logger().error(f"Ошибка напоминания: {e}")
-            self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
-
     # === ВНЕШНЕЕ УПРАВЛЕНИЕ ===
     
     def _handle_tts_control(self, msg: Bool) -> None:
@@ -557,8 +515,6 @@ class RecognitionNode(Node):
             self._reset_dialog_timer()
             self.get_logger().info("✅ Распознавание активировано (диалог)")
         else:
-            if self.state_manager.is_passive_listening():
-                self.timer_manager.start_timer('reminder', self.config.REMINDER_INTERVAL, self._send_user_reminder)
             self.get_logger().info("✅ Распознавание активировано")
     
     def _deactivate_recognition(self) -> None:
