@@ -49,10 +49,8 @@ class AIAssistantNode(Node):
 
         if self.is_testing:
             self.get_logger().info("Тестовый режим")
-            self._publish_response("Готов к работе в тестовом режиме")
         else:
             self._initialize_ai()
-            self._publish_response("Готов к работе")
 
     # ================================
     # ROS
