@@ -1,9 +1,8 @@
 .controls {
   display: flex;
   justify-content: center;
-  gap: 1.5rem;
   width: 100%;
-  padding: 1rem 0;
+  padding: 0.5rem 0;
 }
 
 .btn {
@@ -14,6 +13,7 @@
   border-radius: 2rem;
   border: none;
   cursor: pointer;
+  text-transform: uppercase;
   transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
   box-shadow: 0 4px 12px var(--box-shadow);
   user-select: none;
@@ -37,6 +37,11 @@
   box-shadow: 0 6px 18px var(--box-shadow);
 }
 
+.btnStart:focus-visible {
+  outline: 3px solid var(--font-color);
+  outline-offset: 3px;
+}
+
 .btnStop {
   background: var(--danger);
   color: var(--danger-color);
@@ -44,4 +49,9 @@
 
 .btnStop:hover:not(:disabled) {
   box-shadow: 0 6px 18px var(--box-shadow);
+}
+
+.btnStop:focus-visible {
+  outline: 3px solid var(--font-color);
+  outline-offset: 3px;
 }

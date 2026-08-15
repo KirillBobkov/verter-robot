@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useROSStore } from '../store/rosStore';
-import * as rosbridge from '../services/rosbridge';
+import * as rosbridge from '../services/transport';
 
 export function useROS(autoConnect: boolean = true) {
   const isConnected = useROSStore((state) => state.isConnected);

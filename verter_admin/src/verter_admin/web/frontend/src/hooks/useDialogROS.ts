@@ -22,7 +22,7 @@
 import { useEffect, useRef } from 'react';
 import { useDialogStore } from '../store/dialogStore';
 import { useROSStore } from '../store/rosStore';
-import * as rosbridge from '../services/rosbridge';
+import * as rosbridge from '../services/transport';
 
 export function useDialogROS() {
   const setStatus = useDialogStore((s) => s.setStatus);
@@ -60,6 +60,10 @@ export function useDialogROS() {
         : statusRef.current === 'idle'
           ? 'farewell'
           : 'answer';
+      // farewell — аудио-only: озвучивается TTS, но на экране не показывается
+      // (stage в idle свёрнут, виден welcome). Не кладём его в currentMessage,
+      // иначе оно перебивает welcome «Привет! Нажми на кнопку…» (§6 DIALOG_FLOW).
+      if (role === 'farewell') return;
       setMessage(role, text);
     });
 

@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  readonly VITE_EMULATION?: string;
+}
+
 declare module '*.module.css' {
   const classes: { [key: string]: string };
   export default classes;

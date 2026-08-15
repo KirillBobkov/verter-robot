@@ -1,39 +1,173 @@
+/**
+ * Облачко-сообщение. Ширина ~70vw. Высота — по контенту, но размер шрифта
+ * авто-масштабируется (JS в MessageZone.tsx), чтобы длинный текст поместился
+ * в доступную высоту stage — облачко не разрастается за пределы экрана.
+ * Фон/хвостик/подпись различают AI↔пользователя.
+ *
+ * Плавная смена по роли (cross-fade): одновременно в DOM максимум два слоя
+ * .layer — видимый (data-fading="in", въезжает fadeDown) и уходящий
+ * (data-fading="out", гаснет opacity→0). Уходящий удаляется после transition.
+ *
+ * Перекрытие слоёв — через CSS Grid: все .layer в одной ячейке (grid-area: 1/1).
+ * В отличие от position:absolute, grid сохраняет высоту контейнера по контенту
+ * (берётся максимальный слой), поэтому зона не схлопывается.
+ */
 .zone {
-  flex: 1 1 auto;
+  width: 100%;
+  max-height: 100%;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+    border-radius: var(--radius-xl);
+}
+
+/* Слой-обёртка: все слои в одной grid-ячейке → перекрываются. */
+.layer {
+  grid-area: 1 / 1;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 6rem;
-  padding: 0 1rem;
+
+}
+/* Уходящий слой (aria-hidden) не перехватывает тычки. */
+.layer[aria-hidden="true"] {
+  pointer-events: none;
 }
 
+.bubble {
+  position: relative;
+  width: 70vw;
+  max-width: 70vw;
+  background: var(--card-bg-color);
+  border-radius: var(--radius-xl);
+  padding: 2rem 2.25rem;
+  box-shadow: 0 4px 12px var(--box-shadow);
+}
+
+/* Cross-fade через animation (НЕ transition): слои монтируются/размонтируются
+   React-ом, поэтому transition здесь не сработал бы — он требует изменения
+   свойства у СУЩЕСТВУЮЩЕГО элемента. animation же проигрывается при монтировании. */
+
+/* Входящий слой — появляется (opacity 0→1, лёгкий съезд сверху). */
+@keyframes mzFadeIn {
+  from { opacity: 0; transform: translateY(-0.75rem); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Уходящий слой — гаснет (opacity 1→0). */
+@keyframes mzFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+.bubble[data-fading="in"] {
+  animation: mzFadeIn var(--transition-slow) both;
+}
+
+.bubble[data-fading="out"] {
+  animation: mzFadeOut var(--transition-slow) both;
+}
+
+/* AI (answer/welcome/farewell/speaking) — лаймовый тинт. */
+.bubble[data-role="answer"],
+.bubble[data-role="welcome"],
+.bubble[data-role="farewell"],
+.bubble[data-role="speaking"] {
+  background: color-mix(in srgb, var(--accent) 18%, var(--card-bg-color));
+}
+
+/* Пользователь (question) — нейтральный. */
+.bubble[data-role="question"] {
+  background: var(--card-bg-color);
+}
+
+/* Думание (thinking) — нейтральный. */
+.bubble[data-role="thinking"] {
+  background: var(--card-bg-color);
+}
+
+/* Слушание (listening) — лаймовый тинт (приглашение от робота). */
+.bubble[data-role="listening"] {
+  background: color-mix(in srgb, var(--accent) 18%, var(--card-bg-color));
+}
+
+/* Ошибка — красный тинт. */
+.bubble[data-role="error"] {
+  background: color-mix(in srgb, var(--danger) 14%, var(--card-bg-color));
+}
+
+/* Хвостик облачка: AI → слева к аватару, user → справа. */
+.bubble::before {
+  content: '';
+  position: absolute;
+  top: 2rem;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.bubble[data-role="answer"]::before,
+.bubble[data-role="welcome"]::before,
+.bubble[data-role="farewell"]::before,
+.bubble[data-role="speaking"]::before,
+.bubble[data-role="thinking"]::before,
+.bubble[data-role="listening"]::before {
+  left: -14px;
+  border-width: 0 14px 14px 0;
+  border-color: transparent color-mix(in srgb, var(--accent) 18%, var(--card-bg-color)) transparent transparent;
+}
+
+.bubble[data-role="error"]::before {
+  left: -14px;
+  border-width: 0 14px 14px 0;
+  border-color: transparent color-mix(in srgb, var(--danger) 14%, var(--card-bg-color)) transparent transparent;
+}
+
+.bubble[data-role="question"]::before {
+  right: -14px;
+  border-width: 14px 0 0 14px;
+  border-color: transparent transparent transparent var(--card-bg-color);
+}
+
+/* Подпись роли над текстом. */
+.label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--secondary-font-color);
+  margin-bottom: 0.75rem;
+}
+
+.bubble[data-role="error"] .label {
+  color: var(--color-error-text);
+}
+
+/* Текст сообщения. Базовый font-size — гибрид:
+ *  - container query (cqh) адаптирует размер к ВЫСОТЕ зоны (messageCol —
+ *    container-type: size). На стандартной высоте 5.5cqh ≈ --dialog-font-size
+ *    и упирается в max (clamp), т.е. ведёт себя как раньше; на низких экранах
+ *    плавно уменьшается — первая линия адаптации, без reflow.
+ *  - --dialog-font-size (clamp по vw) адаптирует к ШИРИНЕ вьюпорта — как раньше.
+ *  - при реальном переполнении по объёму текста JS (MessageZone.tsx) считает
+ *    точный коэффициент и переопределяет font-size инлайном — подстраховка.
+ * line-height уменьшен на 50% от прежнего (был 1.5). */
 .message {
-  font-size: var(--dialog-font-size);
-  line-height: var(--dialog-line-height);
-  color: var(--font-color);
-  text-align: center;
-  max-width: 36ch;
   margin: 0;
-  font-weight: 500;
-  /* Появление: мягкий fade-down (typewriter ниже для ответов/вопросов/ошибок). */
-  animation: fadeDown 350ms ease both;
+  font-size: clamp(0.9rem, 5.5cqh, var(--dialog-font-size));
+  line-height: calc(var(--dialog-line-height) * 0.75);
+  font-weight: 600;
+  color: var(--font-color);
+  text-align: left;
   overflow-wrap: break-word;
+  word-break: break-word;
 }
 
-/* Typewriter — текст «печатается» слева направо: ширина блока растёт
-   от 0 до полной. Длительность масштабируется под длину (inline --tw-duration).
-   Перенос строк сохраняется (overflow-wrap), без white-space:nowrap. */
-.message[data-typewriter="true"] {
-  overflow: hidden;
-  animation:
-    typewriter var(--tw-duration, 2s) steps(50, end) both,
-    fadeDown 350ms ease both;
-}
-
-/* Роли — цветовые акценты. */
 .message[data-role="error"] {
-  color: #b3261e;
+  color: var(--color-error-text);
 }
 
 .message[data-role="farewell"] {
@@ -41,6 +175,46 @@
 }
 
 .message[data-role="welcome"] {
+  font-weight: 700;
+}
+
+/* «Думаю…» — приглушённый курсив. */
+.message[data-role="thinking"] {
+  color: var(--secondary-font-color);
+  font-style: italic;
+  font-weight: 500;
+}
+
+/* «Говорите, я слушаю…» — приглашение. */
+.message[data-role="listening"] {
   color: var(--font-color);
   font-weight: 600;
+}
+
+/* «Формулирую ответ…» — заглушка speaking до прихода ответа. */
+.message[data-role="speaking"] {
+  color: var(--font-color);
+  font-weight: 600;
+}
+
+/* Доп. сообщение под основным (thinking: «Думаю…» под вопросом). */
+.subMessage {
+  margin: 1rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--font-color) 12%, transparent);
+  font-size: calc(var(--dialog-font-size) * 0.7);
+  line-height: calc(var(--dialog-line-height) * 0.75);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--secondary-font-color);
+  text-align: left;
+}
+
+/* ========================================================= */
+/* Accessibility: при запросе на редукцию движения — мгновенная смена. */
+@media (prefers-reduced-motion: reduce) {
+  .bubble[data-fading="in"],
+  .bubble[data-fading="out"] {
+    animation: none;
+  }
 }

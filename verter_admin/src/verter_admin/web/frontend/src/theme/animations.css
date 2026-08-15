@@ -1,7 +1,9 @@
 /**
  * CSS Animations — диалоговый kiosk.
- * Универсальные: fadeIn/fadeOut/blink/wave/spin.
- * Диалоговые: typewriter, fadeDown, avatar-анимации (5 состояний).
+ * Универсальные: fadeIn, wave (для ListeningIndicator).
+ * Сообщения: fadeDown (появление облачка).
+ * Анимации аватара робота живут в RobotAvatar.module.css (самодостаточный
+ * модуль: keyframes + селекторы по [data-avatar]).
  */
 
 /* ============ Универсальные ============ */
@@ -11,73 +13,16 @@
   to { opacity: 1; }
 }
 
-@keyframes fadeOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes blink {
-  0%, 90%, 100% { opacity: 1; transform: scaleY(1); }
-  95% { opacity: 0.3; transform: scaleY(0.1); }
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
+/* Индикатор-волна listening (ListeningIndicator). */
 @keyframes wave {
-  0%, 100% { height: 8px; }
-  50% { height: 24px; }
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
 }
 
 /* ============ Сообщения ============ */
 
-/* Появление «печатной машинки»: ширина текста растёт слева направо. */
-@keyframes typewriter {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
 /* Появление нового сообщения — въезжает сверху с затуханием (fade-down). */
 @keyframes fadeDown {
-  from { opacity: 0; transform: translateY(-1.5rem); }
+  from { opacity: 0; transform: translateY(-0.75rem); }
   to { opacity: 1; transform: translateY(0); }
-}
-
-/* ============ Аватар робота ============ */
-
-/* idle — спокойное дыхание. */
-@keyframes avatarBreathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.03); }
-}
-
-/* listening — лёгкое покачивание («слушает ухом»). */
-@keyframes avatarListen {
-  0%, 100% { transform: rotate(0deg) scale(1); }
-  25% { transform: rotate(-3deg) scale(1.02); }
-  75% { transform: rotate(3deg) scale(1.02); }
-}
-
-/* thinking — медленное «обдумывание» (наклон + пульсация). */
-@keyframes avatarThink {
-  0%, 100% { transform: rotate(-2deg) scale(1.01); }
-  50% { transform: rotate(2deg) scale(1.04); }
-}
-
-/* speaking — активное «говорение» (ритмичные колебания). */
-@keyframes avatarSpeak {
-  0%, 100% { transform: scale(1); }
-  20% { transform: scale(1.05); }
-  40% { transform: scale(0.98); }
-  60% { transform: scale(1.04); }
-  80% { transform: scale(0.99); }
-}
-
-/* sad — грусть (опускается + дрожь). */
-@keyframes avatarSad {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  30% { transform: translateY(0.5rem) rotate(-2deg); }
-  70% { transform: translateY(0.5rem) rotate(2deg); }
 }

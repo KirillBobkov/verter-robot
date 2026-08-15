@@ -20,11 +20,18 @@
   --danger-color: #ffffff;
 
   /* Диалог: типографика и сенсорные цели (10", слабовидящие) */
-  --dialog-font-size: clamp(1.5rem, 4vw, 2rem);
-  --dialog-line-height: 1.4;
-  --button-min-height: 64px;
-  --button-font-size: clamp(1.25rem, 3vw, 1.75rem);
-  --avatar-size: clamp(8rem, 30vw, 16rem);
+  --dialog-font-size: clamp(1.75rem, 4.2vw, 3rem);
+  --dialog-line-height: 1.5;
+  --button-min-height: 72px;
+  --button-font-size: clamp(1.375rem, 2.4vw, 1.875rem);
+  --avatar-size: clamp(8rem, 18vw, 14rem);
+
+  /* Аватар: цвета частей персонажа (раньше хардкод) */
+  --avatar-eye-color: #1a1a00;
+  --avatar-sad-bg: #9aa0a6;
+
+  /* Цвет текста ошибки (раньше хардкод #b3261e в MessageZone) */
+  --color-error-text: #b3261e;
 
   /* ========== Legacy-алиасы (от первичных токенов) ========== */
   --color-bg-primary: var(--card-bg-color);
@@ -32,9 +39,17 @@
   --color-bg-tertiary: var(--bg-color);
   --color-danger: var(--danger);
   --color-primary: var(--accent);
-  --color-primary-hover: #b8d800;
+  --color-primary-hover: #b8d800; /* --accent-hover */
+  --accent-hover: #b8d800;
   --color-text-primary: var(--font-color);
   --color-text-inverse: var(--danger-color);
+
+  /*
+   * ПРАВИЛО КОНТРАСТА (WCAG):
+   * --accent (#c8ed00) + чёрный = 15.6:1 (AAA ✓).
+   * --accent + белый = 1.05:1 (провал ✗).
+   * На лаймовом accent — ТОЛЬКО чёрный текст (var(--font-color)).
+   */
 
   /* ========== Spacing ========== */
   --spacing-xs: 4px;
@@ -47,8 +62,8 @@
   --spacing-4xl: 64px;
 
   /* ========== Typography ========== */
-  --font-family-base: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-family-monospace: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+  --font-family-base: 'TTDaysSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-family-monospace: 'SF Mono', Monaco, 'Cascadia Code', Consolas, monospace;
 
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
@@ -98,8 +113,8 @@
 
   --md-sys-motion-duration-short: 150ms;
   --md-sys-motion-duration-medium: 250ms;
-  --md-sys-motion-duration-long: 350ms;
-  --md-sys-motion-duration-long2: 450ms;
+  --md-sys-motion-duration-long: 1050ms;
+  --md-sys-motion-duration-long2: 1350ms;
 
   --transition-fast: var(--md-sys-motion-duration-short) var(--md-sys-motion-easing-standard);
   --transition-base: var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);

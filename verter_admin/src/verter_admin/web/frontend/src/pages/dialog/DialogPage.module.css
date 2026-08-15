@@ -1,20 +1,59 @@
+/**
+ * Layout — stage (робот + облачко) всегда виден, кнопка снизу.
+ * В idle в облачке — приветствие; в active — диалоговые сообщения.
+ * Фикс вылезания: height:100vh + overflow:hidden; скролла страницы нет.
+ */
 .page {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  min-height: 100vh;
-  padding: 2.5rem 2rem;
+  gap: 2rem;
+  height: 100vh;
+  overflow: hidden;
+  padding: 2vh 2vw;
   box-sizing: border-box;
   background: var(--bg-color);
 }
 
-.avatarWrap {
-  flex: 0 0 auto;
-  padding-top: 1rem;
+/* Stage: робот + облачко. Всегда развёрнут. */
+.stage {
+  flex: 1 1 auto;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3vw;
+  padding: 0 1vw;
+  min-height: 0;
 }
 
-.controlsWrap {
-  flex: 0 0 auto;
-  width: 100%;
+.avatarCol {
+  flex: 0 0 20vw;
+  /* stretch: колонка получает высоту stage, чтобы max-height аватара
+     (вертикальный риг 500×680) корректно ограничивал высоту. */
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  min-height: 0;
+}
+
+.messageCol {
+  /* stretch: как .avatarCol, колонка получает высоту stage, чтобы
+     .zone { max-height: 100% } и container-type: size видели реальную
+     доступную высоту для масштабирования текста. Без этого высота
+     messageCol равна контенту и переполнение не фиксируется. */
+  align-self: stretch;
+  flex: 0 1 70vw;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Контейнер для cqh-адаптации базового font-size .message к высоте зоны.
+     size (а не inline-size) — нужна именно высота. messageCol имеет явную
+     высоту через align-self: stretch, поэтому size-containment его не схлопнет. */
+  container-type: size;
 }

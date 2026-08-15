@@ -3,7 +3,7 @@
  * В idle — «Начать диалог» (accent). В активном диалоге — «Остановить» (danger).
  */
 
-import styles from './DialogControls.module.css';
+import styles from "./DialogControls.module.css";
 
 interface DialogControlsProps {
   isDialogActive: boolean;
@@ -22,15 +22,16 @@ export default function DialogControls({
         <button
           className={`${styles.btn} ${styles.btnStart}`}
           onClick={onStart}
-          aria-label="Начать диалог"
+          aria-label="Начать"
+          autoFocus
         >
-          Начать диалог
+          Начать
         </button>
       ) : (
         <button
           className={`${styles.btn} ${styles.btnStop}`}
           onClick={onStop}
-          aria-label="Остановить диалог"
+          aria-label="Остановить"
         >
           Остановить
         </button>

@@ -9,6 +9,29 @@
 /* Animations */
 @import './animations.css';
 
+/* Шрифт TTDaysSans (TTF в public/fonts/, отдаётся по /fonts/) */
+@font-face {
+  font-family: TTDaysSans;
+  src: url('/fonts/TTDaysSans-Light.ttf') format('truetype');
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: TTDaysSans;
+  src: url('/fonts/TTDaysSans-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: TTDaysSans;
+  src: url('/fonts/TTDaysSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Global reset and base styles */
 *, *::before, *::after {
   box-sizing: border-box;
@@ -89,4 +112,14 @@ input, textarea, select {
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+/* ========== Анимации ========== */
+/* Глобальный запрет анимаций снят: аватар робота (RobotAvatar) и плавные
+   переходы облачка/кнопок теперь работают. Ограничение на редукцию движения
+   остаётся через prefers-reduced-motion (см. RobotAvatar.module.css). */
+
+/* 10" 1280×800 — tighter padding при малой высоте */
+@media (max-height: 800px) {
+  html { font-size: 18px; }
 }

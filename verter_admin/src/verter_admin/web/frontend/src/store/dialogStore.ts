@@ -25,7 +25,7 @@ interface DialogState {
 
 const WELCOME: DialogMessage = {
   role: 'welcome',
-  text: 'Привет! Нажми на кнопку чтобы начать диалог!',
+  text: 'Нажми на кнопку чтобы начать диалог',
 };
 
 export const useDialogStore = create<DialogState>((set, get) => ({
@@ -38,23 +38,28 @@ export const useDialogStore = create<DialogState>((set, get) => ({
   setStatus: (raw: string) => {
     const { status, errorType } = parseDialogStatus(raw);
 
-    // Ошибка «прилипает» к аватару: сохраняем errorType, пока не придёт
-    // listening/idle (новый диалог или возврат в ожидание).
+    // Простая модель: errorType живёт только в статусе error. На любом другом
+    // статусе сбрасываем — иначе ошибка «прилипала» к панели/аватару и переключатель
+    // состояний не менял подсветку при уходе из ошибки.
     set((state) => {
-      // При переходе в listening/idle — сбрасываем ошибку.
-      if (status === 'listening' || status === 'idle') {
-        return { status, errorType: null };
-      }
-      // Для error — обновляем errorType.
       if (status === 'error') {
         return { status, errorType };
       }
-      // thinking/speaking — сохраняем накопленную ошибку (если вдруг), статус обновляем.
-      return { status, errorType: state.errorType };
+      // listening — сбрасываем текст ошибки (робот ждёт новый вопрос);
+      // welcome/вопрос оставляем — сменятся новым сообщением из топика.
+      if (status === 'listening') {
+        return {
+          status,
+          errorType: null,
+          currentMessage: state.currentMessage?.role === 'error' ? null : state.currentMessage,
+        };
+      }
+      return { status, errorType: null };
     });
 
-    // Возврат в idle — показываем приветствие.
-    if (status === 'idle' && get().currentMessage?.role !== 'farewell') {
+    // Возврат в idle — показываем приветствие в облачке (farewell в currentMessage
+    // не попадает — он аудио-only, см. useDialogROS).
+    if (status === 'idle') {
       set({ currentMessage: WELCOME });
     }
   },

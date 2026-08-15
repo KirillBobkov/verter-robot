@@ -1,57 +1,354 @@
+/**
+ * RobotAvatar — 2D-риг робота Verter.
+ *
+ * Состояние задаётся атрибутом data-avatar на корневом <svg>:
+ * idle | listening | thinking | speaking | sad (error → sad).
+ *
+ * Изоляция transform: каждая анимируемая часть — на своей группе со своим
+ * transform-origin в координатах viewBox (transform-box: view-box по умолчанию
+ * для SVG). Голова вложена в <svg> напрямую, НЕ в #body — иначе поворот головы
+ * складывался бы с покачиванием корпуса.
+ *
+ * Структура групп в JSX:
+ *   svg > [base, body, neck, head→(face, eyes→(eyeLeft, eyeRight, eyeSpinners,
+ *           eyesSad), mouth, camera), arm-left, arm-right]
+ *
+ * UX по статусам (голова статична во всех состояниях):
+ *  - idle      — дыхание, моргание (круглые глаза+зрачок, раз в 2с), правая рука машет.
+ *  - listening — звуковые волны идут справа налево к голове и тают у неё.
+ *  - thinking  — глаза-кольца крутятся как спиннер загрузки, точки «•••».
+ *  - speaking  — рот открывается/закрывается, лёгкое покачивание корпуса.
+ *  - sad       — грустные дуги глаз, пожимание плечами (обе руки), наклон корпуса.
+ *
+ * transform-origin (в координатах viewBox 0 0 500 680):
+ *   #head        → 250px 200px  (основание шеи — точка наклона/покачивания)
+ *   #arm-left    → 105px 260px  (левое плечо)
+ *   #arm-right   → 390px 260px  (правое плечо)
+ *   #eye-left    → 170px 83px   (центр левого глаза)
+ *   #eye-right   → 330px 83px   (центр правого глаза)
+ *   #mouth       → 250px 138px
+ */
+
 .avatar {
   width: var(--avatar-size);
-  height: var(--avatar-size);
-  border-radius: 50%;
-  background: var(--accent);
-  position: relative;
-  box-shadow: 0 0 0 0 transparent;
-  transition: background 300ms ease;
+  max-height: 100%;
+  height: auto;
+  display: block;
+  width: 100%;
+  overflow: visible;
 }
 
-/* «Глаза» робота — две точки, мигают. */
-.eyes {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18%;
+/* === Базовые стили частей === */
+
+/* Рот-улыбка — виден по умолчанию (idle/listening/thinking). */
+.mouthSmile {
+  fill: none;
+  stroke: #C8F020;
+  stroke-width: 7;
+  stroke-linecap: round;
 }
 
-.eye {
-  width: 14%;
-  height: 14%;
-  border-radius: 50%;
-  background: #1a1a00;
-  animation: blink 4s infinite;
+/* Speaking-овал — скрыт по умолчанию, виден/анимируется в speaking. */
+.mouth {
+  opacity: 0;
+  transform-origin: 250px 138px;
 }
 
-/* === Состояния аватара (data-avatar) === */
-
-.avatar[data-avatar="idle"] {
-  animation: avatarBreathe 4s ease-in-out infinite;
+/* Sad-рот — скрыт по умолчанию, виден в sad. */
+.mouthSad {
+  fill: none;
+  stroke: #C8F020;
+  stroke-width: 7;
+  stroke-linecap: round;
+  opacity: 0;
 }
 
-.avatar[data-avatar="listening"] {
-  animation: avatarListen 1.6s ease-in-out infinite;
+/* Sad-дуги глаз — скрыты по умолчанию, видны в sad. */
+.eyesSad {
+  display: none;
+}
+.eyeSad {
+  fill: none;
+  stroke: #C8F020;
+  stroke-width: 8;
+  stroke-linecap: round;
 }
 
-.avatar[data-avatar="thinking"] {
-  animation: avatarThink 2.2s ease-in-out infinite;
+/* Точки «думаю» на экране груди — скрыты по умолчанию, видны в thinking. */
+.thinkDots {
+  opacity: 0;
+}
+.thinkDot {
+  opacity: 0;
 }
 
-.avatar[data-avatar="speaking"] {
-  animation: avatarSpeak 0.9s ease-in-out infinite;
+/* Звуковые дуги справа от головы — скрыты по умолчанию, видны в listening. */
+.soundWaves {
+  opacity: 0;
+}
+.soundWave {
+  fill: none;
+  stroke: #151515;
+  stroke-width: 10;
+  stroke-linecap: round;
 }
 
-/* Грусть — приглушённый цвет + анимация. */
-.avatar[data-avatar="sad"] {
-  background: #9aa0a6;
-  animation: avatarSad 2.4s ease-in-out infinite;
+/* === Базовые transform-origin рук/корпуса (для rotate/translate) === */
+.armLeft {
+  transform-origin: 105px 260px;
+}
+.armRight {
+  transform-origin: 390px 260px;
+}
+.body {
+  transform-origin: 250px 580px;
 }
 
-.avatar[data-avatar="sad"] .eye {
-  /* Опущенные «грустные» глаза — дуги вниз. */
-  border-radius: 0 0 50% 50%;
-  transform: translateY(15%);
+/* === Круглые глаза: лаймовый круг + белый зрачок (моргание базовым слоем) === */
+.eyeLeft {
+  transform-origin: 190px 83px;
+  animation: blink 2s ease-in-out infinite;
+}
+.eyeRight {
+  transform-origin: 310px 83px;
+  animation: blink 2s ease-in-out infinite;
+  animation-delay: 0.1s;
+}
+.pupil {
+  pointer-events: none;
+}
+
+/* === Спиннер-кольца глаз — скрыты по умолчанию, видны только в thinking. === */
+.eyeSpinners {
+  display: none;
+}
+.eyeSpinner {
+  transform-box: view-box;
+}
+.eyeSpinner:nth-of-type(1) {
+  transform-origin: 190px 83px;
+}
+.eyeSpinner:nth-of-type(2) {
+  transform-origin: 310px 83px;
+}
+
+/* === idle — дыхание корпуса, моргание, правая рука машет, индикаторы. Голова статична. === */
+.avatar[data-avatar="idle"] .body {
+  animation: rigBreathe 4s ease-in-out infinite;
+}
+.avatar[data-avatar="idle"] .armRight {
+  animation: idleArmWave 5s ease-in-out infinite;
+}
+.avatar[data-avatar="idle"] .indicatorDot {
+  animation: indicatorPulse 2.5s ease-in-out infinite;
+}
+.avatar[data-avatar="idle"] .indicatorDot:nth-child(2) {
+  animation-delay: 1.2s;
+}
+
+/* === speaking — рот открывается/закрывается, корпус слегка покачивается === */
+.avatar[data-avatar="speaking"] .mouthSmile {
+  opacity: 0;
+}
+.avatar[data-avatar="speaking"] .mouth {
+  opacity: 1;
+  animation: mouthSpeak 0.28s ease-in-out infinite;
+}
+.avatar[data-avatar="speaking"] .body {
+  animation: rigSpeak 0.9s ease-in-out infinite;
+}
+
+/* === listening — звуковые волны справа от головы: идут справа налево к
+      голове, расширяются и тают у правой стороны. Голова статична. Без рук. === */
+.avatar[data-avatar="listening"] .soundWaves {
+  opacity: 1;
+}
+.avatar[data-avatar="listening"] .soundWave {
+  animation: soundWavePulse 1.4s ease-out infinite;
+}
+.avatar[data-avatar="listening"] .soundWave:nth-child(2) {
+  animation-delay: 0.3s;
+}
+.avatar[data-avatar="listening"] .soundWave:nth-child(3) {
+  animation-delay: 0.6s;
+}
+
+/* === thinking — глаза становятся вращающимися кольцами-спиннерами (индикация
+      загрузки), точки «•••» на экране. Голова статична. Моргающие глаза скрыты
+      (иначе конфликт transform scaleY/rotate на одном элементе). Без рук. === */
+.avatar[data-avatar="thinking"] .eyeLeft,
+.avatar[data-avatar="thinking"] .eyeRight {
+  display: none;
+}
+.avatar[data-avatar="thinking"] .eyeSpinners {
+  display: inline;
+}
+.avatar[data-avatar="thinking"] .eyeSpinner:nth-of-type(1) {
+  animation: thinkEyes 1.6s linear infinite;
+}
+.avatar[data-avatar="thinking"] .eyeSpinner:nth-of-type(2) {
+  animation: thinkEyes 1.6s linear infinite;
+}
+.avatar[data-avatar="thinking"] .thinkDots {
+  opacity: 1;
+}
+.avatar[data-avatar="thinking"] .thinkDot {
+  animation: thinkDots 1.5s steps(1, end) infinite;
+}
+.avatar[data-avatar="thinking"] .thinkDot:nth-child(2) {
+  animation-delay: 0.5s;
+}
+.avatar[data-avatar="thinking"] .thinkDot:nth-child(3) {
+  animation-delay: 1s;
+}
+/* thinking — руки сходятся кистями в центр (вращение вокруг плеч — верхнего
+   края руки), задерживаются сомкнутыми и плавно расходятся на место.
+   Углы симметричны: ~50° навстречу друг другу. */
+.avatar[data-avatar="thinking"] .armLeft {
+  animation: thinkArmsLeft 3s ease-in-out infinite;
+}
+.avatar[data-avatar="thinking"] .armRight {
+  animation: thinkArmsRight 3s ease-in-out infinite;
+}
+
+/* === sad (error) — грустные дуги глаз, грустный рот, синхронное пожимание
+      плечами (обе руки вверх-вниз), лёгкий наклон корпуса. Голова статична. === */
+.avatar[data-avatar="sad"] .eyeLeft,
+.avatar[data-avatar="sad"] .eyeRight {
+  display: none;
+  animation: none;
+}
+.avatar[data-avatar="sad"] .eyesSad {
+  display: inline;
+}
+.avatar[data-avatar="sad"] .mouthSmile {
+  opacity: 0;
+}
+.avatar[data-avatar="sad"] .mouthSad {
+  opacity: 1;
+}
+.avatar[data-avatar="sad"] .armLeft {
+  animation: sadShrug 2.5s ease-in-out infinite;
+}
+.avatar[data-avatar="sad"] .armRight {
+  animation: sadShrug 2.5s ease-in-out infinite;
+}
+.avatar[data-avatar="sad"] .body {
+  animation: sadSigh 3.5s ease-in-out infinite;
+}
+
+/* ========================================================= */
+/* Keyframes                                                  */
+/* ========================================================= */
+
+/* Моргание. */
+@keyframes blink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.1); }
+}
+
+/* idle — дыхание корпуса. */
+@keyframes rigBreathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* idle — правая рука машет: поднимается на 140° (против часовой), машет ±10°
+   (130°/150°), опускается, пауза. Отрицательные углы — вращение в обратную сторону. */
+@keyframes idleArmWave {
+  0%   { transform: rotate(0deg); }
+  14%  { transform: rotate(-140deg); }
+  22%  { transform: rotate(-130deg); }
+  30%  { transform: rotate(-150deg); }
+  38%  { transform: rotate(-130deg); }
+  46%  { transform: rotate(-150deg); }
+  54%  { transform: rotate(-130deg); }
+  62%  { transform: rotate(-140deg); }
+  72%  { transform: rotate(0deg); }
+  100% { transform: rotate(0deg); }
+}
+
+/* idle/thinking — пульсация индикаторов на груди. */
+@keyframes indicatorPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+/* speaking — открывание/закрывание рта. */
+@keyframes mouthSpeak {
+  0%, 100% { transform: scaleY(0.15); }
+  50% { transform: scaleY(1); }
+}
+
+/* speaking — лёгкое покачивание корпуса. */
+@keyframes rigSpeak {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}
+
+/* listening — волны идут справа налево к голове: появляются вдали справа,
+   подходят к голове, расширяются и тают у правой стороны головы. */
+@keyframes soundWavePulse {
+  0%   { opacity: 0; transform: translateX(0px) scale(1.6); }
+  30%  { opacity: 1; transform: translateX(-10px) scale(1.2); }
+  60%  { opacity: 1; transform: translateX(-20px) scale(0.9); }
+  100% { opacity: 0; transform: translateX(-40px) scale(0.5); }
+}
+
+/* thinking — оба спиннер-кольца крутятся по часовой стрелке. */
+@keyframes thinkEyes {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* thinking — точки «думаю» мигают по очереди. */
+@keyframes thinkDots {
+  0%, 100% { opacity: 0; }
+  30%, 66% { opacity: 1; }
+}
+
+/* thinking — руки сходятся в центре (вращение вокруг плеча), пауза сомкнутыми,
+   плавный возврат, затем 3с паузы в исходном положении перед новым циклом.
+   ease-in-out даёт мягкое схождение/расхождение.
+   ~50° — угол, при котором кисти встречаются у центра корпуса.
+   Длительность 6с: активная фаза (0%→50%) — 3с, пауза покоя (50%→100%) — 3с. */
+@keyframes thinkArmsLeft {
+  0%      { transform: rotate(0deg); }
+  17.5%   { transform: rotate(-50deg); }
+  32.5%   { transform: rotate(-50deg); }
+  50%     { transform: rotate(0deg); }
+  100%    { transform: rotate(0deg); }
+}
+@keyframes thinkArmsRight {
+  0%      { transform: rotate(0deg); }
+  17.5%   { transform: rotate(50deg); }
+  32.5%   { transform: rotate(50deg); }
+  50%     { transform: rotate(0deg); }
+  100%    { transform: rotate(0deg); }
+}
+
+/* sad — синхронное пожимание плечами (обе руки вверх-вниз). */
+@keyframes sadShrug {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-20px); }
+}
+
+/* sad — медленный вздох корпуса с лёгким наклоном влево. */
+@keyframes sadSigh {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(3px) rotate(-2deg); }
+}
+
+/* ========================================================= */
+/* Accessibility: при запросе на редукцию движения — статичный робот. */
+@media (prefers-reduced-motion: reduce) {
+  .avatar * {
+    animation: none !important;
+  }
+  /* speaking — рот открыт статично; thinking — точки и спиннеры видимы;
+     listening — волны видны статично; sad — грустное лицо. */
+  .avatar[data-avatar="speaking"] .mouth { opacity: 1; transform: scaleY(0.5); }
+  .avatar[data-avatar="thinking"] .thinkDots { opacity: 1; }
+  .avatar[data-avatar="thinking"] .thinkDot { opacity: 1; }
+  .avatar[data-avatar="listening"] .soundWaves { opacity: 1; }
 }

@@ -14,7 +14,15 @@ export type DialogStatus =
 export type ErrorType = 'timeout' | 'network' | 'unavailable';
 
 /** Роль текущего сообщения на экране. */
-export type MessageRole = 'question' | 'answer' | 'error' | 'farewell' | 'welcome';
+export type MessageRole =
+  | 'question'
+  | 'answer'
+  | 'error'
+  | 'farewell'
+  | 'welcome'
+  | 'thinking'
+  | 'listening'
+  | 'speaking';
 
 /** Одно текущее сообщение (лента не нужна — отображаем одно). */
 export interface DialogMessage {
