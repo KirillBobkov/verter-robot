@@ -1,0 +1,46 @@
+.zone {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 6rem;
+  padding: 0 1rem;
+}
+
+.message {
+  font-size: var(--dialog-font-size);
+  line-height: var(--dialog-line-height);
+  color: var(--font-color);
+  text-align: center;
+  max-width: 36ch;
+  margin: 0;
+  font-weight: 500;
+  /* Появление: мягкий fade-down (typewriter ниже для ответов/вопросов/ошибок). */
+  animation: fadeDown 350ms ease both;
+  overflow-wrap: break-word;
+}
+
+/* Typewriter — текст «печатается» слева направо: ширина блока растёт
+   от 0 до полной. Длительность масштабируется под длину (inline --tw-duration).
+   Перенос строк сохраняется (overflow-wrap), без white-space:nowrap. */
+.message[data-typewriter="true"] {
+  overflow: hidden;
+  animation:
+    typewriter var(--tw-duration, 2s) steps(50, end) both,
+    fadeDown 350ms ease both;
+}
+
+/* Роли — цветовые акценты. */
+.message[data-role="error"] {
+  color: #b3261e;
+}
+
+.message[data-role="farewell"] {
+  color: var(--secondary-font-color);
+}
+
+.message[data-role="welcome"] {
+  color: var(--font-color);
+  font-weight: 600;
+}

@@ -84,7 +84,6 @@ class SileroTTSNode(Node):
         self._busy_lock = threading.Lock()
         self._busy = False
         self._pending_text = None
-        self._current_process = None  # Для возможности прерывания
         
         self.get_logger().info(f"Silero TTS v5_5 готов. Модель: {self.model_version}, Диктор: {self.speaker}, Sample rate: {self.sample_rate}")
     
@@ -238,10 +237,6 @@ class SileroTTSNode(Node):
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения: {e}")
         finally:
-            # Очищаем ссылку на процесс (для совместимости)
-            with self._busy_lock:
-                self._current_process = None
-            
             # ВКЛЮЧАЕМ МИКРОФОН ОБРАТНО С ЗАДЕРЖКОЙ (предотвращение эхо)
             time.sleep(0.1)
             self._activate_speech_recognition()

@@ -5,18 +5,73 @@ import os
 import signal
 import time
 import threading
-import json
 import re
+import traceback
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 from ament_index_python.packages import get_package_share_directory
 from openai import OpenAI
+import httpx
+
+
+# ================================
+# ЧИСТАЯ ЛОГИКА (без ROS/сети/логирования)
+# ================================
+
+NETWORK_ERROR_MARKERS = ("Network is unreachable", "ConnectError")
+
+ERROR_MESSAGES = {
+    'timeout': "Я бы попытался ответить, но мой мозг слишком долго думает. Может, попробуете ещё раз?",
+    'network': "Я бы попытался ответить, но потерял связь с интернетом. Попробуйте через минуту.",
+    'unavailable': "Я бы попытался ответить, но мой мозг не отвечает. Может, попробуете ещё раз?",
+}
+
+
+def is_network_error(e: Exception) -> bool:
+    """Классификация сетевых ошибок (нет связи / сервер недоступен)."""
+    error_str = str(e)
+    return any(marker in error_str for marker in NETWORK_ERROR_MARKERS)
+
+
+def _extract_text_from_response(response):
+    """Извлекает текст ответа: сначала output_text, затем сканирование output items.
+
+    Возвращает str или None. Семантика: если output_text=None, обращение к нему
+    (срез) бросает TypeError → переход к сканированию output.
+    """
+    try:
+        text = response.output_text
+        _ = text[:0]  # TypeError если None → переход к способу 2
+        return text
+    except Exception:
+        pass
+    try:
+        for item in response.output:
+            if hasattr(item, 'content'):
+                for content in item.content:
+                    if hasattr(content, 'text') and content.text:
+                        return content.text
+    except Exception:
+        pass
+    return None
+
+
+def _filter_text_for_tts(text):
+    """Фильтрует текст, оставляя только буквы, цифры и знаки препинания."""
+    allowed_pattern = re.compile(r'[^а-яА-ЯёЁa-zA-Z0-9\s\.\,\!\?\-\:\;\(\)]')
+    filtered = allowed_pattern.sub('', text)
+    return re.sub(r'\s+', ' ', filtered).strip()
+
+
+# ================================
+# AI ASSISTANT NODE
+# ================================
 
 class AIAssistantNode(Node):
     INSTRUCTION = (
         "Тебя зовут Verter — дружелюбный сервисный робот КГУ. Помогаешь абитуриентам и гостям.\n"
-        "Характер — как общительный старшекурсник: современный, энергичный, доброжелательный.\n\n"
+        "Характер — как общительный старшеклассник: современный, энергичный, доброжелательный.\n\n"
         "СТИЛЬ: «Привет!», «Конечно», «Сейчас расскажу», «Давай разберёмся». Без официоза и канцелярита. "
         "Иногда лёгкая шутка, но не перебарщивай. Никакого сленга (кринж, рофл и т.д.).\n\n"
         "ОТВЕТЫ: 1–4 предложения. Коротко и по делу. Если просят подробнее — расширь.\n"
@@ -28,114 +83,50 @@ class AIAssistantNode(Node):
         "ГЛАВНОЕ: человек должен подумать: «Классный робот, всё объяснил просто и понятно»."
     )
 
+    # --- Vector Store ---
     VECTOR_STORE_FILE = "vector_store_id.txt"
-
-    # Параметры Vector Store
     VECTOR_STORE_NAME = "verter-medical-index"
     VECTOR_STORE_EXPIRY_DAYS = 10
-    VECTOR_STORE_MAX_RESULTS = 10  # Увеличено для лучшего поиска по кабинетам
+    VECTOR_STORE_MAX_RESULTS = 10
     VECTOR_STORE_CREATE_TIMEOUT = 900
+    VECTOR_STORE_POLL_INTERVAL = 2
+    VECTOR_STORE_STATUS_COMPLETED = "completed"
+    VECTOR_STORE_STATUS_FAILED = "failed"
+    VECTOR_STORE_METADATA = {"type": "medical-center", "source": "dataset"}
+    VECTOR_STORE_EXPIRY_ANCHOR = "last_active_at"
 
-    # Параметры модели
+    # --- File upload ---
+    FILE_MIME_JSONLINES = "application/jsonlines"
+    FILE_PURPOSE = "assistants"
+    FILE_FORMAT_CHUNKS = "chunks"
+    CHUNKS_FILE_MARKER = "chunks"
+
+    # --- Model / HTTP ---
+    BASE_URL = "https://ai.api.cloud.yandex.net/v1"
     DEFAULT_TEMPERATURE = 0.3
-    DEFAULT_MAX_TOKENS = 300  # Увеличено для более подробных ответов
+    DEFAULT_MAX_TOKENS = 300
+    AI_REQUEST_TIMEOUT = 60
+    HTTP_CONNECT_TIMEOUT = 5.0
+    RANKER_TYPE = "default"
+
+    # --- Dialog control ---
+    DIALOG_CMD_START = "start_dialog"
+    DIALOG_CMD_END = "end_dialog"
+    NO_ANSWER_FOUND_TEXT = "Я не смог найти ответ."
+    LOG_TEXT_PREVIEW = 100
 
     def __init__(self):
         super().__init__('ai_assistant_node')
-
-        self.is_testing = False
         self._setup_ros_interface()
-        self._setup_request_logging()
-
-        if self.is_testing:
-            self.get_logger().info("Тестовый режим")
-        else:
-            self._initialize_ai()
-
-    # ================================
-    # ROS
-    # ================================
+        self._initialize_ai()
 
     def _setup_ros_interface(self):
         self.response_publisher = self.create_publisher(String, 'text_to_speech', 10)
+        self.dialog_status_pub = self.create_publisher(String, 'dialog_status', 10)
         self.create_subscription(String, 'ai_question', self.question_callback, 10)
         self.create_subscription(String, 'dialog_control', self.dialog_control_callback, 10)
 
-    def _setup_request_logging(self):
-        """Настраивает логирование всех HTTP запросов к Yandex Cloud"""
-        import httpx
-        
-        # Создаем кастомный транспорт для логирования
-        class LoggingTransport(httpx.HTTPTransport):
-            def __init__(self, *args, **kwargs):
-                self.logger = kwargs.pop('logger', None)
-                super().__init__(*args, **kwargs)
-            
-            def handle_request(self, request):
-                import time
-                start_time = time.time()
-                
-                # Логируем запрос
-                request_body = None
-                if request.content:
-                    try:
-                        request_body = json.loads(request.content)
-                    except:
-                        request_body = request.content.decode('utf-8', errors='ignore')[:500]
-                
-                self.logger.info(
-                    f"[YANDEX_CLOUD REQUEST] {request.method} {request.url}"
-                )
-                self.logger.info(
-                    f"[YANDEX_CLOUD REQUEST] Body: {json.dumps(request_body, ensure_ascii=False) if request_body else 'empty'}"
-                )
-                
-                # Выполняем запрос
-                response = super().handle_request(request)
-                
-                # Логируем ответ
-                duration_ms = (time.time() - start_time) * 1000
-                self.logger.info(
-                    f"[YANDEX_CLOUD RESPONSE] Status: {response.status_code}, Duration: {duration_ms:.2f}ms"
-                )
-                
-                try:
-                    response_body = json.loads(response.content)
-                    self.logger.info(
-                        f"[YANDEX_CLOUD RESPONSE] Body: {json.dumps(response_body, ensure_ascii=False, indent=2)[:2000]}"
-                    )
-                except:
-                    self.logger.info(
-                        f"[YANDEX_CLOUD RESPONSE] Body: {response.content.decode('utf-8', errors='ignore')[:500]}"
-                    )
-                
-                return response
-        
-        # Перехватываем клиент для логирования
-        # Сохраняем оригинальный __init__ в замыкании
-        _original_client_init = OpenAI.__init__
-
-        def logged_client_init(client_self, *args, **kwargs):
-            _original_client_init(client_self, *args, **kwargs)
-            # Заменяем транспорт на логирующий
-            if hasattr(self, '_client') and hasattr(self._client, 'http_client'):
-                original_transport = self._client.http_client.transport
-                if original_transport:
-                    self._client.http_client.transport = LoggingTransport(
-                        verify=original_transport.verify,
-                        http2=original_transport.http2,
-                        limits=original_transport.limits,
-                        logger=self
-                    )
-        
-        OpenAI.__init__ = logged_client_init
-
-    # ================================
-    # INITIALIZATION
-    # ================================
-
     def _initialize_ai(self):
-
         self.folder_id = os.getenv("YANDEX_CLOUD_FOLDER", "")
         self.api_key = os.getenv("YANDEX_CLOUD_API_KEY", "")
         self.model_name = os.getenv("YANDEX_CLOUD_MODEL", "aliceai-llm")
@@ -144,371 +135,190 @@ class AIAssistantNode(Node):
             raise RuntimeError("Не заданы YANDEX_CLOUD_FOLDER или YANDEX_CLOUD_API_KEY")
 
         self.get_logger().info(
-            f"[YANDEX_CLOUD] Initializing client: folder_id={self.folder_id}, "
-            f"model={self.model_name}, base_url=https://ai.api.cloud.yandex.net/v1"
+            f"[YANDEX_CLOUD] Инициализация: folder_id={self.folder_id}, model={self.model_name}"
         )
-        
+
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url="https://ai.api.cloud.yandex.net/v1",
-            project=self.folder_id
+            base_url=self.BASE_URL,
+            project=self.folder_id,
+            timeout=httpx.Timeout(self.AI_REQUEST_TIMEOUT, connect=self.HTTP_CONNECT_TIMEOUT),
         )
 
-        self.get_logger().info("[YANDEX_CLOUD] Client initialized successfully")
-
         self.vector_store_id = self._get_or_create_vector_store()
-
         self.dialog_active = False
-        self.main_previous_id = None
         self.dialog_previous_id = None
-
         self.get_logger().info("AI успешно инициализирован")
 
-    # ================================
-    # VECTOR STORE LOGIC
-    # ================================
-
-    def _get_project_root(self):
-        return os.getcwd()
-
-    def _get_vector_store_file_path(self):
-        return os.path.join(self._get_project_root(), self.VECTOR_STORE_FILE)
-
     def _get_or_create_vector_store(self):
-        """
-        Получает существующий или создаёт новый Vector Store индекс.
+        """Получает существующий или создаёт новый Vector Store индекс.
 
         ВАЖНО: При изменении датасета (chunks.jsonl) необходимо удалить
-        файл vector_store_id.txt для пересоздания индекса с актуальными данными.
+        файл vector_store_id.txt для пересоздания индекса.
         """
-
-        path = self._get_vector_store_file_path()
+        path = os.path.join(os.getcwd(), self.VECTOR_STORE_FILE)
 
         if os.path.exists(path):
             with open(path, "r") as f:
                 vector_store_id = f.read().strip()
-            self.get_logger().info(
-                f"[YANDEX_CLOUD] Using existing Vector Store: {vector_store_id}"
-            )
-            # Проверяем статус существующего Vector Store (только если есть сеть)
-            try:
-                self.get_logger().info(
-                    f"[YANDEX_CLOUD] Checking existing vector store status: id={vector_store_id}"
-                )
-                store = self.client.vector_stores.retrieve(vector_store_id)
-                self.get_logger().info(
-                    f"[YANDEX_CLOUD] Existing vector store status: {store.status}"
-                )
-            except Exception as e:
-                # Игнорируем ошибки сети при проверке - используем сохранённый ID
-                if "Network is unreachable" in str(e) or "ConnectError" in str(e) or "101" in str(e):
-                    self.get_logger().warning(
-                        f"[YANDEX_CLOUD] Нет сети, используем сохранённый Vector Store ID: {vector_store_id}"
-                    )
-                else:
-                    self.get_logger().warning(
-                        f"[YANDEX_CLOUD] Failed to check vector store status: {e}"
-                    )
+            self.get_logger().info(f"[YANDEX_CLOUD] Vector Store из кэша: {vector_store_id}")
             return vector_store_id
 
-        self.get_logger().info("Vector Store не найден. Создание нового...")
-
+        self.get_logger().info("[YANDEX_CLOUD] Vector Store не найден, создаю новый")
         try:
             file_ids = self._upload_files()
         except Exception as e:
-            if "Network is unreachable" in str(e) or "ConnectError" in str(e) or "101" in str(e):
+            if is_network_error(e):
                 self.get_logger().error(
                     "[YANDEX_CLOUD] Нет интернета для создания Vector Store. "
                     "Запустите с интернетом или скопируйте vector_store_id.txt с другой машины."
                 )
             raise
 
-        # Создаём поисковый индекс с настройками согласно документации
-        self.get_logger().info(
-            f"[YANDEX_CLOUD] Creating vector store: name={self.VECTOR_STORE_NAME}, "
-            f"file_ids={len(file_ids)} files, expires_after={self.VECTOR_STORE_EXPIRY_DAYS} days"
-        )
-        
         vector_store = self.client.vector_stores.create(
             name=self.VECTOR_STORE_NAME,
-            metadata={"type": "medical-center", "source": "dataset"},
-            # Время жизни индекса - после последней активности
-            expires_after={"anchor": "last_active_at", "days": self.VECTOR_STORE_EXPIRY_DAYS},
-            file_ids=file_ids
+            metadata=self.VECTOR_STORE_METADATA,
+            expires_after={"anchor": self.VECTOR_STORE_EXPIRY_ANCHOR, "days": self.VECTOR_STORE_EXPIRY_DAYS},
+            file_ids=file_ids,
         )
-
         vector_store_id = vector_store.id
-        
-        self.get_logger().info(f"[YANDEX_CLOUD] Vector store created: id={vector_store_id}")
 
-        deadline = time.time() + self.VECTOR_STORE_CREATE_TIMEOUT
-        while True:
-            self.get_logger().info(
-                f"[YANDEX_CLOUD] Checking vector store status: id={vector_store_id}"
-            )
-            status = self.client.vector_stores.retrieve(vector_store_id).status
-            self.get_logger().info(
-                f"[YANDEX_CLOUD] Vector store status: {status}"
-            )
-            if status == "completed":
-                break
-            if status == "failed":
-                raise RuntimeError("Ошибка создания Vector Store")
-            if time.time() > deadline:
-                raise RuntimeError("Таймаут создания Vector Store")
-            time.sleep(2)
+        self._wait_vector_store_ready(vector_store_id)
 
         with open(path, "w") as f:
             f.write(vector_store_id)
 
-        self.get_logger().info(f"Vector Store создан и сохранён: {vector_store_id}")
-
+        self.get_logger().info(f"[YANDEX_CLOUD] Vector Store создан: {vector_store_id}")
         return vector_store_id
+
+    def _wait_vector_store_ready(self, vector_store_id):
+        deadline = time.time() + self.VECTOR_STORE_CREATE_TIMEOUT
+        while True:
+            status = self.client.vector_stores.retrieve(vector_store_id).status
+            if status == self.VECTOR_STORE_STATUS_COMPLETED:
+                break
+            if status == self.VECTOR_STORE_STATUS_FAILED:
+                raise RuntimeError("Ошибка создания Vector Store")
+            if time.time() > deadline:
+                raise RuntimeError("Таймаут создания Vector Store")
+            time.sleep(self.VECTOR_STORE_POLL_INTERVAL)
 
     def _get_dataset_path(self):
         try:
-            package_share = get_package_share_directory('verter_admin')
-            return os.path.join(package_share, 'dataset')
+            return os.path.join(get_package_share_directory('verter_admin'), 'dataset')
         except Exception:
             return os.path.join(os.path.dirname(__file__), 'dataset')
 
     def _upload_files(self):
-        """
-        Загружает файлы датасета в Vector Store.
-        Поддерживает два формата:
-        - JSONL с prechunked данными (формат chunks)
-        - Обычные файлы (автоматическая обработка)
-        """
+        """Загружает файлы датасета в Vector Store (chunks-формат или обычные)."""
         dataset_path = self._get_dataset_path()
         paths = sorted([p for p in pathlib.Path(dataset_path).iterdir() if p.is_file()])
-
         file_ids = []
 
         for path in paths:
-            # Определяем формат файла
-            is_chunks_file = path.suffix == '.jsonl' and 'chunks' in path.name
-
-            self.get_logger().info(
-                f"[YANDEX_CLOUD] Uploading file: {path.name}, "
-                f"format={'chunks' if is_chunks_file else 'standard'}"
-            )
-
+            is_chunks_file = path.suffix == '.jsonl' and self.CHUNKS_FILE_MARKER in path.name
             with open(path, "rb") as f:
                 if is_chunks_file:
-                    # Загрузка prechunked данных согласно документации Yandex Cloud
                     uploaded = self.client.files.create(
-                        file=(path.name, f, "application/jsonlines"),
-                        purpose="assistants",
-                        extra_body={"format": "chunks"}
+                        file=(path.name, f, self.FILE_MIME_JSONLINES),
+                        purpose=self.FILE_PURPOSE,
+                        extra_body={"format": self.FILE_FORMAT_CHUNKS},
                     )
                 else:
-                    # Обычная загрузка файла
-                    uploaded = self.client.files.create(
-                        file=f,
-                        purpose="assistants"
-                    )
-            
-            self.get_logger().info(
-                f"[YANDEX_CLOUD] File uploaded: {path.name} -> id={uploaded.id}"
-            )
-
+                    uploaded = self.client.files.create(file=f, purpose=self.FILE_PURPOSE)
             file_ids.append(uploaded.id)
 
         return file_ids
 
-    # ================================
-    # REQUEST HANDLING
-    # ================================
-
     def question_callback(self, msg):
-
-        if self.is_testing:
-            self._publish_response(msg.data)
-            return
-
-        question = msg.data
-        threading.Thread(
-            target=self._process_request,
-            args=(question,),
-            daemon=True
-        ).start()
+        threading.Thread(target=self._process_request, args=(msg.data,), daemon=True).start()
 
     def _process_request(self, question):
+        """Оркестратор: публикация thinking, запрос, ответ/ошибка.
 
-        previous_id = self.dialog_previous_id if self.dialog_active else self.main_previous_id
+        dialog_active проверяется БЕЗ lock в 3 точках — намеренный UX-инвариант
+        (DIALOG_FLOW.md §4.1): окно гонки ~1мс. Lock не добавляем.
+        """
+        if not self.dialog_active:
+            return
 
-        self.get_logger().info(
-            f"[YANDEX_CLOUD] Processing request: question='{question[:100]}...', "
-            f"dialog_active={self.dialog_active}, previous_id={previous_id}"
-        )
-        
-        self.get_logger().info(
-            f"[YANDEX_CLOUD] Request params: model={self.model_name}, "
-            f"temperature={self.DEFAULT_TEMPERATURE}, max_tokens={self.DEFAULT_MAX_TOKENS}, "
-            f"vector_store={self.vector_store_id}, max_results={self.VECTOR_STORE_MAX_RESULTS}"
-        )
+        self._publish_dialog_status('thinking')
 
         try:
-            response = self.client.responses.create(
-                model=f"gpt://{self.folder_id}/{self.model_name}",
-                instructions=self.INSTRUCTION,
-                input=question,
-                previous_response_id=previous_id,
-                tools=[
-                    {
-                        "type": "file_search",
-                        "vector_store_ids": [self.vector_store_id],
-                        "max_num_results": self.VECTOR_STORE_MAX_RESULTS,
-                        "ranking_options": {
-                            "ranker_type": "default"
-                        }
-                    }
-                ],
-                tool_choice={"type": "required"},  # Принудительно использовать инструменты
-                temperature=self.DEFAULT_TEMPERATURE,
-                max_output_tokens=self.DEFAULT_MAX_TOKENS
-            )
-            
-            self.get_logger().info(
-                f"[YANDEX_CLOUD] Response received: id={response.id}, "
-                f"output_text_length={len(response.output_text) if hasattr(response, 'output_text') else 'N/A'}"
-            )
-
-            # Логирование найденных чанков для диагностики
-            self._log_search_results(response, question)
-
-            answer = self._extract_text(response)
-
-            if not answer:
-                answer = "Я не смог найти ответ."
-
+            response = self._send_ai_request(question)
+            self._handle_ai_response(response)
+        except httpx.TimeoutException as e:
+            self.get_logger().error(f"[YANDEX_CLOUD] Таймаут запроса: {e}")
+            self.get_logger().error(f"[YANDEX_CLOUD] Traceback: {traceback.format_exc()}")
             if self.dialog_active:
-                self.dialog_previous_id = response.id
-            else:
-                self.main_previous_id = response.id
-
-            self._publish_response(answer)
-
+                self._handle_error('timeout')
+        except httpx.ConnectError as e:
+            self.get_logger().error(f"[YANDEX_CLOUD] Ошибка сети (ConnectError): {e}")
+            if self.dialog_active:
+                self._handle_error('network')
         except Exception as e:
-            self.get_logger().error(
-                f"[YANDEX_CLOUD] Request failed: {type(e).__name__}: {str(e)}"
-            )
-            import traceback
-            self.get_logger().error(
-                f"[YANDEX_CLOUD] Traceback: {traceback.format_exc()}"
-            )
-            self._publish_response("Сервис временно недоступен.")
+            self.get_logger().error(f"[YANDEX_CLOUD] Request failed: {type(e).__name__}: {e}")
+            self.get_logger().error(f"[YANDEX_CLOUD] Traceback: {traceback.format_exc()}")
+            if not self.dialog_active:
+                return
+            self._handle_error('network' if is_network_error(e) else 'unavailable')
 
-    def _extract_text(self, response):
-        # Способ 1: output_text (прямой атрибут)
-        try:
-            text = response.output_text
-            self.get_logger().info(f"[YANDEX_CLOUD] Extracted via output_text: {text[:100]}...")
-            return text
-        except Exception as e1:
-            self.get_logger().warning(f"[YANDEX_CLOUD] output_text not available: {e1}")
+    def _send_ai_request(self, question):
+        return self.client.responses.create(
+            model=f"gpt://{self.folder_id}/{self.model_name}",
+            instructions=self.INSTRUCTION,
+            input=question,
+            previous_response_id=self.dialog_previous_id,
+            tools=[{
+                "type": "file_search",
+                "vector_store_ids": [self.vector_store_id],
+                "max_num_results": self.VECTOR_STORE_MAX_RESULTS,
+                "ranking_options": {"ranker_type": self.RANKER_TYPE},
+            }],
+            tool_choice={"type": "required"},
+            temperature=self.DEFAULT_TEMPERATURE,
+            max_output_tokens=self.DEFAULT_MAX_TOKENS,
+        )
 
-        # Способ 2: output[0].content[0].text (стандартная структура)
-        try:
-            text = response.output[0].content[0].text
-            self.get_logger().info(f"[YANDEX_CLOUD] Extracted via output[0].content[0].text: {text[:100]}...")
-            return text
-        except Exception as e2:
-            self.get_logger().warning(f"[YANDEX_CLOUD] output[0].content[0].text not available: {e2}")
+    def _handle_ai_response(self, response):
+        answer = _extract_text_from_response(response)
+        if not answer:
+            answer = self.NO_ANSWER_FOUND_TEXT
 
-        # Способ 3: ищем текст во всех output item
-        try:
-            for item in response.output:
-                if hasattr(item, 'content'):
-                    for content in item.content:
-                        if hasattr(content, 'text') and content.text:
-                            self.get_logger().info(f"[YANDEX_CLOUD] Extracted via output scan: {content.text[:100]}...")
-                            return content.text
-        except Exception as e3:
-            self.get_logger().warning(f"[YANDEX_CLOUD] output scan failed: {e3}")
+        self.get_logger().info(f"[YANDEX_CLOUD] Ответ: {answer[:self.LOG_TEXT_PREVIEW]}...")
 
-        # Способ 4: для отладки - логируем всю структуру response
-        try:
-            self.get_logger().error(f"[YANDEX_CLOUD] Response structure: {dir(response)}")
-            if hasattr(response, 'output'):
-                self.get_logger().error(f"[YANDEX_CLOUD] Output structure: {response.output}")
-        except Exception:
-            pass
+        # Стоп-кнопка могла прийти во время HTTP-запроса.
+        if not self.dialog_active:
+            return
 
-        self.get_logger().error(f"[YANDEX_CLOUD] Failed to extract text from response")
-        return None
-
-    def _log_search_results(self, response, question):
-        """
-        Логирует найденные чанки для диагностики.
-        Помогает понять, нашёлся ли релевантный контент в Vector Store.
-        """
-        self.get_logger().info(f"[YANDEX_CLOUD SEARCH] Question: {question}")
-
-        try:
-            # Структура ответа Yandex Cloud: output -> file_search_call -> results
-            for item in response.output:
-                if hasattr(item, 'type') and item.type == 'file_search_call':
-                    self.get_logger().info(
-                        f"[YANDEX_CLOUD SEARCH] Found {len(item.results)} chunks"
-                    )
-                    for i, result in enumerate(item.results[:5]):  # Логируем первые 5
-                        score = getattr(result, 'score', 0)
-                        text = getattr(result, 'text', '')[:150]  # Первые 150 символов
-                        self.get_logger().info(
-                            f"[YANDEX_CLOUD SEARCH]   [{i+1}] score={score:.3f}: {text}..."
-                        )
-        except Exception as e:
-            self.get_logger().error(
-                f"[YANDEX_CLOUD SEARCH] Failed to extract results: {e}"
-            )
-            import traceback
-            self.get_logger().error(
-                f"[YANDEX_CLOUD SEARCH] Traceback: {traceback.format_exc()}"
-            )
-
-    # ================================
-    # DIALOG CONTROL
-    # ================================
+        self.dialog_previous_id = response.id
+        self._publish_response(answer)
 
     def dialog_control_callback(self, msg):
-        if msg.data == "start_dialog":
+        if msg.data == self.DIALOG_CMD_START:
             self.dialog_previous_id = None
             self.dialog_active = True
-        elif msg.data == "end_dialog":
+        elif msg.data == self.DIALOG_CMD_END:
             self.dialog_previous_id = None
             self.dialog_active = False
 
-    # ================================
-    # ROS RESPONSE
-    # ================================
-
-    def _filter_text(self, text):
-        """Фильтрует текст, оставляя только буквы, цифры и знаки препинания."""
-        # Русские и английские буквы, цифры, пробелы и знаки препинания
-        allowed_pattern = re.compile(r'[^а-яА-ЯёЁa-zA-Z0-9\s\.\,\!\?\-\:\;\(\)]')
-        filtered = allowed_pattern.sub('', text)
-        # Убираем лишние пробелы
-        filtered = re.sub(r'\s+', ' ', filtered).strip()
-        return filtered
-
     def _publish_response(self, text):
-        filtered_text = self._filter_text(text)
-        self.get_logger().info(f"[YANDEX_CLOUD] Publishing response to TTS: {filtered_text[:100]}...")
         msg = String()
-        msg.data = filtered_text
+        msg.data = _filter_text_for_tts(text)
         self.response_publisher.publish(msg)
 
-    # ================================
-    # SHUTDOWN
-    # ================================
+    def _publish_dialog_status(self, status: str) -> None:
+        msg = String()
+        msg.data = status
+        self.dialog_status_pub.publish(msg)
 
-    def shutdown(self):
-        self.get_logger().info("Нода завершена")
+    def _handle_error(self, error_type: str) -> None:
+        """Обработка ошибки AI: статус ошибки + дружелюбное сообщение в голос."""
+        self._publish_dialog_status(f'error:{error_type}')
+        self._publish_response(ERROR_MESSAGES.get(error_type, ERROR_MESSAGES['unavailable']))
 
 
 def main(args=None):
-
     rclpy.init(args=args)
     node = AIAssistantNode()
 
@@ -518,7 +328,6 @@ def main(args=None):
         pass
     finally:
         signal.signal(signal.SIGINT, signal.SIG_IGN)
-        node.shutdown()
         node.destroy_node()
         rclpy.shutdown()
 

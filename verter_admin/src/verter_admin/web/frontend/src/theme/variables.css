@@ -1,111 +1,40 @@
 /**
- * CSS Variables - Material Design 3 Design System for Verter Robot Web UI
+ * CSS Variables - Verter Robot Web UI (dialog kiosk)
  *
- * Following Material Design 3 guidelines with lime-green accent (#c8ed00)
+ * Первичные токены — палитра ТЗ диалогового kiosk.
+ * Legacy-алиасы (--color-*) определены от первичных токенов для совместимости
+ * с ErrorBoundary и базовыми стилями. Material Design 3 color tokens удалены.
  */
 
 :root {
-  /* ========== Material Design 3 Color Tokens ========== */
+  /* ========== Палитра ТЗ (первичные токены) ========== */
+  --font-color: #000;
+  --secondary-font-color: #313131;
+  --bg-color: #f9f9f9;
+  --accent: #c8ed00;
+  --card-bg-color: #dbdbdbfc;
+  --box-shadow: rgba(0, 0%, 0%, 0.155);
 
-  /* Primary - Lime Green accent */
-  --md-sys-color-primary: #c8ed00;
-  --md-sys-color-on-primary: #1a1a00;
-  --md-sys-color-primary-container: #f4f8d4;
-  --md-sys-color-on-primary-container: #333300;
+  /* Кнопка остановки / ошибки */
+  --danger: #ff5a5a;
+  --danger-color: #ffffff;
 
-  /* Secondary - Darker lime */
-  --md-sys-color-secondary: #a0b800;
-  --md-sys-color-on-secondary: #1a1f00;
-  --md-sys-color-secondary-container: #e6f0a0;
-  --md-sys-color-on-secondary-container: #2a3300;
+  /* Диалог: типографика и сенсорные цели (10", слабовидящие) */
+  --dialog-font-size: clamp(1.5rem, 4vw, 2rem);
+  --dialog-line-height: 1.4;
+  --button-min-height: 64px;
+  --button-font-size: clamp(1.25rem, 3vw, 1.75rem);
+  --avatar-size: clamp(8rem, 30vw, 16rem);
 
-  /* Tertiary - Complementary accent (blue) */
-  --md-sys-color-tertiary: #89daff;
-  --md-sys-color-on-tertiary: #003344;
-  --md-sys-color-tertiary-container: #cce5ff;
-  --md-sys-color-on-tertiary-container: #001a29;
-
-  /* Error - For emergency stop and errors */
-  --md-sys-color-error: #b3261e;
-  --md-sys-color-error-container: #f9dedc;
-  --md-sys-color-on-error-container: #410e0b;
-  --md-sys-color-on-error: #ffffff;
-
-  /* Success - For positive feedback */
-  --md-sys-color-success: #00b800;
-  --md-sys-color-success-container: #e8f8e8;
-  --md-sys-color-on-success-container: #0a3d0a;
-
-  /* Surface - Backgrounds */
-  --md-sys-color-background: #f9f9f9;
-  --md-sys-color-on-background: #1a1a1a;
-  --md-sys-color-surface: #ffffff;
-  --md-sys-color-surface-dim: #e8e8e8;
-  --md-sys-color-surface-bright: #ffffff;
-  --md-sys-color-surface-variant: #e8e8e8;
-  --md-sys-color-on-surface: #1a1c1a;
-  --md-sys-color-on-surface-variant: #4a4c4a;
-  --md-sys-color-surface-container: #f3f4f3;
-  --md-sys-color-surface-container-high: #eceeed;
-  --md-sys-color-surface-container-highest: #e6e7e6;
-
-  /* Outline */
-  --md-sys-color-outline: #747775;
-  --md-sys-color-outline-variant: #c4c7c5;
-
-  /* Inverse surface for FABs */
-  --md-sys-color-inverse-surface: #2f312e;
-  --md-sys-color-inverse-on-surface: #f0f1ef;
-  --md-sys-color-inverse-primary: #c8ed00;
-
-  /* ========== Legacy Variable Mapping ========== */
-  --color-primary: var(--md-sys-color-primary);
+  /* ========== Legacy-алиасы (от первичных токенов) ========== */
+  --color-bg-primary: var(--card-bg-color);
+  --color-bg-secondary: var(--bg-color);
+  --color-bg-tertiary: var(--bg-color);
+  --color-danger: var(--danger);
+  --color-primary: var(--accent);
   --color-primary-hover: #b8d800;
-  --color-primary-light: var(--md-sys-color-primary-container);
-  --color-success: var(--md-sys-color-success);
-  --color-success-hover: #00a300;
-  --color-success-light: var(--md-sys-color-success-container);
-  --color-danger: var(--md-sys-color-error);
-  --color-danger-hover: #9c1a14;
-  --color-danger-light: var(--md-sys-color-error-container);
-  --color-warning: #f39c12;
-  --color-warning-hover: #d68910;
-  --color-warning-light: #fef5e7;
-
-  --color-text-primary: var(--md-sys-color-on-surface);
-  --color-text-secondary: var(--md-sys-color-on-surface-variant);
-  --color-text-muted: #7f8c8d;
-  --color-text-inverse: var(--md-sys-color-on-primary);
-
-  --color-bg-primary: var(--md-sys-color-surface);
-  --color-bg-secondary: var(--md-sys-color-background);
-  --color-bg-tertiary: var(--md-sys-color-surface-variant);
-  --color-bg-overlay: rgba(0, 0, 0, 0.3);
-
-  --bg-color: var(--md-sys-color-background);
-  --bg-color-opacity: hsla(0, 0%, 100%, 0.51);
-  --bg-color-gradient-1: #eaeaea;
-  --bg-color-gradient-2: #acacac;
-  --card-bg-color: #ffffff;
-  --card-bg-color-opacity: hsla(0, 0%, 100%, 0.6);
-  --secondary-card-bg-color: var(--md-sys-color-surface-container-high);
-
-  --box-shadow: rgba(0, 0, 0, 0.12);
-  --accent: var(--md-sys-color-primary);
-  --helper-red: var(--md-sys-color-error);
-  --helper-green: var(--md-sys-color-success);
-  --snow: var(--md-sys-color-tertiary);
-  --message-header: #f0f0f0;
-  --chat-widget-bg: var(--md-sys-color-surface-container);
-  --user-message-bg: var(--md-sys-color-primary-container);
-  --assistant-message-bg: var(--md-sys-color-surface);
-
-  --color-border: var(--md-sys-color-outline-variant);
-  --color-border-light: var(--md-sys-color-surface-dim);
-
-  --color-status-connected: var(--md-sys-color-success);
-  --color-status-disconnected: var(--md-sys-color-error);
-  --color-status-connecting: var(--md-sys-color-secondary);
+  --color-text-primary: var(--font-color);
+  --color-text-inverse: var(--danger-color);
 
   /* ========== Spacing ========== */
   --spacing-xs: 4px;
@@ -117,28 +46,10 @@
   --spacing-3xl: 48px;
   --spacing-4xl: 64px;
 
-  /* ========== Typography (Material Design 3 Type Scale) ========== */
+  /* ========== Typography ========== */
   --font-family-base: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-family-monospace: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
 
-  /* MD3 Type Scale */
-  --md-sys-typescale-display-large: 400 57px/64px var(--font-family-base);
-  --md-sys-typescale-display-medium: 400 45px/52px var(--font-family-base);
-  --md-sys-typescale-display-small: 400 36px/44px var(--font-family-base);
-  --md-sys-typescale-headline-large: 400 32px/40px var(--font-family-base);
-  --md-sys-typescale-headline-medium: 400 28px/36px var(--font-family-base);
-  --md-sys-typescale-headline-small: 400 24px/32px var(--font-family-base);
-  --md-sys-typescale-title-large: 400 22px/28px var(--font-family-base);
-  --md-sys-typescale-title-medium: 500 16px/24px var(--font-family-base);
-  --md-sys-typescale-title-small: 500 14px/20px var(--font-family-base);
-  --md-sys-typescale-body-large: 400 16px/24px var(--font-family-base);
-  --md-sys-typescale-body-medium: 400 14px/20px var(--font-family-base);
-  --md-sys-typescale-body-small: 400 12px/16px var(--font-family-base);
-  --md-sys-typescale-label-large: 500 14px/20px var(--font-family-base);
-  --md-sys-typescale-label-medium: 500 12px/16px var(--font-family-base);
-  --md-sys-typescale-label-small: 500 11px/16px var(--font-family-base);
-
-  /* Legacy type scale */
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -157,7 +68,7 @@
   --line-height-normal: 1.5;
   --line-height-relaxed: 1.75;
 
-  /* ========== Border Radius (Material Design 3) ========== */
+  /* ========== Border Radius ========== */
   --radius-none: 0;
   --radius-xs: 4px;
   --radius-sm: 8px;
@@ -167,27 +78,19 @@
   --radius-2xl: 28px;
   --radius-full: 9999px;
 
-  /* ========== Shadows (Material Design 3) ========== */
+  /* ========== Shadows ========== */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
   --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.12);
   --shadow-2xl: 0 25px 50px rgba(0, 0, 0, 0.15);
 
-  /* Elevation shadows (MD3) */
-  --elevation-level0: none;
-  --elevation-level1: 0 1px 3px 1px rgba(0, 0, 0, 0.15), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --elevation-level2: 0 2px 6px 2px rgba(0, 0, 0, 0.15), 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --elevation-level3: 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px 0 rgba(0, 0, 0, 0.3);
-  --elevation-level4: 0 6px 10px 4px rgba(0, 0, 0, 0.15), 0 2px 3px 0 rgba(0, 0, 0, 0.3);
-  --elevation-level5: 0 8px 12px 6px rgba(0, 0, 0, 0.15), 0 2px 3px 0 rgba(0, 0, 0, 0.3);
-
-  /* ========== Touch Targets (Material Design) ========== */
+  /* ========== Touch Targets ========== */
   --touch-target-min: 48px;
   --touch-target-tablet: 56px;
   --touch-target-large: 64px;
 
-  /* ========== Motion (Material Design 3) ========== */
+  /* ========== Motion ========== */
   --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
   --md-sys-motion-easing-decelerate: cubic-bezier(0, 0, 0.2, 1);
@@ -202,7 +105,7 @@
   --transition-base: var(--md-sys-motion-duration-medium) var(--md-sys-motion-easing-standard);
   --transition-slow: var(--md-sys-motion-duration-long) var(--md-sys-motion-easing-emphasized);
 
-  /* ========== Z-index (Material Design 3) ========== */
+  /* ========== Z-index ========== */
   --z-dropdown: 100;
   --z-sticky: 200;
   --z-fixed: 300;
@@ -210,9 +113,4 @@
   --z-modal: 500;
   --z-popover: 600;
   --z-tooltip: 700;
-}
-
-/* ========== Dark mode support (future) ========== */
-@media (prefers-color-scheme: dark) {
-  /* Dark mode variables can be added here when needed */
 }

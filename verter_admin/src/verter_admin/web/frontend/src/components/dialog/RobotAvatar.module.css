@@ -1,0 +1,57 @@
+.avatar {
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  border-radius: 50%;
+  background: var(--accent);
+  position: relative;
+  box-shadow: 0 0 0 0 transparent;
+  transition: background 300ms ease;
+}
+
+/* «Глаза» робота — две точки, мигают. */
+.eyes {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18%;
+}
+
+.eye {
+  width: 14%;
+  height: 14%;
+  border-radius: 50%;
+  background: #1a1a00;
+  animation: blink 4s infinite;
+}
+
+/* === Состояния аватара (data-avatar) === */
+
+.avatar[data-avatar="idle"] {
+  animation: avatarBreathe 4s ease-in-out infinite;
+}
+
+.avatar[data-avatar="listening"] {
+  animation: avatarListen 1.6s ease-in-out infinite;
+}
+
+.avatar[data-avatar="thinking"] {
+  animation: avatarThink 2.2s ease-in-out infinite;
+}
+
+.avatar[data-avatar="speaking"] {
+  animation: avatarSpeak 0.9s ease-in-out infinite;
+}
+
+/* Грусть — приглушённый цвет + анимация. */
+.avatar[data-avatar="sad"] {
+  background: #9aa0a6;
+  animation: avatarSad 2.4s ease-in-out infinite;
+}
+
+.avatar[data-avatar="sad"] .eye {
+  /* Опущенные «грустные» глаза — дуги вниз. */
+  border-radius: 0 0 50% 50%;
+  transform: translateY(15%);
+}

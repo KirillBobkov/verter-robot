@@ -265,5 +265,33 @@ def generate_launch_description():
             name='ekf_filter_node',
             parameters=[ekf_config],
             output='screen',
-        )
+        ),
+
+        # === Kiosk UI ===
+        # rosbridge WebSocket server — мост ROS <-> web-фронтенд (порт 9090).
+        # Внимание: rosbridge даёт НЕаутентифицированный доступ к ROS-топикам/сервисам.
+        # Допустимо только на localhost для kiosk; не экспонировать наружу без защиты.
+        Node(
+            package='rosbridge_server',
+            executable='rosbridge_websocket',
+            name='rosbridge_websocket',
+            parameters=[{
+                'port': 9090,
+                # Слушать только localhost — rosbridge даёт НЕаутентифицированный
+                # доступ к ROS-топикам/сервисам; не экспонировать в сеть.
+                'address': 'localhost',
+            }],
+            output='screen',
+        ),
+
+        # Web-сервер статики фронтенда (порт 8080).
+        Node(
+            package='verter_admin',
+            executable='web_server_node',
+            name='web_server_node',
+            parameters=[{
+                'port': 8080,
+            }],
+            output='screen',
+        ),
     ])

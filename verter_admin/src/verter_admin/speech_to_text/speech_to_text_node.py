@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 import sounddevice as sd
 import numpy as np
 import kaldi_native_fbank as knf
@@ -34,7 +35,6 @@ class SpeechToTextConfig:
     PRE_BUFFER_DURATION: float = 0.5  # Секунд предыстории
     
     NUM_THREADS: int = 4
-    AUDIO_LATENCY: float = 0.0
     USE_CUDA: bool = False
 
 
@@ -57,10 +57,11 @@ class SpeechToTextNode(Node):
         self.silence_chunks = int(self.config.SILENCE_DURATION / chunk_ms)
         self.pre_buffer_maxlen = int(self.config.PRE_BUFFER_DURATION / chunk_ms)
         
-        # Флаг активности
-        self.is_active = True
-        self.active_lock = threading.Lock()
-        
+        # Флаг активности. По умолчанию выключен (dialog-only kiosk: STT
+        # включается только кнопкой «Начать» через speech_control=True).
+        # Defense-in-depth: даже при падении recognition_node STT не слушает.
+        self.is_active = False
+
         # Потокобезопасность
         self.shutdown_event = threading.Event()
         
@@ -102,7 +103,14 @@ class SpeechToTextNode(Node):
     
     def _setup_ros_communication(self) -> None:
         self.recognized_text_pub = self.create_publisher(String, 'recognized_text', 10)
-        self.create_subscription(Bool, 'speech_control', self._handle_activation, 10)
+        # TRANSIENT_LOCAL (latched): получаем последнее speech_control от
+        # recognition_node при подключении — стартовое значение не теряется.
+        speech_control_qos = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.create_subscription(Bool, 'speech_control', self._handle_activation, speech_control_qos)
         self.create_subscription(Bool, 'tts_control', self._handle_activation, 10)
     
     def _log_startup_info(self) -> None:
@@ -345,14 +353,10 @@ class SpeechToTextNode(Node):
         self.get_logger().info(f"🎤 ({duration:.3f}s): {text}")
 
     def _handle_activation(self, msg: Bool):
-        with self.active_lock:
-            self.is_active = msg.data
+        # is_active — bool, чтение/запись атомарны под GIL; lock не нужен.
+        self.is_active = msg.data
         status = "ON" if msg.data else "OFF"
         self.get_logger().info(f"State: {status}")
-
-    def shutdown(self):
-        self.shutdown_event.set()
-        sd.stop()
 
 def main(args=None):
     rclpy.init(args=args)

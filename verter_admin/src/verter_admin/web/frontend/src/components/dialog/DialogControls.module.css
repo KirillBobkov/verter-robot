@@ -1,0 +1,47 @@
+.controls {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
+  padding: 1rem 0;
+}
+
+.btn {
+  min-height: var(--button-min-height);
+  font-size: var(--button-font-size);
+  font-weight: 600;
+  padding: 0 2.5rem;
+  border-radius: 2rem;
+  border: none;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+  box-shadow: 0 4px 12px var(--box-shadow);
+  user-select: none;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnStart {
+  background: var(--accent);
+  color: var(--font-color);
+}
+
+.btnStart:hover:not(:disabled) {
+  box-shadow: 0 6px 18px var(--box-shadow);
+}
+
+.btnStop {
+  background: var(--danger);
+  color: var(--danger-color);
+}
+
+.btnStop:hover:not(:disabled) {
+  box-shadow: 0 6px 18px var(--box-shadow);
+}

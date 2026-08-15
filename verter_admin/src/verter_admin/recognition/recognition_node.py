@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import re
-from typing import Optional, Dict, Set, Tuple, Any
+from typing import Optional, Dict, Set, Any
 from enum import Enum, auto
 from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 from std_msgs.msg import String, Bool
 
 # === КОНСТАНТЫ И КОНФИГУРАЦИЯ ===
@@ -22,7 +23,6 @@ class SpeechConfig:
     MAX_TEXT_LENGTH_FOR_COMMANDS: int = 50
     
     # Звуковые файлы
-    SOUND_TRIGGER: str = 'trigger.wav'
     SOUND_SUCCESS: str = 'success.wav'
     SOUND_TIMEOUT: str = 'fail_timeout.wav'
 
@@ -41,99 +41,22 @@ class CommandProcessor:
     
     def _setup_word_patterns(self) -> None:
         """Инициализация паттернов команд"""
-        self.trigger_words: Set[str] = {
-            'робот', 'робат', 'бертом', 'верстах', 'вертэр', 'вертер',
-            'ветер', 'ертер', 'верте', 'вектор', 'ветера', 'мерсер',
-            'вертера', 'вердер', 'лестер'
-        }
-        
         self.stop_words: Set[str] = {
-            'хватит', 'спасибо', 'пасибо', 'пока', 'досвидания', 'до свидания', 
+            'хватит', 'спасибо', 'пасибо', 'пока', 'досвидания', 'до свидания',
             'конец', 'достаточно'
         }
-        
-        # Параметры движения по умолчанию
-        self.default_distance = 0.5  # метры
-        self.default_pwm = 98
-        self.turn_distance = 0.25  # метры для поворота
-        
-        self.chassis_commands: Dict[str, str] = {
-            # Стоп - остановка обоих колёс
-            'стоп': 'CHASSIS:STOP', 
-            'остановись': 'CHASSIS:STOP',
-            # Вперёд - оба колеса ASK (вперёд)
-            'вперед': f'CHASSIS:LEFT:ASK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.default_distance}:{self.default_pwm}',
-            'прямо': f'CHASSIS:LEFT:ASK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.default_distance}:{self.default_pwm}',
-            'вперёд': f'CHASSIS:LEFT:ASK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.default_distance}:{self.default_pwm}',
-            # Назад - оба колеса DESK (назад)
-            'назад': f'CHASSIS:LEFT:DESK:{self.default_distance}:{self.default_pwm};CHASSIS:RIGHT:DESK:{self.default_distance}:{self.default_pwm}',
-            # Влево - правое вперёд, левое назад (поворот на месте)
-            'влево': f'CHASSIS:LEFT:DESK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.turn_distance}:{self.default_pwm}',
-            'налево': f'CHASSIS:LEFT:DESK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:ASK:{self.turn_distance}:{self.default_pwm}',
-            # Вправо - левое вперёд, правое назад (поворот на месте)
-            'вправо': f'CHASSIS:LEFT:ASK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:DESK:{self.turn_distance}:{self.default_pwm}',
-            'направо': f'CHASSIS:LEFT:ASK:{self.turn_distance}:{self.default_pwm};CHASSIS:RIGHT:DESK:{self.turn_distance}:{self.default_pwm}',
-        }
-        
-        # Компиляция regex паттернов
-        self.trigger_pattern = self._compile_pattern(self.trigger_words)
-        self.stop_pattern = self._compile_pattern(self.stop_words)
-        self.chassis_pattern = self._compile_pattern(self.chassis_commands.keys())
-    
-    def _compile_pattern(self, words: Set[str]) -> re.Pattern:
-        """Компиляция regex паттерна из набора слов"""
-        pattern = '|'.join(re.escape(word) for word in words)
-        return re.compile(pattern, re.IGNORECASE)
-    
-    def extract_trigger_and_command(self, text: str, max_length: int) -> Tuple[bool, Optional[str]]:
-        """Извлечение триггера и команды из текста"""
-        if not self._is_valid_text(text, max_length):
-            return False, None
-            
-        words = text.lower().split()
-        if not words:
-            return False, None
-            
-        first_word = words[0]
-        is_trigger = (first_word in self.trigger_words or 
-                     self.trigger_pattern.search(first_word))
-        
-        if not is_trigger:
-            return False, None
-        
-        # Извлечение команды после триггера
-        command = ' '.join(words[1:]).strip() if len(words) > 1 else None
-        return True, command
-    
+
+        # Стоп-команда определяется по началу фразы (match — с начала строки,
+        # не search). \b после — чтобы «конец» не ложно срабатывал на «конечно».
+        # Regex, а не first_word в set: нужно ловить multi-word «до свидания».
+        pattern = '|'.join(re.escape(word) for word in self.stop_words)
+        self.stop_pattern = re.compile(r'(?:' + pattern + r')\b', re.IGNORECASE)
+
     def is_stop_command(self, text: str, max_length: int) -> bool:
-        """Проверка является ли текст стоп-командой"""
-        if not self._is_valid_text(text, max_length):
+        """Проверка является ли текст стоп-командой (по началу фразы)"""
+        if not text or len(text) > max_length:
             return False
-            
-        words = text.lower().split()
-        if not words:
-            return False
-            
-        first_word = words[0]
-        return (first_word in self.stop_words or 
-                self.stop_pattern.search(text.lower()))
-    
-    def get_chassis_command(self, text: str, max_length: int) -> Optional[str]:
-        """Получение команды шасси из текста"""
-        if not self._is_valid_text(text, max_length):
-            return None
-            
-        words = text.lower().split()
-        for word in words:
-            if word in self.chassis_commands:
-                return self.chassis_commands[word]
-                
-        match = self.chassis_pattern.search(text.lower())
-        return self.chassis_commands.get(match.group()) if match else None
-    
-    def _is_valid_text(self, text: str, max_length: int) -> bool:
-        """Проверка валидности текста"""
-        return bool(text and len(text) <= max_length)
+        return bool(self.stop_pattern.match(text))
 
 class StateManager:
     """Управление состояниями системы с чистыми переходами"""
@@ -143,24 +66,23 @@ class StateManager:
         self._previous_state = None
     
     def on_trigger_detected(self) -> None:
-        """Обработка обнаружения триггера"""
-        if self.state == RecognitionState.LISTENING_FOR_TRIGGER:
-            self.state = RecognitionState.CAPTURING_COMMAND
-    
+        """Обработка обнаружения триггера (idle → захват команды)"""
+        self.state = RecognitionState.CAPTURING_COMMAND
+
     def start_dialog(self) -> None:
         """Начало диалога"""
         self.state = RecognitionState.DIALOG_MODE
-    
+
     def end_dialog(self) -> None:
         """Завершение диалога"""
         self.state = RecognitionState.LISTENING_FOR_TRIGGER
-    
+
     def pause(self) -> None:
         """Пауза системы"""
         if self.state != RecognitionState.PAUSED:
             self._previous_state = self.state
             self.state = RecognitionState.PAUSED
-    
+
     def resume(self) -> None:
         """Возобновление работы"""
         if self._previous_state:
@@ -168,17 +90,6 @@ class StateManager:
             self._previous_state = None
         else:
             self.state = RecognitionState.LISTENING_FOR_TRIGGER
-    
-    def is_active_listening(self) -> bool:
-        """Проверка активного прослушивания"""
-        return self.state in [
-            RecognitionState.CAPTURING_COMMAND, 
-            RecognitionState.DIALOG_MODE
-        ]
-    
-    def is_passive_listening(self) -> bool:
-        """Проверка пассивного прослушивания"""
-        return self.state == RecognitionState.LISTENING_FOR_TRIGGER
 
 class TimerManager:
     """Централизованное управление таймерами"""
@@ -221,6 +132,12 @@ class RecognitionNode(Node):
 
         self._log_system_startup()
 
+        # STT выключен в idle — диалог начинается только кнопкой (решение #14).
+        # speech_control публикуется с TRANSIENT_LOCAL QoS, поэтому поздний
+        # STT-подписчик получит это значение автоматически — таймеры не нужны.
+        self._publish_speech_control(False)
+        self._publish_dialog_status('idle')
+
     # === ИНИЦИАЛИЗАЦИЯ СИСТЕМЫ ===
     
     def _setup_ros_communication(self) -> None:
@@ -230,9 +147,18 @@ class RecognitionNode(Node):
         self.text_to_speech_pub = self.create_publisher(String, 'text_to_speech', 10)
         self.sound_player_pub = self.create_publisher(String, 'play', 10)
         self.dialog_control_pub = self.create_publisher(String, 'dialog_control', 10)
-        self.command_pub = self.create_publisher(String, 'verter_commands', 10)
-        # Publisher для управления speech_to_text_node
-        self.speech_control_pub = self.create_publisher(Bool, 'speech_control', 10)
+        # Publisher для управления speech_to_text_node.
+        # TRANSIENT_LOCAL (latched): late-joining STT-узел получит последнее
+        # значение speech_control при подписке — стартовое выключение STT
+        # в idle не теряется из-за гонки DDS-discovery (решение #14).
+        speech_control_qos = QoSProfile(
+            depth=10,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.speech_control_pub = self.create_publisher(Bool, 'speech_control', speech_control_qos)
+        # Publisher статуса диалога для фронтенда (idle/listening/speaking)
+        self.dialog_status_pub = self.create_publisher(String, 'dialog_status', 10)
         
         # Subscribers
         self.create_subscription(
@@ -244,9 +170,16 @@ class RecognitionNode(Node):
         # Подписываемся на tts_control чтобы получать сигналы от TTS
         # НЕ подписываемся на speech_control (избегаем самоподписки)
         self.create_subscription(
-            Bool, 
-            'tts_control', 
-            self._handle_tts_control, 
+            Bool,
+            'tts_control',
+            self._handle_tts_control,
+            10
+        )
+        # Управление диалогом с экранной кнопки (фронтенд → start/stop)
+        self.create_subscription(
+            String,
+            'ui_dialog_control',
+            self._handle_ui_dialog_control,
             10
         )
 
@@ -268,45 +201,30 @@ class RecognitionNode(Node):
     def _handle_recognized_speech(self, text: str) -> None:
         """Главный диспетчер распознанной речи"""
         self.get_logger().debug(f"🎤 Распознано: '{text}'")
-        
+
         if self.state_manager.state == RecognitionState.PAUSED:
             self.get_logger().debug(f"🔇 Игнорирую (PAUSED): '{text}'")
             return  # Игнорируем в состоянии паузы
-        
-        # Маршрутизация по состояниям
-        if self.state_manager.is_passive_listening():
-            self._handle_passive_listening(text)
-        else:
-            self._handle_active_listening(text)
 
-    def _handle_passive_listening(self, text: str) -> None:
-        """Обработка речи в пассивном режиме (ожидание триггера)"""
-        is_trigger, command = self.command_processor.extract_trigger_and_command(
-            text, self.config.MAX_TEXT_LENGTH_FOR_TRIGGER
-        )
-        
-        if not is_trigger:
+        # В idle (LISTENING_FOR_TRIGGER) распознанный текст игнорируется:
+        # диалог начинается только кнопкой. STT выключен в idle (speech_control
+        # False), но этот гард защищает от шума, если STT всё же активен
+        # (например, при рассинхроне speech_control).
+        if self.state_manager.state == RecognitionState.LISTENING_FOR_TRIGGER:
+            self.get_logger().debug(f"🔇 Игнорирую (idle): '{text}'")
             return
-            
-        self.get_logger().info(f"🔔 Триггер обнаружен: '{text}'")
-        
-        if command:
-            # Триггер + команда: сразу начинаем диалог
-            self._start_dialog_with_command(command)
-        else:
-            # Только триггер: переходим к захвату команды
-            self._transition_to_command_capture()
+
+        self._handle_active_listening(text)
 
     def _handle_active_listening(self, text: str) -> None:
         """Обработка речи в активном режиме (диалог/захват команды)"""
-        # Приоритетная обработка по типам команд
+        # Приоритетная обработка: стоп-команда → AI-вопрос.
+        # Голосовое управление шасси убрано (dialog-only kiosk, решение #1).
         if self._process_stop_command(text):
-            return
-        if self._process_chassis_command(text):
             return
         if self._process_ai_command(text):
             return
-        
+
         self.get_logger().debug(f"❓ Необработанная команда: '{text}'")
 
     def _process_stop_command(self, text: str) -> bool:
@@ -316,19 +234,6 @@ class RecognitionNode(Node):
             
         self.get_logger().info(f"🛑 Стоп-команда: '{text}'")
         self._execute_stop_sequence()
-        return True
-
-    def _process_chassis_command(self, text: str) -> bool:
-        """Обработка команды шасси (средний приоритет)"""
-        chassis_command = self.command_processor.get_chassis_command(
-            text, self.config.MAX_TEXT_LENGTH_FOR_COMMANDS
-        )
-        
-        if not chassis_command:
-            return False
-            
-        self.get_logger().info(f"🚗 Команда шасси: '{text}' -> {chassis_command}")
-        self._execute_chassis_command(chassis_command)
         return True
 
     def _process_ai_command(self, text: str) -> bool:
@@ -347,31 +252,25 @@ class RecognitionNode(Node):
     # === ВЫПОЛНЕНИЕ КОМАНД ===
     
     def _execute_stop_sequence(self) -> None:
-        """Выполнение последовательности остановки"""
+        """Выполнение последовательности остановки (стоп-команда и кнопка «Остановить»)"""
         current_state = self.state_manager.state
-        
-        if current_state == RecognitionState.DIALOG_MODE:
-            self._end_dialog(with_farewell=True)
-        elif current_state == RecognitionState.CAPTURING_COMMAND:
-            self._send_farewell_message()
-            self._reset_to_listening_state()
-        else:
-            self._reset_to_listening_state()
 
-    def _execute_chassis_command(self, command: str) -> None:
-        """Выполнение команды шасси"""
-        self.timer_manager.stop_timer('command_timeout')
-        self._transition_to_dialog_if_needed()
-        
-        # Отправка команды
-        msg = String()
-        msg.data = command
-        self.command_pub.publish(msg)
-        self._play_sound(self.config.SOUND_SUCCESS)
-        
-        # Сброс таймера диалога если в диалоге
-        if self.state_manager.state == RecognitionState.DIALOG_MODE:
-            self._reset_dialog_timer()
+        # Статус idle публикуем ДО farewell: фронтенд определяет роль
+        # сообщения в text_to_speech по текущему dialog_status, и при idle
+        # farewell отобразится как прощание, а не как ответ.
+        self._publish_dialog_status('idle')
+        self._publish_speech_control(False)
+
+        if current_state == RecognitionState.LISTENING_FOR_TRIGGER:
+            # Стоп в idle — ничего не делаем (диалог уже завершён)
+            return
+
+        # DIALOG_MODE / CAPTURING_COMMAND / PAUSED — уведомляем AI о завершении
+        # (сбрасывает dialog_active, чтобы AI не дописал ответ) + прощание.
+        # end_dialog() покрывает все три ветки: публикует "end_dialog" в AI,
+        # farewell и сброс state. Для CAPTURING_COMMAND start_dialog уже был
+        # отправлен кнопкой «Начать» — end_dialog обязателен.
+        self._end_dialog(with_farewell=True)
 
     def _execute_ai_command(self, command: str) -> None:
         """Выполнение команды для AI"""
@@ -395,17 +294,6 @@ class RecognitionNode(Node):
         self.get_logger().info(f"📤 Отправлено в AI: '{text}'")
 
     # === УПРАВЛЕНИЕ СОСТОЯНИЯМИ И ПЕРЕХОДАМИ ===
-    
-    def _transition_to_command_capture(self) -> None:
-        """Переход в состояние захвата команды"""
-        self.state_manager.on_trigger_detected()
-        self._play_sound(self.config.SOUND_TRIGGER)
-        self._start_command_timeout_timer()
-
-    def _start_dialog_with_command(self, command: str) -> None:
-        """Начало диалога с немедленным выполнением команды"""
-        self._start_dialog_mode()
-        self._handle_active_listening(command)  # Обрабатываем команду в контексте диалога
 
     def _start_dialog_mode(self) -> None:
         """Запуск режима диалога"""
@@ -433,6 +321,7 @@ class RecognitionNode(Node):
         
         self.state_manager.end_dialog()
 
+        self._publish_speech_control(False)
         self.get_logger().info("🔚 Диалог завершен")
 
     def _transition_to_dialog_if_needed(self) -> None:
@@ -441,29 +330,13 @@ class RecognitionNode(Node):
             self._start_dialog_mode()
             self.get_logger().debug("🔄 Автопереход в режим диалога")
 
-    def _reset_to_listening_state(self) -> None:
-        """Сброс в состояние пассивного прослушивания"""
-        self.state_manager.end_dialog()
-        self.timer_manager.stop_timer('command_timeout')
-
-        self.get_logger().debug("🔄 Возврат в режим прослушивания")
-
     def _send_farewell_message(self) -> None:
         """Отправка прощального сообщения"""
         msg = String()
-        msg.data = "  рад был помочь"
+        msg.data = "Рад был помочь!"
         self.text_to_speech_pub.publish(msg)
 
     # === УПРАВЛЕНИЕ ТАЙМЕРАМИ ===
-
-    def _start_command_timeout_timer(self) -> None:
-        """Запуск таймера таймаута команды"""
-        if self.state_manager.state == RecognitionState.CAPTURING_COMMAND:
-            self.timer_manager.start_timer(
-                'command_timeout',
-                self.config.NO_SPEECH_TIMEOUT,
-                self._handle_command_timeout
-            )
 
     def _reset_dialog_timer(self) -> None:
         """Сброс таймера диалога"""
@@ -475,47 +348,74 @@ class RecognitionNode(Node):
             )
 
     def _handle_command_timeout(self) -> None:
-        """Обработка таймаута команды"""
+        """Обработка таймаута команды (первый вопрос не прозвучал за 10с)"""
         self.get_logger().warn(f"⏰ Таймаут команды ({self.config.NO_SPEECH_TIMEOUT}с)")
         self._play_sound(self.config.SOUND_TIMEOUT)
-        self._reset_to_listening_state()
+        # В любом случае уведомляем AI о завершении диалога: start_dialog уже
+        # был отправлен при нажатии кнопки, иначе dialog_active в AI останется True.
+        # _end_dialog() публикует "end_dialog" в AI + speech_control(False) + сброс state.
+        self._end_dialog()
+        self._publish_dialog_status('idle')
 
     def _handle_dialog_timeout(self) -> None:
-        """Обработка таймаута диалога"""
+        """Обработка таймаута диалога (30с тишины)"""
         self.get_logger().warn(f"⏰ Таймаут диалога ({self.config.DIALOG_TIMEOUT}с)")
         self._play_sound(self.config.SOUND_TIMEOUT)
+        # _end_dialog публикует speech_control False; статус idle — здесь
         self._end_dialog()
+        self._publish_dialog_status('idle')
 
     # === ВНЕШНЕЕ УПРАВЛЕНИЕ ===
     
     def _handle_tts_control(self, msg: Bool) -> None:
-        """Обработка сигналов от TTS"""
+        """Обработка сигналов от TTS (False — TTS начал говорить, True — закончил)"""
         try:
             if msg.data:
+                # TTS закончил — возобновляем распознавание и контекстно включаем STT
                 self._activate_recognition()
+                self._resume_from_paused()
             else:
-                self._deactivate_recognition()
+                # TTS начал говорить — деактивируем распознавание (эхоподавление).
+                # Фиксируем активность ДО паузы: farewell-сообщение в idle
+                # (state=LISTENING_FOR_TRIGGER) не должно давать статус speaking
+                # и не должно уводить state в PAUSED (иначе кнопка «Начать»
+                # блокируется гардом на всё время farewell).
+                was_active = self.state_manager.state in (
+                    RecognitionState.DIALOG_MODE,
+                    RecognitionState.CAPTURING_COMMAND,
+                    RecognitionState.PAUSED,
+                )
+                if was_active:
+                    self._deactivate_recognition()
+                    self._publish_dialog_status('speaking')
         except Exception as e:
             self.get_logger().error(f"Ошибка обработки TTS control: {e}")
+
+    def _resume_from_paused(self) -> None:
+        """Возобновление после TTS: контекстно управляем STT и статусом.
+
+        В активном диалоге (DIALOG_MODE) — слушаем следующий вопрос (STT вкл,
+        listening, сброс таймера 30с). В idle (farewell после стопа) — STT
+        оставить выключенным, статус idle.
+        """
+        if self.state_manager.state == RecognitionState.DIALOG_MODE:
+            self._publish_speech_control(True)
+            self._publish_dialog_status('listening')
+            self._reset_dialog_timer()
+        else:
+            self._publish_speech_control(False)
+            self._publish_dialog_status('idle')
     
     def _activate_recognition(self) -> None:
-        """Активация распознавания"""
+        """Активация распознавания (возобновление FSM из PAUSED)"""
         # Проверяем, не активны ли мы уже (избегаем лишних действий)
         if self.state_manager.state != RecognitionState.PAUSED:
             return
-        
+
         self.state_manager.resume()
-        
-        # Отправляем сигнал в speech_to_text_node для возобновления распознавания
-        msg = Bool()
-        msg.data = True
-        self.speech_control_pub.publish(msg)
-        
-        if self.state_manager.state == RecognitionState.DIALOG_MODE:
-            self._reset_dialog_timer()
-            self.get_logger().info("✅ Распознавание активировано (диалог)")
-        else:
-            self.get_logger().info("✅ Распознавание активировано")
+        # Публикация speech_control управляется вызывающим контекстом
+        # (_handle_tts_control), чтобы не включать STT в idle.
+        self.get_logger().info("✅ Распознавание активировано")
     
     def _deactivate_recognition(self) -> None:
         """Деактивация распознавания"""
@@ -533,6 +433,47 @@ class RecognitionNode(Node):
         
         self.get_logger().info("⏸️ Распознавание деактивировано")
 
+    def _handle_ui_dialog_control(self, msg: String) -> None:
+        """Управление диалогом с экранной кнопки (фронтенд → 'start'/'stop')"""
+        command = msg.data.strip().lower()
+        self.get_logger().info(f"🎛️ UI dialog control: {command}")
+
+        if command == 'start':
+            self._ui_start_dialog()
+        elif command == 'stop':
+            self._execute_stop_sequence()
+
+    def _ui_start_dialog(self) -> None:
+        """Программный старт диалога с кнопки — сразу слушаем вопрос"""
+        current_state = self.state_manager.state
+
+        # Если уже в активном диалоге/захвате/паузе — игнорируем (двойное нажатие)
+        if current_state in (
+            RecognitionState.DIALOG_MODE,
+            RecognitionState.CAPTURING_COMMAND,
+            RecognitionState.PAUSED,
+        ):
+            self.get_logger().info("🎛️ Диалог уже активен, игнорирую start")
+            return
+
+        # Переходим в захват команды и слушаем вопрос (без голосового приветствия)
+        self.state_manager.on_trigger_detected()  # LISTENING_FOR_TRIGGER → CAPTURING_COMMAND
+        self._publish_speech_control(True)  # Включаем STT
+        self._publish_dialog_status('listening')
+
+        # Уведомляем AI о начале диалога (сброс контекста)
+        dlg_msg = String()
+        dlg_msg.data = "start_dialog"
+        self.dialog_control_pub.publish(dlg_msg)
+
+        # Таймер таймаута первого вопроса (10с)
+        self.timer_manager.start_timer(
+            'command_timeout',
+            self.config.NO_SPEECH_TIMEOUT,
+            self._handle_command_timeout,
+        )
+        self.get_logger().info("🎛️ Диалог начат с кнопки")
+
     # === ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ===
     
     def _play_sound(self, sound_name: str) -> None:
@@ -543,6 +484,19 @@ class RecognitionNode(Node):
             self.sound_player_pub.publish(msg)
         except Exception as e:
             self.get_logger().error(f"Ошибка воспроизведения {sound_name}: {e}")
+
+    def _publish_dialog_status(self, status: str) -> None:
+        """Публикация статуса диалога для фронтенда"""
+        msg = String()
+        msg.data = status
+        self.dialog_status_pub.publish(msg)
+        self.get_logger().info(f"📊 dialog_status: {status}")
+
+    def _publish_speech_control(self, active: bool) -> None:
+        """Управление STT-узлом (True — слушать, False — выключен)"""
+        msg = Bool()
+        msg.data = active
+        self.speech_control_pub.publish(msg)
 
     def shutdown(self) -> None:
         """Корректное завершение работы"""

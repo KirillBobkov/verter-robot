@@ -1,270 +1,214 @@
 /**
- * ROS bridge service
- * Abstraction layer over roslib.js
+ * ROS bridge service — диалоговый kiosk.
+ * Тонкая обёртка над npm-бандлом roslib.js: подключение к rosbridge,
+ * тихий реконнект, подписки на диалоговые топики и публикация управления.
+ *
+ * Внимание: rosbridge даёт НЕаутентифицированный доступ к ROS.
+ * Допустимо только на localhost для kiosk.
  */
 
-import type {
-  RosStatus,
-  Twist,
-  PoseWithCovarianceStamped,
-  SaveWaypointRequest,
-  SaveWaypointResponse,
-  NavigateToWaypointRequest,
-  NavigateToWaypointResponse,
-  DeleteWaypointRequest,
-  DeleteWaypointResponse,
-  ListWaypointsRequest,
-  ListWaypointsResponse,
-  TriggerRequest,
-  TriggerResponse,
-} from '../types/ros';
-import type { Ros as RosType } from 'roslib';
+import ROSLIB from 'roslib';
+import type { Ros as RosType, Topic as TopicType } from 'roslib';
+import type { RosStatus } from '../types/ros';
 
 let ros: RosType | null = null;
-let connectedPort: number | null = null;
-let connectedHost: string | null = null;
+
+// Тихий реконнект: без UI, без выбрасывания ошибок наружу.
+const RECONNECT_DELAY_MS = 3000;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let wantConnected = false;
+let statusCb: ((status: RosStatus) => void) | null = null;
 
 /**
- * Get rosbridge URL from current location or params
+ * URL rosbridge. По умолчанию ws://localhost:9090 (kiosk на самом роботе).
+ * При необходимости переопределяется через ?rosbridge=host:port.
  */
 export function getRosbridgeUrl(): string {
-  // Check URL params first
-  const params = new URLSearchParams(window.location.search);
-  const portParam = params.get('rosbridge_port');
-  const hostParam = params.get('rosbridge_host');
+  if (typeof window === 'undefined') {
+    return 'ws://localhost:9090';
+  }
+  const param = new URLSearchParams(window.location.search).get('rosbridge');
+  if (param) {
+    // host:port или полный URL
+    if (param.startsWith('ws://') || param.startsWith('wss://')) {
+      return param;
+    }
+    return `ws://${param}`;
+  }
+  return 'ws://localhost:9090';
+}
 
-  const port = portParam ? parseInt(portParam, 10) : 9090;
-  const host = hostParam || window.location.hostname || 'localhost';
+function setStatus(status: RosStatus): void {
+  if (statusCb) {
+    statusCb(status);
+  }
+}
 
-  return `ws://${host}:${port}`;
+function scheduleReconnect(): void {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+  }
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (wantConnected) {
+      initROS(getRosbridgeUrl());
+    }
+  }, RECONNECT_DELAY_MS);
 }
 
 /**
- * Initialize ROS connection
+ * Инициализация подключения к rosbridge. Идемпотентно для одного URL.
+ * Тихий реконнект: при разрыве пытается переподключиться каждые RECONNECT_DELAY_MS.
  */
-export function initROS(url?: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (typeof window === 'undefined' || !window.ROSLIB) {
-      reject(new Error('ROSLIB not available. Load roslib.js first.'));
-      return;
-    }
+export function initROS(url: string = getRosbridgeUrl()): Promise<void> {
+  wantConnected = true;
 
-    const rosUrl = url || getRosbridgeUrl();
+  // Уже подключено к этому же URL — ничего не делаем.
+  if (ros && (ros as unknown as { url?: string }).url === url) {
+    return Promise.resolve();
+  }
 
-    // Parse URL to get host and port
-    const urlObj = new URL(rosUrl);
-    connectedHost = urlObj.hostname;
-    connectedPort = parseInt(urlObj.port, 10);
+  setStatus('connecting');
 
-    ros = new window.ROSLIB.Ros({ url: rosUrl }) as unknown as RosType;
+  return new Promise((resolve) => {
+    try {
+      if (ros) {
+        try {
+          ros.close();
+        } catch {
+          /* ignore */
+        }
+        ros = null;
+      }
 
-    ros.on('connection', () => {
-      console.log(`ROS bridge connected to ${rosUrl}`);
+      const newRos = new ROSLIB.Ros({ url });
+      ros = newRos as unknown as RosType;
+
+      newRos.on('connection', () => {
+        setStatus('connected');
+        resolve();
+      });
+
+      newRos.on('error', () => {
+        setStatus('error');
+        resolve();
+        scheduleReconnect();
+      });
+
+      newRos.on('close', () => {
+        setStatus('disconnected');
+        resolve();
+        if (wantConnected) {
+          scheduleReconnect();
+        }
+      });
+    } catch {
+      setStatus('error');
       resolve();
-    });
-
-    ros.on('error', (err: Error) => {
-      console.error('ROS bridge error:', err);
-      reject(err);
-    });
-
-    ros.on('close', () => {
-      console.log('ROS bridge connection closed');
-      connectedHost = null;
-      connectedPort = null;
-    });
+      scheduleReconnect();
+    }
   });
 }
 
 /**
- * Get ROS instance
+ * Регистрирует колбэк статуса соединения (используется rosStore).
  */
-export function getROS() {
+export function onStatus(cb: (status: RosStatus) => void): void {
+  statusCb = cb;
+}
+
+/**
+ * Корректно закрывает подключение и прекращает реконнекты.
+ */
+export function closeROS(): void {
+  wantConnected = false;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (ros) {
+    try {
+      ros.close();
+    } catch {
+      /* ignore */
+    }
+    ros = null;
+  }
+  setStatus('disconnected');
+}
+
+/**
+ * Текущий экземпляр Ros (для хуков подписки/публикации).
+ */
+export function getROS(): RosType | null {
   return ros;
 }
 
-/**
- * Check if ROS is connected
- */
-export function isConnected(): boolean {
-  return ros !== null;
-}
+// ============ Подписки ============
 
 /**
- * Close ROS connection
+ * Создаёт подписку на std_msgs/String топик и возвращает функцию отписки.
  */
-export function closeROS(): void {
-  if (ros) {
-    ros.close();
-    ros = null;
-  }
-}
-
-/**
- * Create a topic
- */
-export function createTopic<TMsg = any>(
-  name: string,
-  messageType: string,
-  compression?: 'none' | 'cbor' | 'png'
-) {
-  if (!ros) {
-    throw new Error('ROS not initialized');
-  }
-  return new window.ROSLIB.Topic({
-    ros,
-    name,
-    messageType,
-    compression,
-  }) as TopicType<TMsg>;
-}
-
-/**
- * Publish to a topic
- */
-export function publish<TMsg = any>(topicName: string, messageType: string, message: TMsg): void {
-  const topic = createTopic<TMsg>(topicName, messageType);
-  topic.publish(new window.ROSLIB.Message(message));
-}
-
-/**
- * Subscribe to a topic
- */
-export function subscribe<TMsg = any>(
+export function subscribeString(
   topicName: string,
-  messageType: string,
-  callback: (message: TMsg) => void
+  listener: (data: string) => void,
 ): () => void {
-  const topic = createTopic<TMsg>(topicName, messageType);
-  topic.subscribe(callback);
-
-  // Return unsubscribe function
-  return () => topic.unsubscribe(callback);
-}
-
-/**
- * Call a ROS service with timeout
- */
-export function callService<T = unknown, U = unknown>(
-  serviceName: string,
-  serviceType: string,
-  request: T,
-  timeoutMs: number = 5000
-): Promise<U> {
-  return new Promise((resolve, reject) => {
-    if (!ros) {
-      reject(new Error('ROS not initialized'));
-      return;
-    }
-
-    const service = new window.ROSLIB.Service({
-      ros,
-      name: serviceName,
-      serviceType,
-    }) as ServiceType<T, U>;
-
-    const requestObj = new window.ROSLIB.ServiceRequest(request);
-
-    // Set up timeout
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`Service call timeout: ${serviceName} (${timeoutMs}ms)`));
-    }, timeoutMs);
-
-    service.callService(requestObj, (result: U) => {
-      clearTimeout(timeoutId);
-      resolve(result);
-    }, (error: Error) => {
-      clearTimeout(timeoutId);
-      reject(error);
-    });
+  if (!ros) {
+    return () => {};
+  }
+  const topic: TopicType = new ROSLIB.Topic({
+    ros: ros as unknown as ConstructorParameters<typeof ROSLIB.Topic>[0]['ros'],
+    name: topicName,
+    messageType: 'std_msgs/msg/String',
+    throttle_rate: 0,
   });
+  topic.subscribe((msg: { data?: unknown }) => {
+    if (typeof msg.data === 'string') {
+      listener(msg.data);
+    }
+  });
+  return () => {
+    try {
+      topic.unsubscribe();
+    } catch {
+      /* ignore */
+    }
+  };
 }
 
 /**
- * Publish cmd_vel (velocity command)
+ * Публикует std_msgs/String в топик.
  */
-export function publishCmdVel(linear: { x: number; y: number; z: number }, angular: { x: number; y: number; z: number }): void {
-  if (!isConnected()) return;
-  publish('/cmd_vel', 'geometry_msgs/msg/Twist', { linear, angular });
+export function publishString(topicName: string, data: string): void {
+  if (!ros) {
+    return;
+  }
+  const topic: TopicType = new ROSLIB.Topic({
+    ros: ros as unknown as ConstructorParameters<typeof ROSLIB.Topic>[0]['ros'],
+    name: topicName,
+    messageType: 'std_msgs/msg/String',
+  });
+  topic.publish(new ROSLIB.Message({ data }));
 }
 
-/**
- * Stop the robot (publish zero velocity)
- */
-export function stopRobot(): void {
-  if (!isConnected()) return;
-  publishCmdVel({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
+// ============ Диалоговые топики ============
+
+/** /dialog_status — единый источник правды для UI (recognition + ai_assistant). */
+export function subscribeDialogStatus(listener: (status: string) => void): () => void {
+  return subscribeString('/dialog_status', listener);
 }
 
-/**
- * Subscribe to amcl_pose (current robot position)
- */
-export function subscribePose(callback: (pose: PoseWithCovarianceStamped) => void): () => void {
-  return subscribe('/amcl_pose', 'geometry_msgs/msg/PoseWithCovarianceStamped', callback);
+/** /ai_question — распознанный вопрос пользователя. */
+export function subscribeAIQuestion(listener: (question: string) => void): () => void {
+  return subscribeString('/ai_question', listener);
 }
 
-/**
- * Save waypoint
- */
-export function saveWaypoint(req: SaveWaypointRequest): Promise<SaveWaypointResponse> {
-  return callService<SaveWaypointRequest, SaveWaypointResponse>(
-    '/save_waypoint',
-    'verter_admin_msgs/srv/SaveWaypoint',
-    req
-  );
+/** /text_to_speech — текст, который робот озвучивает (ответ/ошибка/farewell). */
+export function subscribeTextToSpeech(listener: (text: string) => void): () => void {
+  return subscribeString('/text_to_speech', listener);
 }
 
-/**
- * Navigate to waypoint
- */
-export function navigateToWaypoint(req: NavigateToWaypointRequest): Promise<NavigateToWaypointResponse> {
-  return callService<NavigateToWaypointRequest, NavigateToWaypointResponse>(
-    '/navigate_to_waypoint',
-    'verter_admin_msgs/srv/NavigateToWaypoint',
-    req
-  );
-}
-
-/**
- * Delete waypoint
- */
-export function deleteWaypoint(req: DeleteWaypointRequest): Promise<DeleteWaypointResponse> {
-  return callService<DeleteWaypointRequest, DeleteWaypointResponse>(
-    '/delete_waypoint',
-    'verter_admin_msgs/srv/DeleteWaypoint',
-    req
-  );
-}
-
-/**
- * List all waypoints
- */
-export function listWaypoints(): Promise<ListWaypointsResponse> {
-  return callService<ListWaypointsRequest, ListWaypointsResponse>(
-    '/list_waypoints',
-    'verter_admin_msgs/srv/ListWaypoints',
-    {}
-  );
-}
-
-/**
- * Start patrol
- */
-export function startPatrol(): Promise<TriggerResponse> {
-  return callService<TriggerRequest, TriggerResponse>(
-    '/start_patrol',
-    'std_srvs/srv/Trigger',
-    {}
-  );
-}
-
-/**
- * Stop patrol
- */
-export function stopPatrol(): Promise<TriggerResponse> {
-  return callService<TriggerRequest, TriggerResponse>(
-    '/stop_patrol',
-    'std_srvs/srv/Trigger',
-    {}
-  );
+/** /ui_dialog_control — команда от фронтенда ('start' | 'stop'). */
+export function publishDialogControl(command: 'start' | 'stop'): void {
+  publishString('/ui_dialog_control', command);
 }

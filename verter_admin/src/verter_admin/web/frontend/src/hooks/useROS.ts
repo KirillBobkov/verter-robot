@@ -1,9 +1,9 @@
 /**
- * useROS hook
- * Manages ROS connection lifecycle
+ * useROS — управляет жизненным циклом подключения к rosbridge.
+ * Статус приходит через rosbridge.onStatus (включая тихий реконнект).
  */
 
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useROSStore } from '../store/rosStore';
 import * as rosbridge from '../services/rosbridge';
 
@@ -11,76 +11,46 @@ export function useROS(autoConnect: boolean = true) {
   const isConnected = useROSStore((state) => state.isConnected);
   const status = useROSStore((state) => state.status);
   const setStatus = useROSStore((state) => state.setStatus);
-  const setConnected = useROSStore((state) => state.setConnected);
-  const setError = useROSStore((state) => state.setError);
   const setUrl = useROSStore((state) => state.setUrl);
 
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isConnectingRef = useRef(false);
 
-  // Connect to ROS
-  const connect = useCallback(async () => {
-    if (isConnectingRef.current || isConnected) {
+  useEffect(() => {
+    // Проксируем статус из rosbridge (обновляется при реконнекте тоже).
+    rosbridge.onStatus((newStatus) => {
+      setStatus(newStatus);
+    });
+
+    if (!autoConnect) {
       return;
     }
 
+    if (isConnectingRef.current) {
+      return;
+    }
     isConnectingRef.current = true;
-    setStatus('connecting');
 
+    const url = rosbridge.getRosbridgeUrl();
     try {
-      const url = rosbridge.getRosbridgeUrl();
       const urlObj = new URL(url);
       setUrl(url, urlObj.hostname, parseInt(urlObj.port, 10));
+    } catch {
+      /* некорректный URL — продолжаем с дефолтом */
+    }
 
-      await rosbridge.initROS(url);
-      setConnected(true);
+    rosbridge.initROS(url).finally(() => {
       isConnectingRef.current = false;
-
-      // Clear any pending reconnect
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-    } catch (err) {
-      const error = err instanceof Error ? err.message : 'Connection failed';
-      setError(error);
-      isConnectingRef.current = false;
-
-      // Auto-reconnect after 5 seconds
-      reconnectTimeoutRef.current = setTimeout(() => {
-        isConnectingRef.current = false;
-        connect();
-      }, 5000);
-    }
-  }, [isConnected, setStatus, setConnected, setError, setUrl]);
-
-  // Disconnect from ROS
-  const disconnect = useCallback(() => {
-    rosbridge.closeROS();
-    setConnected(false);
-    isConnectingRef.current = false;
-
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-  }, [setConnected]);
-
-  // Auto-connect on mount
-  useEffect(() => {
-    if (autoConnect) {
-      connect();
-    }
+    });
 
     return () => {
-      disconnect();
+      rosbridge.closeROS();
+      isConnectingRef.current = false;
     };
-  }, [autoConnect, connect, disconnect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoConnect]);
 
   return {
     isConnected,
     status,
-    connect,
-    disconnect,
   };
 }
