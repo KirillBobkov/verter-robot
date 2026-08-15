@@ -63,6 +63,19 @@
   to   { opacity: 0; }
 }
 
+/* Эффект печатания: слово проявляется (opacity 0→1). fill-mode both держит
+   слово скрытым до старта анимации (до animationDelay) и видимым после. */
+@keyframes mzWordIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.word {
+  display: inline-block;
+  opacity: 0;
+  animation: mzWordIn 0.7s ease-out both;
+}
+
 .bubble[data-fading="in"] {
   animation: mzFadeIn var(--transition-slow) both;
 }
@@ -216,5 +229,9 @@
   .bubble[data-fading="in"],
   .bubble[data-fading="out"] {
     animation: none;
+  }
+  .word {
+    animation: none;
+    opacity: 1;
   }
 }

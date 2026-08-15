@@ -39,8 +39,37 @@ const ROLE_LABEL: Partial<Record<MessageRole, string>> = {
 /** Длительность перехода opacity (мс) — должна совпадать с CSS var --transition-slow. */
 const FADE_MS = 1050;
 
+/** Задержка появления каждого слова эффекта печатания (мс). */
+const WORD_DELAY_MS = 300;
+
 /** Минимальный размер шрифта при авто-масштабировании (px) — потолок читаемости. */
 const MIN_FONT_PX = 12;
+
+/** Рендер текста по словам: каждое слово — span с задержкой появления (эффект печатания). */
+function TypingText({ text }: { text: string }) {
+  // split с захватом разделителей сохраняет пробелы между словами.
+  const tokens = text.split(/(\s+)/);
+  let wordIndex = -1;
+  return (
+    <>
+      {tokens.map((token, i) => {
+        if (/^\s+$/.test(token)) {
+          return <span key={i}>{token}</span>;
+        }
+        wordIndex += 1;
+        return (
+          <span
+            key={i}
+            className={styles.word}
+            style={{ animationDelay: `${wordIndex * WORD_DELAY_MS}ms` }}
+          >
+            {token}
+          </span>
+        );
+      })}
+    </>
+  );
+}
 
 /** Ключ для React: меняется при любом изменении текста/роли. */
 function msgKey(m: DialogMessage | null): string {
@@ -211,7 +240,7 @@ function Bubble({ layer, fading, fontSize, ref, messageRef }: BubbleProps) {
         aria-live={isOutgoing ? undefined : isAssertive ? "assertive" : "polite"}
         style={fontSize != null ? { fontSize: `${fontSize}px` } : undefined}
       >
-        {message.text}
+        <TypingText text={message.text} />
       </p>
       {subMessage && (
         <p
