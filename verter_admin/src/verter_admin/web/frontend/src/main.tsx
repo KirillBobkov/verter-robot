@@ -3,14 +3,13 @@
  * roslib подключается как npm-бандл (не CDN).
  */
 
-import { StrictMode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './theme/index.css';
 import './vite-env.d.ts';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <StrictMode>
+  // <StrictMode>  // Временно отключен - вызывает реконнекты rosbridge в dev режиме
     <App />
-  </StrictMode>
+  // </StrictMode>
 );
