@@ -19,6 +19,12 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let wantConnected = false;
 let statusCb: ((status: RosStatus) => void) | null = null;
 
+// Различает намеренное закрытие (initROS/closeROS) от серверного разрыва.
+// roslib не сохраняет URL и не имеет флага «не реконнектить», поэтому
+// при собственном close() мы помечаем намеренность, чтобы on('close')
+// не запускал реконнект против нашей воли.
+let intentionalClose = false;
+
 /**
  * URL rosbridge. По умолчанию ws://localhost:9090 (kiosk на самом роботе).
  * При необходимости переопределяется через ?rosbridge=host:port.
@@ -64,6 +70,10 @@ export function initROS(url: string = getRosbridgeUrl()): Promise<void> {
   wantConnected = true;
 
   // Уже подключено к этому же URL — ничего не делаем.
+  // Внимание: roslib НЕ сохраняет url на экземпляре Ros, поэтому мы
+  // записываем его сами после connect (см. ниже). Без этого гард
+  // сравнивал бы undefined === url и всегда падал → каждый вызов
+  // initROS убивал живое соединение и создавал новое (цикл реконнектов).
   if (ros && (ros as unknown as { url?: string }).url === url) {
     return Promise.resolve();
   }
@@ -73,6 +83,8 @@ export function initROS(url: string = getRosbridgeUrl()): Promise<void> {
   return new Promise((resolve) => {
     try {
       if (ros) {
+        // Намеренно закрываем старое подключение — реконнект не нужен.
+        intentionalClose = true;
         try {
           ros.close();
         } catch {
@@ -82,7 +94,10 @@ export function initROS(url: string = getRosbridgeUrl()): Promise<void> {
       }
 
       const newRos = new ROSLIB.Ros({ url });
+      // roslib не хранит url — сохраняем сами для idempotency-гарда выше.
+      (newRos as unknown as { url?: string }).url = url;
       ros = newRos as unknown as RosType;
+      intentionalClose = false;
 
       newRos.on('connection', () => {
         setStatus('connected');
@@ -98,7 +113,8 @@ export function initROS(url: string = getRosbridgeUrl()): Promise<void> {
       newRos.on('close', () => {
         setStatus('disconnected');
         resolve();
-        if (wantConnected) {
+        // Реконнект только при серверном разрыве, не при нашем close().
+        if (wantConnected && !intentionalClose) {
           scheduleReconnect();
         }
       });
@@ -112,9 +128,15 @@ export function initROS(url: string = getRosbridgeUrl()): Promise<void> {
 
 /**
  * Регистрирует колбэк статуса соединения (используется rosStore).
+ * Возвращает функцию снятия колбэка.
  */
-export function onStatus(cb: (status: RosStatus) => void): void {
+export function onStatus(cb: (status: RosStatus) => void): () => void {
   statusCb = cb;
+  return () => {
+    if (statusCb === cb) {
+      statusCb = null;
+    }
+  };
 }
 
 /**
@@ -122,6 +144,7 @@ export function onStatus(cb: (status: RosStatus) => void): void {
  */
 export function closeROS(): void {
   wantConnected = false;
+  intentionalClose = true;
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;

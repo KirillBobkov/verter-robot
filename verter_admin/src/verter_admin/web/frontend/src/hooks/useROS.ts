@@ -17,16 +17,16 @@ export function useROS(autoConnect: boolean = true) {
 
   useEffect(() => {
     // Проксируем статус из rosbridge (обновляется при реконнекте тоже).
-    rosbridge.onStatus((newStatus) => {
+    const offStatus = rosbridge.onStatus((newStatus) => {
       setStatus(newStatus);
     });
 
     if (!autoConnect) {
-      return;
+      return offStatus;
     }
 
     if (isConnectingRef.current) {
-      return;
+      return offStatus;
     }
     isConnectingRef.current = true;
 
@@ -43,6 +43,7 @@ export function useROS(autoConnect: boolean = true) {
     });
 
     return () => {
+      offStatus();
       rosbridge.closeROS();
       isConnectingRef.current = false;
     };
