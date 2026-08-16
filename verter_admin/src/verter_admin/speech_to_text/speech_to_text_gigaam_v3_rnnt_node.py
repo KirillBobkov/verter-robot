@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """
-ROS2 Speech-to-Text node using GigaAM v3 CTC INT8 model.
-Based on speech_to_text_node.py architecture.
+ROS2 Speech-to-Text node using GigaAM v3 RNN-Transducer (with punctuation) model.
+
+Модель: sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16
+        (encoder.int8.onnx + decoder.onnx + joiner.onnx + tokens.txt)
+В отличие от CTC-варианта, transducer с пунктуацией сам расставляет пробелы
+и знаки препинания — ручной greedy-декодер не нужен.
+Архитектура (VAD Silero → буферизация → распознавание → публикация в recognized_text)
+повторяет speech_to_text_sherpa_node.py, но с диалоговым режимом v3-ноды
+(is_active=False по умолчанию, TRANSIENT_LOCAL для speech_control).
 """
 
 import os
 import queue
 import threading
 import time
-from typing import Optional
 from collections import deque
+from typing import Optional
 from dataclasses import dataclass
 
 import rclpy
@@ -25,36 +32,37 @@ from std_msgs.msg import String, Bool
 
 @dataclass
 class SpeechToTextConfig:
-    """Конфигурация Speech-to-Text распознавателя GigaAM v3 CTC"""
-    MODEL_DIR: str = 'gigaam-v3-sherpa-onnx'
-    MODEL_NAME: str = 'gigaam_v3_ctc_int8.onnx'
-    TOKENS_NAME: str = 'gigaam_v3_ctc_tokens.txt'
+    """Конфигурация Speech-to-Text распознавателя GigaAM v3 RNNT (punct)"""
+    MODEL_DIR: str = 'sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16'
+    ENCODER_NAME: str = 'encoder.int8.onnx'
+    DECODER_NAME: str = 'decoder.onnx'
+    JOINER_NAME: str = 'joiner.onnx'
+    TOKENS_NAME: str = 'tokens.txt'
     VAD_MODEL: str = 'silero_vad.onnx'
 
     SAMPLE_RATE: int = 16000
-    BLOCK_SIZE: int = 512  # 32ms - нативный размер для Silero VAD
+    BLOCK_SIZE: int = 512  # 32ms @ 16kHz - нативный размер для Silero VAD
     CHANNELS: int = 1
 
     VAD_THRESHOLD: float = 0.7
     SILENCE_DURATION: float = 0.7  # Секунд тишины для конца фразы
-    PRE_BUFFER_DURATION: float = 0.5  # Секунд предыстории
+    PRE_BUFFER_DURATION: float = 0.5  # Секунд предыстории (чтобы не глотать начало)
 
     NUM_THREADS: int = 4
-    FEATURE_DIM: int = 64  # GigaAM (v2/v3) обучена с 64 mel bins (ONNX input: [B, 64, T])
-    DECODING_METHOD: str = "greedy_search"
+    FEATURE_DIM: int = 64  # GigaAM (v2/v3) обучена с 64 mel bins (ONNX encoder input: [B, 64, T])
+    DECODING_METHOD: str = "greedy_search"  # или "modified_beam_search"
     PROVIDER: str = "cpu"
 
 
 # Константы
-VAD_INPUT_SIZE = SpeechToTextConfig.BLOCK_SIZE
 VAD_STATE_SIZE = 64
 
 
-class SpeechToTextGigaAMV3CTCNode(Node):
-    """ROS2 узел для преобразования речи в текст через GigaAM v3 CTC INT8"""
+class SpeechToTextGigaAMV3RNNTNode(Node):
+    """ROS2 узел для преобразования речи в текст через GigaAM v3 RNNT (punct)"""
 
     def __init__(self) -> None:
-        super().__init__('speech_to_text_gigaam_v3_ctc_node')
+        super().__init__('speech_to_text_gigaam_v3_rnnt_node')
 
         self.config = SpeechToTextConfig()
 
@@ -63,7 +71,8 @@ class SpeechToTextGigaAMV3CTCNode(Node):
         self.silence_chunks = int(self.config.SILENCE_DURATION / chunk_ms)
         self.pre_buffer_maxlen = int(self.config.PRE_BUFFER_DURATION / chunk_ms)
 
-        # Флаг активности. По умолчанию выключен (dialog-only kiosk)
+        # Флаг активности. По умолчанию выключен (dialog-only kiosk: STT
+        # включается только кнопкой «Начать» через speech_control=True).
         self.is_active = False
 
         # Потокобезопасность
@@ -77,7 +86,7 @@ class SpeechToTextGigaAMV3CTCNode(Node):
         self.is_speaking = False
         self.silence_counter = 0
 
-        # VAD состояния
+        # VAD состояния (h, c)
         self.vad_h = np.zeros((2, 1, VAD_STATE_SIZE), dtype=np.float32)
         self.vad_c = np.zeros((2, 1, VAD_STATE_SIZE), dtype=np.float32)
 
@@ -99,7 +108,8 @@ class SpeechToTextGigaAMV3CTCNode(Node):
 
     def _setup_ros_communication(self) -> None:
         self.recognized_text_pub = self.create_publisher(String, 'recognized_text', 10)
-        # TRANSIENT_LOCAL для получения последнего speech_control при подключении
+        # TRANSIENT_LOCAL (latched): получаем последнее speech_control от
+        # recognition_node при подключении — стартовое значение не теряется.
         speech_control_qos = QoSProfile(
             depth=10,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -109,44 +119,69 @@ class SpeechToTextGigaAMV3CTCNode(Node):
         self.create_subscription(Bool, 'tts_control', self._handle_activation, 10)
 
     def _log_startup_info(self) -> None:
-        self.get_logger().info(f"🎤 SpeechToTextGigaAMV3CTCNode (GigaAM v3 CTC - sherpa-onnx, {self.config.PROVIDER.upper()})")
-        self.get_logger().info(f"   Block size: {self.config.BLOCK_SIZE} (32ms)")
+        self.get_logger().info(
+            f"🎤 SpeechToTextGigaAMV3RNNTNode (GigaAM v3 RNNT punct - sherpa-onnx, {self.config.PROVIDER.upper()})"
+        )
+        self.get_logger().info(f"   Block size: {self.config.BLOCK_SIZE} ({self.config.BLOCK_SIZE / self.config.SAMPLE_RATE * 1000:.1f}ms)")
         self.get_logger().info(f"   VAD Threshold: {self.config.VAD_THRESHOLD}")
 
     def _setup_audio_system(self) -> None:
+        self.audio_device = self._find_audio_device()
+
+    def _find_audio_device(self) -> Optional[int]:
         devices = sd.query_devices()
         for i, device in enumerate(devices):
             if any(name in device['name'] for name in ['ReSpeaker', 'ArrayUAC10']):
                 if device['max_input_channels'] > 0:
-                    self.audio_device = i
                     self.get_logger().info(f"✓ ReSpeaker: {device['name']}")
-                    return
+                    return i
 
         # Fallback
-        self.audio_device = None
         for i in [1] + list(range(len(devices))):
-             if i < len(devices) and devices[i]['max_input_channels'] > 0:
-                self.audio_device = i
+            if i < len(devices) and devices[i]['max_input_channels'] > 0:
                 self.get_logger().info(f"✓ Device {i}: {devices[i]['name']}")
-                return
+                return i
+        return None
+
+    def _resolve_model_paths(self):
+        try:
+            share = get_package_share_directory('verter_admin')
+            model_dir = os.path.join(share, self.config.MODEL_DIR)
+            paths = {
+                'encoder': os.path.join(model_dir, self.config.ENCODER_NAME),
+                'decoder': os.path.join(model_dir, self.config.DECODER_NAME),
+                'joiner': os.path.join(model_dir, self.config.JOINER_NAME),
+                'tokens': os.path.join(model_dir, self.config.TOKENS_NAME),
+                'vad': os.path.join(share, self.config.VAD_MODEL),
+            }
+            if not all(os.path.exists(p) for p in paths.values()):
+                self.get_logger().error(f"Не найдены файлы моделей в {model_dir}")
+                return None
+            return paths
+        except Exception as e:
+            self.get_logger().error(f"Ошибка путей: {e}")
+            return None
 
     def _load_models(self) -> None:
-        asr_path, tokens_path, vad_path = self._resolve_model_paths()
-        if not all([asr_path, tokens_path, vad_path]):
+        paths = self._resolve_model_paths()
+        if not paths:
             raise RuntimeError("Models not found")
 
-        # ASR Recognizer (sherpa-onnx NeMo CTC: fbank + CMVN + CTC decode с расстановкой слов)
+        # ASR Recognizer (sherpa-onnx NeMo Transducer: fbank + CMVN + RNNT decode с пунктуацией)
         try:
-            self.recognizer = sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
-                model=asr_path,
-                tokens=tokens_path,
+            self.recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+                encoder=paths['encoder'],
+                decoder=paths['decoder'],
+                joiner=paths['joiner'],
+                tokens=paths['tokens'],
                 num_threads=self.config.NUM_THREADS,
                 sample_rate=self.config.SAMPLE_RATE,
                 feature_dim=self.config.FEATURE_DIM,
                 decoding_method=self.config.DECODING_METHOD,
                 provider=self.config.PROVIDER,
+                model_type="nemo_transducer",
             )
-            self.get_logger().info("✓ GigaAM v3 CTC (sherpa-onnx) loaded")
+            self.get_logger().info("✓ GigaAM v3 RNNT (sherpa-onnx) loaded")
         except Exception as e:
             self.get_logger().error(f"ASR Load Error: {e}")
             raise
@@ -154,21 +189,14 @@ class SpeechToTextGigaAMV3CTCNode(Node):
         # VAD Session (CPU usually best for small chunks latency)
         vad_opts = ort.SessionOptions()
         vad_opts.intra_op_num_threads = 1
-        self.vad_model = ort.InferenceSession(vad_path, sess_options=vad_opts, providers=['CPUExecutionProvider'])
+        vad_opts.inter_op_num_threads = 1
+        vad_opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        self.vad_model = ort.InferenceSession(
+            paths['vad'],
+            sess_options=vad_opts,
+            providers=['CPUExecutionProvider'],
+        )
         self.get_logger().info("✓ VAD loaded")
-
-    def _resolve_model_paths(self):
-        try:
-            share = get_package_share_directory('verter_admin')
-            base = os.path.join(share, self.config.MODEL_DIR)
-            paths = [
-                os.path.join(base, self.config.MODEL_NAME),
-                os.path.join(base, self.config.TOKENS_NAME),
-                os.path.join(share, self.config.VAD_MODEL)
-            ]
-            return tuple(paths) if all(os.path.exists(p) for p in paths) else (None, None, None)
-        except:
-            return None, None, None
 
     def _start_audio_capture(self) -> None:
         self.audio_thread = threading.Thread(target=self._audio_capture_loop, daemon=True)
@@ -188,8 +216,9 @@ class SpeechToTextGigaAMV3CTCNode(Node):
         except Exception as e:
             self.get_logger().error(f"Audio Error: {e}")
 
-    def _audio_callback(self, indata, frames, time, status):
-        if status: pass
+    def _audio_callback(self, indata, frames, time_info, status) -> None:
+        if status:
+            pass
         self.audio_queue.put(indata.copy())
 
     def _processing_loop(self) -> None:
@@ -206,7 +235,10 @@ class SpeechToTextGigaAMV3CTCNode(Node):
                 self.is_speaking = False
                 continue
 
-            self._process_chunk_logic(chunk)
+            try:
+                self._process_chunk_logic(chunk)
+            except Exception as e:
+                self.get_logger().error(f"Ошибка в цикле обработки: {e}")
 
     def _process_chunk_logic(self, chunk: np.ndarray) -> None:
         flat = chunk.flatten()
@@ -251,13 +283,14 @@ class SpeechToTextGigaAMV3CTCNode(Node):
         return float(outs[0][0][0])
 
     def _recognize_buffer(self) -> None:
-        if not self.audio_buffer: return
+        if not self.audio_buffer:
+            return
 
         try:
             t_start = time.time()
             full_audio = np.concatenate(self.audio_buffer)
 
-            # sherpa-onnx: принимает сырые float32 сэмплы, сам делает fbank + CMVN + CTC decode
+            # sherpa-onnx: принимает сырые float32 сэмплы, сам делает fbank + CMVN + RNNT decode
             stream = self.recognizer.create_stream()
             stream.accept_waveform(self.config.SAMPLE_RATE, full_audio)
             self.recognizer.decode_stream(stream)
@@ -273,11 +306,12 @@ class SpeechToTextGigaAMV3CTCNode(Node):
             self.get_logger().error(f"Recog Error: {e}")
 
     def _publish_text(self, text: str, duration: float = 0.0):
-        if not self.is_active: return
+        if not self.is_active:
+            return
         msg = String()
         msg.data = text
         self.recognized_text_pub.publish(msg)
-        self.get_logger().info(f"🎤 GigaAM v3 CTC ({duration:.3f}s): {text}")
+        self.get_logger().info(f"🎤 GigaAM v3 RNNT ({duration:.3f}s): {text}")
 
     def _handle_activation(self, msg: Bool):
         # is_active — bool, чтение/запись атомарны под GIL; lock не нужен.
@@ -285,17 +319,34 @@ class SpeechToTextGigaAMV3CTCNode(Node):
         status = "ON" if self.is_active else "OFF"
         self.get_logger().info(f"State: {status}")
 
+    def _cleanup_resources(self) -> None:
+        try:
+            sd.stop()
+        except Exception:
+            pass
+
+    def shutdown(self) -> None:
+        self.shutdown_event.set()
+        self._cleanup_resources()
+
+
 def main(args=None):
     rclpy.init(args=args)
     node = None
     try:
-        node = SpeechToTextGigaAMV3CTCNode()
+        node = SpeechToTextGigaAMV3RNNTNode()
         rclpy.spin(node)
-    except KeyboardInterrupt: pass
-    except Exception as e: print(f"Error: {e}")
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"Error: {e}")
     finally:
-        if node: node.destroy_node()
-        if rclpy.ok(): rclpy.shutdown()
+        if node:
+            node.shutdown()
+            node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()

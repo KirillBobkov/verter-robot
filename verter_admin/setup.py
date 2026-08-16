@@ -53,16 +53,24 @@ def get_gigaam_v3_model_files():
     gigaam_v3_dir = 'src/verter_admin/speech_to_text/gigaam-v3-sherpa-onnx'
 
     if os.path.isdir(gigaam_v3_dir):
-        # RNNT модель (transducer) - не работает с sherpa-onnx
-        # CTC модель - используем эту
-        files_to_copy = [
+        # CTC модель
+        ctc_files = [
             'gigaam_v3_ctc_int8.onnx',
             'gigaam_v3_ctc_tokens.txt',
         ]
-        for filename in files_to_copy:
+        for filename in ctc_files:
             src_path = os.path.join(gigaam_v3_dir, filename)
             if os.path.exists(src_path):
                 model_files.append(('share/verter_admin/gigaam-v3-sherpa-onnx', [src_path]))
+
+    # GigaAM v3 RNNT (transducer) с пунктуацией
+    gigaam_v3_rnnt_dir = 'src/verter_admin/speech_to_text/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16'
+    if os.path.isdir(gigaam_v3_rnnt_dir):
+        rnnt_files = ['encoder.int8.onnx', 'decoder.onnx', 'joiner.onnx', 'tokens.txt']
+        for filename in rnnt_files:
+            src_path = os.path.join(gigaam_v3_rnnt_dir, filename)
+            if os.path.exists(src_path):
+                model_files.append(('share/verter_admin/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16', [src_path]))
 
     return model_files
 
@@ -208,6 +216,7 @@ setup(
             'speech_to_text_sherpa_node = verter_admin.speech_to_text.speech_to_text_sherpa_node:main',
             'speech_to_text_parakeet_node = verter_admin.speech_to_text.speech_to_text_parakeet_node:main',
             'speech_to_text_gigaam_v3_ctc_node = verter_admin.speech_to_text.speech_to_text_gigaam_v3_ctc_node:main',
+            'speech_to_text_gigaam_v3_rnnt_node = verter_admin.speech_to_text.speech_to_text_gigaam_v3_rnnt_node:main',
             'recognition_node = verter_admin.recognition.recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',

@@ -32,13 +32,21 @@ def generate_launch_description():
 
         # === Голосовой пайплайн ===
 
-        # Speech-to-Text (GigaAM v3 CTC INT8 модель)
+        # Speech-to-Text (GigaAM v3 RNNT с пунктуацией — расставляет пробелы и знаки)
         Node(
             package='verter_admin',
-            executable='speech_to_text_gigaam_v3_ctc_node',
+            executable='speech_to_text_gigaam_v3_rnnt_node',
             name='speech_to_text_node',
             output='screen'
         ),
+
+        # # Speech-to-Text (GigaAM v3 CTC INT8 модель)
+        # Node(
+        #     package='verter_admin',
+        #     executable='speech_to_text_gigaam_v3_ctc_node',
+        #     name='speech_to_text_node',
+        #     output='screen'
+        # ),
 
         # # Speech-to-Text (CTC модель)
         # Node(
