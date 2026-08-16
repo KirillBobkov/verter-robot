@@ -32,13 +32,21 @@ def generate_launch_description():
 
         # === Голосовой пайплайн ===
 
-        # Speech-to-Text (CTC модель)
+        # Speech-to-Text (GigaAM v3 CTC INT8 модель)
         Node(
             package='verter_admin',
-            executable='speech_to_text_node',
+            executable='speech_to_text_gigaam_v3_ctc_node',
             name='speech_to_text_node',
             output='screen'
         ),
+
+        # # Speech-to-Text (CTC модель)
+        # Node(
+        #     package='verter_admin',
+        #     executable='speech_to_text_node',
+        #     name='speech_to_text_node',
+        #     output='screen'
+        # ),
 
         # FSM обработки распознанной речи (триггер-слова, команды)
         Node(

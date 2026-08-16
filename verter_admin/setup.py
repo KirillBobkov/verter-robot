@@ -47,6 +47,25 @@ def get_sherpa_model_files():
     
     return model_files
 
+def get_gigaam_v3_model_files():
+    """Функция для копирования моделей GigaAM v3 в правильное место"""
+    model_files = []
+    gigaam_v3_dir = 'src/verter_admin/speech_to_text/gigaam-v3-sherpa-onnx'
+
+    if os.path.isdir(gigaam_v3_dir):
+        # RNNT модель (transducer) - не работает с sherpa-onnx
+        # CTC модель - используем эту
+        files_to_copy = [
+            'gigaam_v3_ctc_int8.onnx',
+            'gigaam_v3_ctc_tokens.txt',
+        ]
+        for filename in files_to_copy:
+            src_path = os.path.join(gigaam_v3_dir, filename)
+            if os.path.exists(src_path):
+                model_files.append(('share/verter_admin/gigaam-v3-sherpa-onnx', [src_path]))
+
+    return model_files
+
 def get_dataset_files():
     """Специальная функция для копирования dataset в правильное место"""
     dataset_files = []
@@ -152,6 +171,8 @@ setup(
         *get_dataset_files(),
         # Включаем модели Sherpa-ONNX в пакет
         *get_sherpa_model_files(),
+        # Включаем модель GigaAM v3 RNNT INT8 в пакет
+        *get_gigaam_v3_model_files(),
         # Включаем TTS модели в пакет
         *get_tts_model_files(),
         # Включаем звуковые файлы в пакет
@@ -186,6 +207,7 @@ setup(
             'speech_to_text_transducer_node = verter_admin.speech_to_text.speech_to_text_transducer_node:main',
             'speech_to_text_sherpa_node = verter_admin.speech_to_text.speech_to_text_sherpa_node:main',
             'speech_to_text_parakeet_node = verter_admin.speech_to_text.speech_to_text_parakeet_node:main',
+            'speech_to_text_gigaam_v3_ctc_node = verter_admin.speech_to_text.speech_to_text_gigaam_v3_ctc_node:main',
             'recognition_node = verter_admin.recognition.recognition_node:main',
             'ai_assistant_node = verter_admin.ai_assistant.ai_assistant_node:main',
             'text_to_speech_node = verter_admin.text_to_speech.text_to_speech_node:main',
