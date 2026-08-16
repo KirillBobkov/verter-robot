@@ -289,6 +289,7 @@ class SpeechToTextGigaAMV3RNNTNode(Node):
         try:
             t_start = time.time()
             full_audio = np.concatenate(self.audio_buffer)
+            audio_duration = len(full_audio) / self.config.SAMPLE_RATE
 
             # sherpa-onnx: принимает сырые float32 сэмплы, сам делает fbank + CMVN + RNNT decode
             stream = self.recognizer.create_stream()
@@ -296,22 +297,26 @@ class SpeechToTextGigaAMV3RNNTNode(Node):
             self.recognizer.decode_stream(stream)
             text = stream.result.text.strip()
 
-            duration = time.time() - t_start
+            processing_time = time.time() - t_start
+            rtf = processing_time / audio_duration if audio_duration > 0 else 0
+            char_rate = len(text) / processing_time if processing_time > 0 else 0
 
             # Фильтр мусора: отсекаем однобуквенные «плевки» от ложных VAD-срабатываний
             if text and len(text) >= 2:
-                self._publish_text(text, duration)
+                self._publish_text(text, processing_time, audio_duration, rtf, char_rate)
 
         except Exception as e:
             self.get_logger().error(f"Recog Error: {e}")
 
-    def _publish_text(self, text: str, duration: float = 0.0):
+    def _publish_text(self, text: str, proc_time: float = 0.0, audio_dur: float = 0.0, rtf: float = 0.0, char_rate: float = 0.0):
         if not self.is_active:
             return
         msg = String()
         msg.data = text
         self.recognized_text_pub.publish(msg)
-        self.get_logger().info(f"🎤 GigaAM v3 RNNT ({duration:.3f}s): {text}")
+        self.get_logger().info(
+            f"🎤 GigaAM v3 RNNT | {text} | RTF={rtf:.3f} | audio={audio_dur:.2f}s | proc={proc_time:.3f}s | {char_rate:.0f} char/s"
+        )
 
     def _handle_activation(self, msg: Bool):
         # is_active — bool, чтение/запись атомарны под GIL; lock не нужен.
