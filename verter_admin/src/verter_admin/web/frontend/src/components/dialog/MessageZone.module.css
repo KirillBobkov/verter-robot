@@ -39,8 +39,7 @@
 
 .bubble {
   position: relative;
-  width: 70vw;
-  max-width: 70vw;
+  width: 100%;
   background: var(--card-bg-color);
   border-radius: var(--radius-xl);
   padding: 2rem 2.25rem;
@@ -84,12 +83,12 @@
   animation: mzFadeOut var(--transition-slow) both;
 }
 
-/* AI (answer/welcome/farewell/speaking) — лаймовый тинт. */
+/* AI (answer/welcome/farewell/speaking) — белый фон. */
 .bubble[data-role="answer"],
 .bubble[data-role="welcome"],
 .bubble[data-role="farewell"],
 .bubble[data-role="speaking"] {
-  background: color-mix(in srgb, var(--accent) 18%, var(--card-bg-color));
+  background: #ffffff;
 }
 
 /* Пользователь (question) — нейтральный. */
@@ -102,9 +101,9 @@
   background: var(--card-bg-color);
 }
 
-/* Слушание (listening) — лаймовый тинт (приглашение от робота). */
+/* Слушание (listening) — белый фон (приглашение от робота). */
 .bubble[data-role="listening"] {
-  background: color-mix(in srgb, var(--accent) 18%, var(--card-bg-color));
+  background: #ffffff;
 }
 
 /* Ошибка — красный тинт. */
@@ -126,11 +125,16 @@
 .bubble[data-role="welcome"]::before,
 .bubble[data-role="farewell"]::before,
 .bubble[data-role="speaking"]::before,
-.bubble[data-role="thinking"]::before,
 .bubble[data-role="listening"]::before {
   left: -14px;
   border-width: 0 14px 14px 0;
-  border-color: transparent color-mix(in srgb, var(--accent) 18%, var(--card-bg-color)) transparent transparent;
+  border-color: transparent #ffffff transparent transparent;
+}
+
+.bubble[data-role="thinking"]::before {
+  left: -14px;
+  border-width: 0 14px 14px 0;
+  border-color: transparent var(--card-bg-color) transparent transparent;
 }
 
 .bubble[data-role="error"]::before {
@@ -147,7 +151,7 @@
 
 /* Подпись роли над текстом. */
 .label {
-  font-size: 0.9375rem;
+  font-size: 1.21875rem;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -170,13 +174,15 @@
  * line-height уменьшен на 50% от прежнего (был 1.5). */
 .message {
   margin: 0;
-  font-size: clamp(0.9rem, 5.5cqh, var(--dialog-font-size));
+  font-size: clamp(1.1rem, 6cqh, var(--dialog-font-size));
   line-height: calc(var(--dialog-line-height) * 0.75);
   font-weight: 600;
   color: var(--font-color);
   text-align: left;
   overflow-wrap: break-word;
   word-break: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
 }
 
 .message[data-role="error"] {

@@ -123,3 +123,17 @@ input, textarea, select {
 @media (max-height: 800px) {
   html { font-size: 18px; }
 }
+
+/* ========== Скрытие скроллбаров ========== */
+/* WebKit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+  background: transparent;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}

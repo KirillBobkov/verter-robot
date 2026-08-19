@@ -12,26 +12,29 @@
   overflow: hidden;
   padding: 2vh 2vw;
   box-sizing: border-box;
-  background: var(--bg-color);
+  background: linear-gradient(135deg, #9d4edd 0%, #06ffc8 100%);
 }
 
 /* Stage: робот + облачко. Всегда развёрнут. */
 .stage {
-  flex: 1 1 auto;
+  flex: 1 1 100%;
   width: 100%;
+  max-width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3vw;
-  padding: 0 1vw;
+  gap: 50px;
+  padding: 0;
   min-height: 0;
 }
 
 .avatarCol {
-  flex: 0 0 20vw;
   /* stretch: колонка получает высоту stage, чтобы max-height аватара
      (вертикальный риг 500×680) корректно ограничивал высоту. */
   align-self: stretch;
+  flex-grow: 1;
+  flex-basis: 25%;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,12 +44,10 @@
 }
 
 .messageCol {
-  /* stretch: как .avatarCol, колонка получает высоту stage, чтобы
-     .zone { max-height: 100% } и container-type: size видели реальную
-     доступную высоту для масштабирования текста. Без этого высота
-     messageCol равна контенту и переполнение не фиксируется. */
+  /* stretch: колонка получает всю высоту stage для максимального
+     размера облачка. */
   align-self: stretch;
-  flex: 0 1 70vw;
+  width: 100%;
   min-width: 0;
   min-height: 0;
   display: flex;

@@ -20,9 +20,9 @@
   --danger-color: #ffffff;
 
   /* Диалог: типографика и сенсорные цели (10", слабовидящие) */
-  --dialog-font-size: clamp(1.75rem, 4.2vw, 3rem);
+  --dialog-font-size: clamp(2.175rem, 5.46vw, 3.5rem);
   --dialog-line-height: 1.5;
-  --button-min-height: 72px;
+  --button-min-height: 100px;
   --button-font-size: clamp(1.375rem, 2.4vw, 1.875rem);
   --avatar-size: clamp(8rem, 18vw, 14rem);
 
@@ -85,12 +85,12 @@
 
   /* ========== Border Radius ========== */
   --radius-none: 0;
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-2xl: 28px;
+  --radius-xs: 8px;
+  --radius-sm: 16px;
+  --radius-md: 24px;
+  --radius-lg: 32px;
+  --radius-xl: 40px;
+  --radius-2xl: 56px;
   --radius-full: 9999px;
 
   /* ========== Shadows ========== */

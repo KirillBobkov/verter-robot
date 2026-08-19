@@ -92,17 +92,16 @@ export default function DialogPage() {
       <section className={styles.stage}>
         <div className={styles.avatarCol}>
           <RobotAvatar status={status} />
+          <DialogControls
+            isDialogActive={isDialogActive}
+            onStart={startDialog}
+            onStop={stopDialog}
+          />
         </div>
         <div className={styles.messageCol}>
           <MessageZone message={view.message} subMessage={view.subMessage} />
         </div>
       </section>
-
-      <DialogControls
-        isDialogActive={isDialogActive}
-        onStart={startDialog}
-        onStop={stopDialog}
-      />
     </main>
   );
 }
