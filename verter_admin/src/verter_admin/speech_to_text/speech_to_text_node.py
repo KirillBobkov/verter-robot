@@ -359,7 +359,7 @@ class SpeechToTextNode(Node):
 
     def _handle_activation(self, msg: Bool):
         # is_active — bool, чтение/запись атомарны под GIL; lock не нужен.
-        self.is_active = True
+        self.is_active = msg.data
         status = "ON" if msg.data else "OFF"
         self.get_logger().info(f"State: {status}")
 

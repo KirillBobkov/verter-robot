@@ -10,9 +10,13 @@ iarduino_Position_BMX055 sensorG(BMG);  // Гироскоп
 iarduino_Position_BMX055 sensorM(BMM);  // Магнитометр (для логирования)
 
 // Bias гироскопа
+float raw_bias_x[GYRO_CALIBRATION_SAMPLES]{};
+float raw_bias_y[GYRO_CALIBRATION_SAMPLES]{};
+float raw_bias_z[GYRO_CALIBRATION_SAMPLES]{};
 float gyroBiasX = 0.0f;
 float gyroBiasY = 0.0f;
 float gyroBiasZ = 0.0f;
+uint bias_idx = 0;
 
 
 void imuTask(void *context) {
@@ -40,18 +44,19 @@ void imuTask(void *context) {
     // Калибровка делается вручную после оценки помех
 
     // Программная калибровка гироскопа
-    float sumX = 0.0, sumY = 0.0, sumZ = 0.0;
     for (int i = 0; i < GYRO_CALIBRATION_SAMPLES; i++) {
         sensorG.read(BMG_RAD_S);
-        sumX += sensorG.axisX;
-        sumY += sensorG.axisY;
-        sumZ += sensorG.axisZ;
+        float x = sensorG.axisX / (float)GYRO_CALIBRATION_SAMPLES;
+        float y = sensorG.axisY / (float)GYRO_CALIBRATION_SAMPLES;
+        float z = sensorG.axisZ / (float)GYRO_CALIBRATION_SAMPLES;
+        raw_bias_x[i] = x;
+        raw_bias_y[i] = y;
+        raw_bias_z[i] = z;
+        gyroBiasX += x;
+        gyroBiasY += y;
+        gyroBiasZ += z;
         delay(GYRO_CALIBRATION_DELAY_MS);
     }
-
-    gyroBiasX = sumX / GYRO_CALIBRATION_SAMPLES;
-    gyroBiasY = sumY / GYRO_CALIBRATION_SAMPLES;
-    gyroBiasZ = sumZ / GYRO_CALIBRATION_SAMPLES;
 
     float gyroFilteredX = 0.0f;
     float gyroFilteredY = 0.0f;
@@ -94,6 +99,28 @@ void imuTask(void *context) {
 
             if (state.agent_is_connected.load()) {
                 xQueueSend(rosQueue, &message, portMAX_DELAY);
+
+                //Выполняем калибровку если привод без движения
+                if (!state.is_motion.load()) {
+                    float old_x = raw_bias_x[bias_idx];
+                    float old_y = raw_bias_y[bias_idx];
+                    float old_z = raw_bias_z[bias_idx];
+
+                    float x = sensorG.axisX / (float)GYRO_CALIBRATION_SAMPLES;
+                    float y = sensorG.axisY / (float)GYRO_CALIBRATION_SAMPLES;
+                    float z = sensorG.axisZ / (float)GYRO_CALIBRATION_SAMPLES;
+
+                    raw_bias_x[bias_idx] = x;
+                    raw_bias_y[bias_idx] = y;
+                    raw_bias_z[bias_idx] = z;
+
+                    gyroBiasX = gyroBiasX + x - old_x;
+                    gyroBiasY = gyroBiasY + y - old_y;
+                    gyroBiasZ = gyroBiasZ + z - old_z;
+
+                    bias_idx++;
+                    bias_idx %= GYRO_CALIBRATION_SAMPLES;
+                }
             }
         }
 
@@ -114,7 +141,6 @@ void imuTask(void *context) {
                 xQueueSend(rosQueue, &message, portMAX_DELAY);
             }
         }
-        
 
         delay(1);
     }

@@ -39,6 +39,11 @@ def generate_launch_description():
         description='Extra args for micro_ros_agent (e.g. -v6 for verbose log)',
     )
 
+    web_port_arg = DeclareLaunchArgument(
+        'web_port', default_value='8081',
+        description='Port for web UI server',
+    )
+
     chassis_config = os.path.join(
         get_package_share_directory("verter_admin"),
         "chassis",
@@ -100,48 +105,28 @@ def generate_launch_description():
 
     return LaunchDescription([
         # Переменные окружения для Yandex Cloud
-        SetEnvironmentVariable('YANDEX_CLOUD_FOLDER', 'b1gil2sh31nu8fjsop38'),
+        SetEnvironmentVariable('YANDEX_CLOUD_FOLDER', ''),
         SetEnvironmentVariable('YANDEX_CLOUD_API_KEY', ''),
         SetEnvironmentVariable('YANDEX_CLOUD_MODEL', 'yandexgpt'),
 
         #Узел esp32_sensors
         esp32_imu_port_arg,
         extra_args_arg,
+        web_port_arg,
         micro_ros_sensors,
 
         #Узел для управления через ble модуль в ESP32
         esp32_ctrl_port_arg,
         micro_ros_ctrl,
 
-        # # Узел Speech-to-Text (низкоуровневый)
+        # Speech-to-Text (GigaAM v3 RNNT с пунктуацией — расставляет пробелы и знаки)
         Node(
             package='verter_admin',
-            executable='speech_to_text_node',
+            executable='speech_to_text_gigaam_v3_rnnt_node',
             name='speech_to_text_node',
             output='screen'
         ),
 
-        # Node(
-        #     package='verter_admin',
-        #     executable='speech_to_text_transducer_node',
-        #     name='speech_to_text_transducer_node',
-        #     output='screen'
-        # ),
-
-        # Node(
-        #     package='verter_admin',
-        #     executable='speech_to_text_sherpa_node',
-        #     name='speech_to_text_sherpa_node',
-        #     output='screen'
-        # ),
-
-        # Node(
-        #     package='verter_admin',
-        #     executable='speech_to_text_parakeet_node',
-        #     name='speech_to_text_parakeet_node',
-        #     output='screen'
-        # ),
-        
         # Узел обработки распознанной речи (высокоуровневый)
         Node(
             package='verter_admin',
@@ -157,8 +142,8 @@ def generate_launch_description():
             name='ai_assistant_node',
             output='screen'
         ),
-        
-        # Узел синтеза речи (Piper)
+
+        # # Узел синтеза речи (Piper)
         # Node(
         #     package='verter_admin',
         #     executable='text_to_speech_node',
@@ -168,7 +153,7 @@ def generate_launch_description():
         #         'audio_device': 'pulse'  # Использует default sink PulseAudio
         #     }]
         # ),
-        
+
         # Узел синтеза речи (Silero TTS)
         Node(
             package='verter_admin',
@@ -284,13 +269,13 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Web-сервер статики фронтенда (порт 8080).
+        # Web-сервер статики фронтенда.
         Node(
             package='verter_admin',
             executable='web_server_node',
             name='web_server_node',
             parameters=[{
-                'port': 8080,
+                'port': LaunchConfiguration('web_port'),
             }],
             output='screen',
         ),

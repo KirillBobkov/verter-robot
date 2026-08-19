@@ -1,16 +1,18 @@
 [Unit]
-Description=Verter Kiosk (Chromium fullscreen dialog UI)
+Description=Verter Firefox Kiosk (Fullscreen UI)
 After=graphical-session.target verter-admin.service
+Requires=verter-admin.service
 Wants=graphical-session.target
 
 [Service]
 Type=simple
 Environment="DISPLAY=:0"
 Environment="XDG_RUNTIME_DIR=/run/user/%U"
-ExecStartPre=/bin/sleep 5
-ExecStart=%h/verter-robot/verter_admin/services/start_kiosk.sh
-Restart=always
-RestartSec=10
+ExecStartPre=/bin/sleep 10
+ExecStart=/home/jetson/verter-robot/verter_admin/services/start_kiosk.sh
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=180
 
 [Install]
 WantedBy=default.target

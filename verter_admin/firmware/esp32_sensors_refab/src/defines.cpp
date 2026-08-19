@@ -47,3 +47,17 @@ void mag_states_init() {
         mag_raw.data.data[i] = 0.0f;
     }
 }
+
+void cma_del_state_init() {
+    
+}
+
+void cmd_vel_callback(const void * msgin) {
+    const geometry_msgs__msg__Twist * msg =(const geometry_msgs__msg__Twist *)msgin;
+
+    float cmd_linear = msg->linear.x;
+    float cmd_angular = msg->angular.z;
+
+    bool moving = fabsf(cmd_linear) > LINEAR_EPS || fabsf(cmd_angular) > ANGULAR_EPS;
+    state.is_motion.store(moving);
+}

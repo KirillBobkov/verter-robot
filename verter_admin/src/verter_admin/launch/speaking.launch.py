@@ -6,8 +6,9 @@ Launch файл для голосового пайплайна Verter.
 """
 
 from launch import LaunchDescription
-from launch.actions import SetEnvironmentVariable
+from launch.actions import SetEnvironmentVariable, DeclareLaunchArgument
 from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration
 from ament_index_python.packages import get_package_share_directory
 
 import os
@@ -18,6 +19,11 @@ def generate_launch_description():
 
     pkg = get_package_share_directory('verter_admin')
 
+    web_port_arg = DeclareLaunchArgument(
+        'web_port', default_value='8081',
+        description='Port for web UI server',
+    )
+
     ekf_config = os.path.join(pkg, 'config', 'robot_localization', 'ekf.yaml')
     urdf_file = os.path.join(pkg, 'urdf', 'verter_robot_minimal.urdf')
 
@@ -25,6 +31,8 @@ def generate_launch_description():
         robot_description = f.read()
 
     return LaunchDescription([
+        web_port_arg,
+
         # === Переменные окружения для Yandex Cloud ===
         SetEnvironmentVariable('YANDEX_CLOUD_FOLDER', ''),
         SetEnvironmentVariable('YANDEX_CLOUD_API_KEY', ''),
@@ -124,13 +132,13 @@ def generate_launch_description():
             output='screen',
         ),
 
-        # Web-сервер статики (порт 8080)
+        # Web-сервер статики
         Node(
             package='verter_admin',
             executable='web_server_node',
             name='web_server_node',
             parameters=[{
-                'port': 8080,
+                'port': LaunchConfiguration('web_port'),
             }],
             output='screen',
         ),

@@ -93,9 +93,16 @@ class SileroTTSNode(Node):
             self.get_logger().info(f"Загрузка локальной модели: {self.model_path}")
             start_load = time.time()
 
-            # Загрузка локальной модели из .pt файла (как в примере с локальной моделью)
-            importer = torch.package.PackageImporter(self.model_path)
-            self.model = importer.load_pickle("tts_models", "model")
+            # Загрузка локальной модели из .pt файла
+            # Пробуем torch.load для обычных чекпоинтов
+            try:
+                self.model = torch.load(self.model_path, map_location='cpu')
+                self.get_logger().info("Загружено через torch.load (checkpoint)")
+            except Exception as checkpoint_error:
+                # Fallback на torch.package для zip-архивов
+                self.get_logger().warning(f"torch.load failed: {checkpoint_error}, пробуем torch.package...")
+                importer = torch.package.PackageImporter(self.model_path)
+                self.model = importer.load_pickle("tts_models", "model")
 
             load_time = time.time() - start_load
             self.get_logger().info(f"✓ Модель Silero загружена за {load_time:.2f} сек")
