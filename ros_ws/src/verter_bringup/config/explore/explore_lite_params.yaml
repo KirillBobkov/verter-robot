@@ -1,0 +1,26 @@
+# Migrated values; see docs/KNOWN_LIMITATIONS.md before hardware use.
+
+explore:
+  ros__parameters:
+    use_sim_time: True
+
+    robot_base_frame: base_link
+    costmap_topic: /global_costmap/costmap
+    costmap_updates_topic: /global_costmap/costmap_updates
+    visualize: True # Публикует маркеры для визуализации границ в RViz
+
+    min_frontier_size: 0.2
+
+    planner_frequency: 1.0 # Чаще проверяет новые frontiers
+
+    progress_timeout: 30.0 # Быстрое переключение на другие frontiers
+
+    goal_dist_tolerance: 0.2
+
+    potential_scale: 0.0005
+
+    orientation_scale: 0.0 # 0 = не учитывать ориентацию
+
+    gain_scale: 3.0
+
+    transform_tolerance: 0.5

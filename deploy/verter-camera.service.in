@@ -1,0 +1,16 @@
+[Unit]
+Description=Verter Gemini RGB-D ROS and WebRTC camera
+After=network-online.target verter-nats.service
+Wants=verter-nats.service
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=/bin/bash @ROOT@/tools/start-camera.sh
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+Environment=ROS_DOMAIN_ID=0
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Verter · Лидар</title>
+        <link rel="stylesheet" href="/static/lidar.css" /><link
+            rel="stylesheet"
+            href="/static/drive-widget.css"
+        /><script src="/static/drive-widget.js" defer></script>
+        <script src="/static/lidar.js" defer></script>
+    </head>
+    <body>
+        <header class="sensor-header">
+            <div><span class="eyebrow">VERTER / LIDAR</span><h1>Пространство вокруг робота</h1></div>
+            <div id="drive-widget"></div>
+            <span id="connection" role="status">Подключение…</span>
+        </header>
+        <main>
+            <section class="toolbar">
+                <label
+                    >Радиус обзора
+                    <select id="radius"
+                        ><option value="1">1 м</option
+                        ><option value="2">2 м</option
+                        ><option value="3" selected>3 м</option
+                        ><option value="5">5 м</option
+                        ><option value="10">10 м</option
+                        ><option value="20">20 м</option></select
+                    ></label
+                >
+                <span><i class="dot"></i> Точки /scan</span><span><i class="body-dot"></i> Корпус и колёса</span>
+                <span id="stats">Ожидание скана</span>
+            </section>
+            <section class="viewport"
+                ><canvas id="scan" aria-label="Вид сверху: робот и точки лидара"></canvas
+                ><div id="notice" role="status">Ожидание данных NATS…</div></section
+            >
+            <footer
+                ><span>Вперёд ↑ · влево ← · метры · base_footprint</span
+                ><span>Текущий скан, без накопления карты. Контур — проекция collision из URDF.</span></footer
+            >
+        </main>
+    </body>
+</html>

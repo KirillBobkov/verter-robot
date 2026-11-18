@@ -1,0 +1,40 @@
+{
+  "v": 1,
+  "domain": "camera",
+  "robot_id": "verter_01",
+  "media_transport": "webrtc",
+  "signaling_transport": "nats_core_request_reply",
+  "document": "CAMERA_API_V1.md",
+  "commands": {
+    "status": { "subject": "verter_01.camera.command.status", "action": "camera.status" },
+    "ice": { "subject": "verter_01.camera.command.ice", "action": "camera.ice" },
+    "offer": { "subject": "verter_01.camera.command.offer", "action": "camera.offer" },
+    "close": { "subject": "verter_01.camera.command.close", "action": "camera.close" }
+  },
+  "metrics": {
+    "state": { "subject": "verter_01.camera.update.state", "kv_key": "camera.state", "max_age_s": 6 },
+    "stale": { "subject": "verter_01.camera.update.stale", "kv_key": "camera.stale", "max_age_s": 6 },
+    "sessions": { "subject": "verter_01.camera.update.sessions", "kv_key": "camera.sessions", "max_age_s": 6 },
+    "device": { "subject": "verter_01.camera.update.device", "kv_key": "camera.device", "max_age_s": 6 },
+    "color_age": { "subject": "verter_01.camera.update.color_age", "kv_key": "camera.color_age", "max_age_s": 6 },
+    "depth_age": { "subject": "verter_01.camera.update.depth_age", "kv_key": "camera.depth_age", "max_age_s": 6 }
+  },
+  "ros_topics": {
+    "/camera/color/image_raw": "sensor_msgs/msg/Image",
+    "/camera/color/camera_info": "sensor_msgs/msg/CameraInfo",
+    "/camera/depth/image_raw": "sensor_msgs/msg/Image",
+    "/camera/depth/camera_info": "sensor_msgs/msg/CameraInfo"
+  },
+  "http_media": {
+    "method": "GET",
+    "path": "/api/camera/mjpeg",
+    "query": { "stream": ["color", "depth"] },
+    "content_type": "multipart/x-mixed-replace; boundary=frame",
+    "fps_max": 5,
+    "jpeg_quality": 75,
+    "max_viewers": 2,
+    "max_duration_s": 1800,
+    "errors": [400, 403, 429, 503],
+    "nats_media": false
+  }
+}

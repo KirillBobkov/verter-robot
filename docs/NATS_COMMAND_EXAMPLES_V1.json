@@ -1,0 +1,180 @@
+{
+  "description": "Static documentation only. Historical timestamps are expired. Do not replay; create new UUID/time for each intentional request. Mode changes require an explicit operator action; the response acknowledges an asynchronous supervisor operation.",
+  "examples": [
+    {
+      "subject": "verter_01.service.command.ping",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000001",
+        "issued_at": 1790856000.125,
+        "ttl_s": 30,
+        "args": {}
+      }
+    },
+    {
+      "subject": "verter_01.service.command.schema_get",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000002",
+        "issued_at": 1790856000.125,
+        "ttl_s": 30,
+        "args": {}
+      }
+    },
+    {
+      "subject": "verter_01.service.command.state_get",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000003",
+        "issued_at": 1790856000.125,
+        "ttl_s": 30,
+        "args": {}
+      }
+    },
+    {
+      "subject": "verter_01.service.command.metrics_get",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000004",
+        "issued_at": 1790856000.125,
+        "ttl_s": 30,
+        "args": {}
+      }
+    },
+    {
+      "subject": "verter_01.service.command.note_set",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000005",
+        "issued_at": 1790856000.125,
+        "ttl_s": 30,
+        "args": {
+          "note": "РџСЂРѕРІРµСЂРєР° Р±Р°С‚Р°СЂРµРё"
+        }
+      }
+    },
+    {
+      "subject": "verter_01.service.command.mode_set",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000006",
+        "issued_at": 1790856000.125,
+        "ttl_s": 30,
+        "args": {
+          "mode": "navigation",
+          "map": "dtest_map",
+          "discard": false
+        }
+      }
+    },
+    {
+      "subject": "verter_01.cmd_vel.command.status",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000007",
+        "issued_at": 1790856000.125,
+        "ttl_s": 1,
+        "args": {}
+      }
+    },
+    {
+      "subject": "verter_01.cmd_vel.command.set",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000008",
+        "issued_at": 1790856000.125,
+        "ttl_s": 1,
+        "args": {
+          "session_id": "c04f92f4-94aa-441c-a820-031d3e29c2df",
+          "seq": 1,
+          "linear_x": 0.01,
+          "angular_z": -0.05
+        }
+      }
+    },
+    {
+      "subject": "verter_01.cmd_vel.command.keepalive",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000009",
+        "issued_at": 1790856000.125,
+        "ttl_s": 1,
+        "args": {
+          "session_id": "c04f92f4-94aa-441c-a820-031d3e29c2df",
+          "seq": 2
+        }
+      }
+    },
+    {
+      "subject": "verter_01.cmd_vel.command.stop",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000010",
+        "issued_at": 1790856000.125,
+        "ttl_s": 1,
+        "args": {}
+      }
+    },
+    {
+      "subject": "verter_01.map.command.get",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000101",
+        "issued_at": 1793001600,
+        "ttl_s": 30,
+        "args": {
+          "part": "scan"
+        }
+      }
+    },
+    {
+      "subject": "verter_01.map.command.save",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000102",
+        "issued_at": 1793001600,
+        "ttl_s": 30,
+        "args": {
+          "name": "floor_1"
+        }
+      }
+    },
+    {
+      "subject": "verter_01.map.command.get",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000103",
+        "issued_at": 1793001600,
+        "ttl_s": 30,
+        "args": {
+          "part": "save_status"
+        }
+      }
+    },
+    {
+      "subject": "verter_01.map.command.get",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000104",
+        "issued_at": 1793001600,
+        "ttl_s": 30,
+        "args": {
+          "part": "saved_metadata",
+          "name": "floor_1"
+        }
+      }
+    },
+    {
+      "subject": "verter_01.map.command.delete",
+      "request": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-000000000105",
+        "issued_at": 1793001600,
+        "ttl_s": 30,
+        "args": {
+          "name": "floor_1"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+diff --git a/src/slam_toolbox_common.cpp b/src/slam_toolbox_common.cpp
+index 77ac6b1..46c403d 100644
+--- a/src/slam_toolbox_common.cpp
++++ b/src/slam_toolbox_common.cpp
+@@ -21,6 +21,7 @@
+ #include <string>
+ #include <chrono>
+ #include "slam_toolbox/slam_toolbox_common.hpp"
++#include "slam_toolbox/motion_gate.hpp"
+ #include "slam_toolbox/serialization.hpp"
+ 
+ namespace slam_toolbox
+@@ -535,9 +536,13 @@ bool SlamToolbox::shouldProcessScan(
+     return false;
+   }
+ 
+-  // check moved enough, within 10% for correction error
++  // Keep scans after enough translation OR rotation, using the shortest angle.
+   const double dist2 = last_pose.SquaredDistance(pose);
+-  if (dist2 < 0.8 * min_dist2 || scan_ctr < 5) {
++  const double heading_delta = pose.GetHeading() - last_pose.GetHeading();
++  // Karto's public getter returns degrees; poses and the configured threshold use radians.
++  const double min_heading = karto::math::DegreesToRadians(
++    smapper_->getMapper()->getParamMinimumTravelHeading());
++  if (!hasMovedEnough(dist2, heading_delta, min_dist2, min_heading) || scan_ctr < 5) {
+     return false;
+   }
+ 
+--- /dev/null
++++ b/include/slam_toolbox/motion_gate.hpp
+@@ -0,0 +1,17 @@
++// Test candidate: keep scans after sufficient translation OR rotation.
++#ifndef SLAM_TOOLBOX__MOTION_GATE_HPP_
++#define SLAM_TOOLBOX__MOTION_GATE_HPP_
++
++#include <cmath>
++
++namespace slam_toolbox
++{
++inline bool hasMovedEnough(
++  double squared_distance, double heading_delta,
++  double minimum_squared_distance, double minimum_heading)
++{
++  const double heading = std::abs(std::atan2(std::sin(heading_delta), std::cos(heading_delta)));
++  return squared_distance >= minimum_squared_distance || heading >= minimum_heading;
++}
++}  // namespace slam_toolbox
++#endif

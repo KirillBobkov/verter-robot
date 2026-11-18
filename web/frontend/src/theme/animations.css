@@ -1,0 +1,43 @@
+/**
+ * CSS Animations — диалоговый kiosk.
+ * Универсальные: fadeIn, wave (для ListeningIndicator).
+ * Сообщения: fadeDown (появление облачка).
+ * Анимации аватара робота живут в RobotAvatar.module.css (самодостаточный
+ * модуль: keyframes + селекторы по [data-avatar]).
+ */
+
+/* ============ Универсальные ============ */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+/* Индикатор-волна listening (ListeningIndicator). */
+@keyframes wave {
+    0%,
+    100% {
+        transform: scaleY(0.3);
+    }
+    50% {
+        transform: scaleY(1);
+    }
+}
+
+/* ============ Сообщения ============ */
+
+/* Появление нового сообщения — въезжает сверху с затуханием (fade-down). */
+@keyframes fadeDown {
+    from {
+        opacity: 0;
+        transform: translateY(-0.75rem);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

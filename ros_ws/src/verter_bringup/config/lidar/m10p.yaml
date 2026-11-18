@@ -1,0 +1,20 @@
+/lslidar_driver_node:
+  ros__parameters:
+    lidar_name: M10_P
+    # Fixed full-circle cell centers, independent of the number of physical returns.
+    m10p_scan_bins: 1800
+    # Additional calibrated offset, seconds. Host timestamps already remove UART wire time.
+    m10p_time_offset: 0.0
+    interface_selection: serial
+    frame_id: lidar_link
+    scan_topic: /scan_raw
+    serial_port_: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+    min_range: 0.1
+    max_range: 25.0
+    angle_disable_min: 0.0
+    angle_disable_max: 0.0
+    high_reflection: false
+    compensation: false
+    use_gps_ts: false
+    pubScan: true
+    pubPointCloud2: false

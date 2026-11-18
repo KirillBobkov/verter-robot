@@ -1,0 +1,1 @@
+PASS signed decoding, scales, calibration status

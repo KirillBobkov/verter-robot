@@ -1,0 +1,335 @@
+{
+  "silero_vad.onnx": { "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6", "bytes": 643854 },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/run-rnnt-v3-punct.sh": {
+    "sha256": "288f6ef5cc19dfed31a899c2815d13e85100ca4f2a696f2c113f0c1b13f93668",
+    "bytes": 979
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.gitattributes": {
+    "sha256": "4e18298fdc93872fd00064b80d941a1796106c62f03c3ecfcfd454521eb576c2",
+    "bytes": 1597
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/test-onnx-rnnt.py": {
+    "sha256": "a3312836b30061f8fa9ee516f3e00408a055a0af7ea0ca18ddfd468420ae9eb0",
+    "bytes": 9161
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/decoder.onnx": {
+    "sha256": "38fc7475443ea2a26f63211ca350f73ac50fff824ab7a3876ee2bd610c53bbc4",
+    "bytes": 4600132
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/encoder.int8.onnx": {
+    "sha256": "369f35a71bf288d3b8e0391fabd8dba5f2314088d440bca474056b7b4b6e66bf",
+    "bytes": 224570820
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/LICENSE": {
+    "sha256": "7d96ce0fed1a606c9160ffb29430192ea785f922e2e65a5e8ef63f339854f53d",
+    "bytes": 1091
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/tokens.txt": {
+    "sha256": "b98730cffb0bb782f505003caff8b4ba03ef6c9baf6b799572af3191f42fe098",
+    "bytes": 14379
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/README.md": {
+    "sha256": "c680713ee0a095a38ac4ff4e851bf08a4187116e707c2cf909c22c0babf3d930",
+    "bytes": 312
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/joiner.onnx": {
+    "sha256": "602ff7017a93311aad34df1437c8d7f49911353c13d6eae7a6ee7b041339465c",
+    "bytes": 2712896
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/config": {
+    "sha256": "21dda1f20533232e836f211bc0c21fd1decaf78a8af6e51e29d4ccd90a29f840",
+    "bytes": 391
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/HEAD": {
+    "sha256": "28d25bf82af4c0e2b72f50959b2beb859e3e60b9630a5e8c603dad4ddb2b6e80",
+    "bytes": 21
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/index": {
+    "sha256": "0f747fe0e12698f5151cdfd0b30e63a118f32b41d8125e0c660d13ce0900bbf0",
+    "bytes": 900
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/description": {
+    "sha256": "85ab6c163d43a17ea9cf7788308bca1466f1b0a8d1cc92e26e9bf63da4062aee",
+    "bytes": 73
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/packed-refs": {
+    "sha256": "ad25da0b8ab6f04a7c02efd676a166422f303add3bd09c360fbbe3c098716db8",
+    "bytes": 112
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/lfs/objects/d8/aa/d8aaaa18a5098d7c6de0595ae7ac1e64cacd0d4022af3595213bdaf23be77e69": {
+    "sha256": "d8aaaa18a5098d7c6de0595ae7ac1e64cacd0d4022af3595213bdaf23be77e69",
+    "bytes": 361324
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/lfs/objects/38/fc/38fc7475443ea2a26f63211ca350f73ac50fff824ab7a3876ee2bd610c53bbc4": {
+    "sha256": "38fc7475443ea2a26f63211ca350f73ac50fff824ab7a3876ee2bd610c53bbc4",
+    "bytes": 4600132
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/lfs/objects/60/2f/602ff7017a93311aad34df1437c8d7f49911353c13d6eae7a6ee7b041339465c": {
+    "sha256": "602ff7017a93311aad34df1437c8d7f49911353c13d6eae7a6ee7b041339465c",
+    "bytes": 2712896
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/lfs/objects/36/9f/369f35a71bf288d3b8e0391fabd8dba5f2314088d440bca474056b7b4b6e66bf": {
+    "sha256": "369f35a71bf288d3b8e0391fabd8dba5f2314088d440bca474056b7b4b6e66bf",
+    "bytes": 224570820
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/info/exclude": {
+    "sha256": "6671fe83b7a07c8932ee89164d1f2793b2318058eb8b98dc5c06ee0a5a3b0ec1",
+    "bytes": 240
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/pre-push.sample": {
+    "sha256": "ecce9c7e04d3f5dd9d8ada81753dd1d549a9634b26770042b58dda00217d086a",
+    "bytes": 1374
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/post-merge": {
+    "sha256": "cecb594e8fa65831654fc95e96db9f1249e09c52810c6fbb2b428280aac22158",
+    "bytes": 354
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/pre-commit.sample": {
+    "sha256": "57185b7b9f05239d7ab52db045f5b89eb31348d7b2177eab214f5eb872e1971b",
+    "bytes": 1649
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/push-to-checkout.sample": {
+    "sha256": "a53d0741798b287c6dd7afa64aee473f305e65d3f49463bb9d7408ec3b12bf5f",
+    "bytes": 2783
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/prepare-commit-msg.sample": {
+    "sha256": "e9ddcaa4189fddd25ed97fc8c789eca7b6ca16390b2392ae3276f0c8e1aa4619",
+    "bytes": 1492
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/pre-rebase.sample": {
+    "sha256": "4febce867790052338076f4e66cc47efb14879d18097d1d61c8261859eaaa7b3",
+    "bytes": 4898
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/pre-receive.sample": {
+    "sha256": "a4c3d2b9c7bb3fd8d1441c31bd4ee71a595d66b44fcf49ddb310252320169989",
+    "bytes": 544
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/pre-merge-commit.sample": {
+    "sha256": "d3825a70337940ebbd0a5c072984e13245920cdf8898bd225c8d27a6dfc9cb53",
+    "bytes": 416
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/update.sample": {
+    "sha256": "8d5f2fa83e103cf08b57eaa67521df9194f45cbdbcb37da52ad586097a14d106",
+    "bytes": 3650
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/applypatch-msg.sample": {
+    "sha256": "0223497a0b8b033aa58a3a521b8629869386cf7ab0e2f101963d328aa62193f7",
+    "bytes": 478
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/sendemail-validate.sample": {
+    "sha256": "44ebfc923dc5466bc009602f0ecf067b9c65459abfe8868ddc49b78e6ced7a92",
+    "bytes": 2308
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/post-update.sample": {
+    "sha256": "81765af2daef323061dcbc5e61fc16481cb74b3bac9ad8a174b186523586f6c5",
+    "bytes": 189
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/pre-applypatch.sample": {
+    "sha256": "e15c5b469ea3e0a695bea6f2c82bcf8e62821074939ddd85b77e0007ff165475",
+    "bytes": 424
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/pre-push": {
+    "sha256": "a52d0510d0f8c75e27852156ec6f7791f0d8ed65fc58fcc368dd1de0a60a1d74",
+    "bytes": 350
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/post-checkout": {
+    "sha256": "8d606e58cce98604696a4abcf3ae1ebde6f9f31ac72bb0d44e2444cc39f26030",
+    "bytes": 360
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/post-commit": {
+    "sha256": "f3eb4d1f62924c09d481a0563a84b158c66eb2feb3431cfdb3e6760aab4d661d",
+    "bytes": 356
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/fsmonitor-watchman.sample": {
+    "sha256": "e0549964e93897b519bd8e333c037e51fff0f88ba13e086a331592bf801fa1d0",
+    "bytes": 4726
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/hooks/commit-msg.sample": {
+    "sha256": "1f74d5e9292979b573ebd59741d46cb93ff391acdd083d340b94370753d92437",
+    "bytes": 896
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/objects/pack/pack-540ae3d35c09d19685337dec958f3be8e29e973e.idx": {
+    "sha256": "37b7d475d953d186116cf011299a0821722fcd396fee829fbba7e96db0738300",
+    "bytes": 1632
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/objects/pack/pack-540ae3d35c09d19685337dec958f3be8e29e973e.pack": {
+    "sha256": "f2ea82b10c66fafdbfc5fa4ba80f4ac4cc0f440356707de153fecd3df5863abf",
+    "bytes": 50183
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/objects/pack/pack-540ae3d35c09d19685337dec958f3be8e29e973e.rev": {
+    "sha256": "c4aac2f56090c24165b54cebbc09ad134a33096fd3a06d03ef344f4ad02bb096",
+    "bytes": 132
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/logs/HEAD": {
+    "sha256": "fe3cac5052e9c79178b87732ba18391923665fbf8666170eae7aaf13b1ceafa7",
+    "bytes": 245
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/logs/refs/remotes/origin/HEAD": {
+    "sha256": "fe3cac5052e9c79178b87732ba18391923665fbf8666170eae7aaf13b1ceafa7",
+    "bytes": 245
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/logs/refs/heads/main": {
+    "sha256": "fe3cac5052e9c79178b87732ba18391923665fbf8666170eae7aaf13b1ceafa7",
+    "bytes": 245
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/refs/remotes/origin/HEAD": {
+    "sha256": "2bb6a24aa0fc6c484100f5d51a29bbad841cd2c755f5d93faa204e5dbb4eb2b4",
+    "bytes": 30
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/.git/refs/heads/main": {
+    "sha256": "376824c8605357f7060ace9250ba994eeb8a68ff74849e3a7d34af8eb7918b6f",
+    "bytes": 41
+  },
+  "sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/test_wavs/example.wav": {
+    "sha256": "d8aaaa18a5098d7c6de0595ae7ac1e64cacd0d4022af3595213bdaf23be77e69",
+    "bytes": 361324
+  },
+  "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/export-onnx-ctc-v2.py": {
+    "sha256": "587305c315d51eb75ca7fc81eca024af6991f7810995638ba012dd4741b8485e",
+    "bytes": 1782
+  },
+  "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/LICENSE": {
+    "sha256": "ee304126b01c0a0910869af844e1e83fb4a1d7930f8e0ece1780f53d7a745481",
+    "bytes": 180089
+  },
+  "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/run-ctc-v2.sh": {
+    "sha256": "97d78b831b5c5eca35980aa5ef775eeeb517b00e129fff0208a436908cf3f4e3",
+    "bytes": 866
+  },
+  "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/tokens.txt": {
+    "sha256": "17cc514451bcceac9c280068c71502f8448f99e9fb1456b8d0761651fd0392f2",
+    "bytes": 196
+  },
+  "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/test-onnx-ctc.py": {
+    "sha256": "9ab506b0d06f4e7a50db60e3c54d08736e001e3367d8bc32d777c818ec626d00",
+    "bytes": 4031
+  },
+  "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/model.int8.onnx": {
+    "sha256": "d0ce4aef25f58d495781ee8f05320d9e51b821f47804e07aa6549b53a72f67e8",
+    "bytes": 236457977
+  },
+  "sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/test_wavs/example.wav": {
+    "sha256": "d8aaaa18a5098d7c6de0595ae7ac1e64cacd0d4022af3595213bdaf23be77e69",
+    "bytes": 361324
+  },
+  "speech_to_text/silero_vad.onnx": {
+    "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+    "bytes": 643854
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/decoder.onnx": {
+    "sha256": "38fc7475443ea2a26f63211ca350f73ac50fff824ab7a3876ee2bd610c53bbc4",
+    "bytes": 4600132
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/encoder.int8.onnx": {
+    "sha256": "369f35a71bf288d3b8e0391fabd8dba5f2314088d440bca474056b7b4b6e66bf",
+    "bytes": 224570820
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/tokens.txt": {
+    "sha256": "b98730cffb0bb782f505003caff8b4ba03ef6c9baf6b799572af3191f42fe098",
+    "bytes": 14379
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/README.md": {
+    "sha256": "c680713ee0a095a38ac4ff4e851bf08a4187116e707c2cf909c22c0babf3d930",
+    "bytes": 312
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-punct-giga-am-v3-russian-2025-12-16/joiner.onnx": {
+    "sha256": "602ff7017a93311aad34df1437c8d7f49911353c13d6eae7a6ee7b041339465c",
+    "bytes": 2712896
+  },
+  "speech_to_text/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/tokens.txt": {
+    "sha256": "17cc514451bcceac9c280068c71502f8448f99e9fb1456b8d0761651fd0392f2",
+    "bytes": 196
+  },
+  "speech_to_text/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/model.int8.onnx": {
+    "sha256": "d0ce4aef25f58d495781ee8f05320d9e51b821f47804e07aa6549b53a72f67e8",
+    "bytes": 236457977
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/decoder.onnx": {
+    "sha256": "208e24cc150fb0ebca3fab169502796daa12e0255dcf7b4acf65015c436e9f76",
+    "bytes": 3331651
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/encoder.int8.onnx": {
+    "sha256": "b51efc61e3c0037ad1cb804079975468de3d175324fe8323aef5be4f5c6a38a1",
+    "bytes": 236314144
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/tokens.txt": {
+    "sha256": "17cc514451bcceac9c280068c71502f8448f99e9fb1456b8d0761651fd0392f2",
+    "bytes": 196
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/README.md": {
+    "sha256": "9e5421be1bdcd7c0e87b7e1bc8b779aa94704baf50b5bfa87b03758a678127c8",
+    "bytes": 302
+  },
+  "speech_to_text/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/joiner.onnx": {
+    "sha256": "4b02eced18e033fc5173e6c47b6ab166b5efea8d35c3f33a6755ff0d622fb5b0",
+    "bytes": 1440448
+  },
+  "sounds/success.wav": {
+    "sha256": "331d00461c12bb811efa88c4646bcf1c355c8e08456f109fb1d9a673ae091bd5",
+    "bytes": 170574
+  },
+  "sounds/trigger.wav": {
+    "sha256": "74f961c8fc4534462bfce58b7f8ae8dcc981938803a1de6ac392516cadcea356",
+    "bytes": 138318
+  },
+  "sounds/fail_timeout.wav": {
+    "sha256": "2f9d23a97acd9570d88d9ffcdc3be3e987951017ca7da02b8479232d73adfb23",
+    "bytes": 156750
+  },
+  "text_to_speech/v5_ru.pt": {
+    "sha256": "7ba04d42340fe0398042eed2e0d12d62e23096d626b1b9feff4dcb1309197ab4",
+    "bytes": 145382211
+  },
+  "text_to_speech/ru_RU-ruslan-medium.onnx.json": {
+    "sha256": "d611a3013f5c9d08acdf7f44f65ad7ea70d61c5220661e90b54f017f37d385a4",
+    "bytes": 4883
+  },
+  "text_to_speech/ru_RU-ruslan-medium.onnx": {
+    "sha256": "72a5f88e0b20928064eb45d88e1daa21f8af62d18613580d32cbb4aed48dcf7f",
+    "bytes": 63201294
+  },
+  "text_to_speech/v5_5_ru.pt": {
+    "sha256": "50081637b602126ee06cb3bc8a744d25651d2da149ee8864b9a379bfdd934437",
+    "bytes": 145420684
+  },
+  "dataset/chunks.jsonl": {
+    "sha256": "08a6f66d77c2fd189fe4fcf7100b116bc37a0e51f3afb34f5b202df84c49590a",
+    "bytes": 192674
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/test-onnx-rnnt.py": {
+    "sha256": "9ff1fbf49a0b94732ccf54de0a6b3a3e608ef9fb8cd4f5758961cb5df94f6d8c",
+    "bytes": 8894
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/decoder.onnx": {
+    "sha256": "208e24cc150fb0ebca3fab169502796daa12e0255dcf7b4acf65015c436e9f76",
+    "bytes": 3331651
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/run-rnnt-v2.sh": {
+    "sha256": "f94534a7315c2c73c58303abe09986122c35ca35a9f960fb663e10bce3bc21ea",
+    "bytes": 934
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/encoder.int8.onnx": {
+    "sha256": "b51efc61e3c0037ad1cb804079975468de3d175324fe8323aef5be4f5c6a38a1",
+    "bytes": 236314144
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/LICENSE": {
+    "sha256": "874977ccf439dc5147325d1191514bc71d029c57e52fe5dd9759635cd4b90217",
+    "bytes": 180079
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/example.wav": {
+    "sha256": "d8aaaa18a5098d7c6de0595ae7ac1e64cacd0d4022af3595213bdaf23be77e69",
+    "bytes": 361324
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/tokens.txt": {
+    "sha256": "17cc514451bcceac9c280068c71502f8448f99e9fb1456b8d0761651fd0392f2",
+    "bytes": 196
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/README.md": {
+    "sha256": "9e5421be1bdcd7c0e87b7e1bc8b779aa94704baf50b5bfa87b03758a678127c8",
+    "bytes": 302
+  },
+  "sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/joiner.onnx": {
+    "sha256": "4b02eced18e033fc5173e6c47b6ab166b5efea8d35c3f33a6755ff0d622fb5b0",
+    "bytes": 1440448
+  }
+}

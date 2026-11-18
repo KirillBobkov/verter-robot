@@ -1,0 +1,268 @@
+<?xml version='1.0' encoding='utf-8' ?>
+<robot name="verter_robot">
+  <!--Lidar/IMU mounting confirmed unchanged by owner. Ultrasonic XYZ fitted to CAD at 148 mm, not surveyed.-->
+  <material name="blue">
+    <color rgba="0.0 0.0 0.8 1.0" />
+  </material>
+  <material name="black">
+    <color rgba="0.0 0.0 0.0 1.0" />
+  </material>
+  <material name="red">
+    <color rgba="0.8 0.0 0.0 1.0" />
+  </material>
+  <material name="gray">
+    <color rgba="0.5 0.5 0.5 1.0" />
+  </material>
+  <link name="base_footprint" />
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 -0.05" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="package://verter_description/meshes/platform_aligned_m.stl" scale="1 1 1" />
+      </geometry>
+      <material name="cad_shell">
+        <color rgba="0.55 0.65 0.75 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.119314286 0 0.230208260" rpy="0 0 0" />
+      <geometry>
+        <box size="0.588628571 0.533153477 0.560416520" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint" />
+    <child link="base_link" />
+    <origin xyz="0 0 0.1" rpy="0 0 0" />
+  </joint>
+  <link name="wheel_left">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.098" length="0.050" />
+      </geometry>
+      <material name="black" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.098" length="0.050" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="wheel_left_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="wheel_left" />
+    <origin xyz="0 .178 -0.002" rpy="0 0 0" />
+  </joint>
+  <link name="wheel_right">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.098" length="0.050" />
+      </geometry>
+      <material name="black" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.098" length="0.050" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="wheel_right_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="wheel_right" />
+    <origin xyz="0 -.178 -0.002" rpy="0 0 0" />
+  </joint>
+  <link name="sensor_front_center">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="ultrasonic_sensor" />
+    </visual>
+  </link>
+  <joint name="sensor_front_center_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="sensor_front_center" />
+    <origin xyz="0.1550 0.0000 0.048" rpy="0 0 0.000000000000" />
+  </joint>
+  <link name="sensor_front_left_inner">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="ultrasonic_sensor" />
+    </visual>
+  </link>
+  <joint name="sensor_front_left_inner_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="sensor_front_left_inner" />
+    <origin xyz="0.1509 0.0740 0.048" rpy="0 0 0.099483767364" />
+  </joint>
+  <link name="sensor_front_left_outer">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="ultrasonic_sensor" />
+    </visual>
+  </link>
+  <joint name="sensor_front_left_outer_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="sensor_front_left_outer" />
+    <origin xyz="0.1369 0.1520 0.048" rpy="0 0 0.230383461263" />
+  </joint>
+  <link name="sensor_front_right_inner">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="ultrasonic_sensor" />
+    </visual>
+  </link>
+  <joint name="sensor_front_right_inner_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="sensor_front_right_inner" />
+    <origin xyz="0.1509 -0.0740 0.048" rpy="0 0 -0.099483767364" />
+  </joint>
+  <link name="sensor_front_right_outer">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="ultrasonic_sensor" />
+    </visual>
+  </link>
+  <joint name="sensor_front_right_outer_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="sensor_front_right_outer" />
+    <origin xyz="0.1369 -0.1520 0.048" rpy="0 0 -0.230383461263" />
+  </joint>
+  <link name="sensor_left">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="ultrasonic_sensor" />
+    </visual>
+  </link>
+  <joint name="sensor_left_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="sensor_left" />
+    <origin xyz="0.0550 0.2390 0.048" rpy="0 0 1.324704902264" />
+  </joint>
+  <link name="sensor_right">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.02 0.02 0.02" />
+      </geometry>
+      <material name="ultrasonic_sensor" />
+    </visual>
+  </link>
+  <joint name="sensor_right_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="sensor_right" />
+    <origin xyz="0.0550 -0.2390 0.048" rpy="0 0 -1.324704902264" />
+  </joint>
+  <link name="camera_tof">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.06 0.02" />
+      </geometry>
+      <material name="gray" />
+    </visual>
+  </link>
+  <joint name="camera_tof_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="camera_tof" />
+    <origin xyz="0.150 0 0.400" rpy="0 0 0" />
+  </joint>
+  <link name="camera_tof_optical" />
+  <joint name="camera_tof_optical_joint" type="fixed">
+    <parent link="camera_tof" />
+    <child link="camera_tof_optical" />
+    <origin xyz="0 0 0" rpy="-1.5708 0 -1.5708" />
+  </joint>
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.035" length="0.04" />
+      </geometry>
+      <material name="black" />
+    </visual>
+  </link>
+  <joint name="lidar_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="lidar_link" />
+    <origin xyz="0 0 0.76" rpy="0 0 0" />
+  </joint>
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <box size="0.03 0.03 0.01" />
+      </geometry>
+      <material name="red" />
+    </visual>
+  </link>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="imu_link" />
+    <origin xyz="0 0 0.305" rpy="0 0 0" />
+  </joint>
+  <link name="caster_back_left">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.570796326795 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.040" />
+      </geometry>
+      <material name="black" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.570796326795 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.040" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="caster_back_left_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="caster_back_left" />
+    <origin xyz="-0.291628571 0.109 -0.075" rpy="0 0 0" />
+  </joint>
+  <link name="caster_back_right">
+    <visual>
+      <origin xyz="0 0 0" rpy="1.570796326795 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.040" />
+      </geometry>
+      <material name="black" />
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.570796326795 0 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.040" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="caster_back_right_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="caster_back_right" />
+    <origin xyz="-0.291628571 -0.109 -0.075" rpy="0 0 0" />
+  </joint>
+  <material name="ultrasonic_sensor">
+    <color rgba="0.1 0.65 0.4 1" />
+  </material>
+</robot>

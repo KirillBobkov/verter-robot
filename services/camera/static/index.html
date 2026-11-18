@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru"
+    ><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title
+        >Verter · Камера</title
+    ><link rel="stylesheet" href="/static/camera.css" /><link rel="stylesheet" href="/static/drive-widget.css" /><script
+        src="/static/drive-widget.js"
+        defer
+    ></script
+    ><body
+        ><main
+            ><header class="sensor-header"
+                ><div
+                    ><small>VERTER / CAMERA</small><h1>Камера робота</h1
+                    ><p>Gemini 2 · RGB и глубина · WebRTC / HTTP</p></div
+                ><div id="drive-widget"></div></header
+            ><section
+                ><div class="toolbar"
+                    ><label
+                        >Изображение
+                        <select id="stream"
+                            ><option value="color">Цветное</option
+                            ><option value="depth">Глубина · 0–5 м</option></select
+                        ></label
+                    ><label
+                        >Подключение
+                        <select id="transport"
+                            ><option value="webrtc">WebRTC · локальная сеть</option
+                            ><option value="http">Через SSH / HTTP</option></select
+                        ></label
+                    ><button id="connect">Подключить</button
+                    ><button id="disconnect" disabled>Отключить видео</button></div
+                ><p id="connection" role="status">Видео отключено</p
+                ><video id="video" autoplay playsinline muted></video
+                ><img id="mjpeg" hidden alt="Изображение камеры через HTTP" /><p
+                    >Для SSH выберите «Через SSH / HTTP». Достаточно проброса TCP-порта 8089.</p
+                ><p id="frames">Кадры ещё не получены</p
+                ><p
+                    >Глубина показана условными цветами, чёрный — нет измерения. В ROS публикуются исходные расстояния в
+                    миллиметрах.</p
+                ></section
+            ><section><h2>Состояние камеры</h2><pre id="status">Загрузка…</pre></section
+            ><p
+                >Стрелки и пробел управляют роботом только при фокусе в панели «Ручное управление». Потеря фокуса окна
+                останавливает управление из этого окна; при закрытии действует тайм-аут команд.</p
+            ></main
+        ><script src="/static/camera.js"></script></body
+></html>

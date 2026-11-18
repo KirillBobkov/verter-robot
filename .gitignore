@@ -1,44 +1,36 @@
-# OS
-.DS_Store
-
-# IDE
-.idea/
-
-# Python
+ros_ws/build/
+ros_ws/install/
+ros_ws/log/
 .venv/
-venv/
 __pycache__/
+.pytest_cache/
 *.pyc
+assets/
+data/
+run/
+web/frontend/node_modules/
+web/frontend/dist/
+.env
+config/secrets.env
+firmware/**/.pio/
+.python/
+vendor/
 
-# ROS2 build artifacts
-build/
-install/
-log/
+.venv-nats/
 
-# Tests
-tts_tests/
+config/nats/
 
-# MkDocs
-site/
-.mkdocs/
+services/nats_bridge/start.sh
 
-# ML models (download separately)
-**/sherpa-onnx-nemo-transducer-giga-am-v2-russian-2025-04-19/
-**/sherpa-onnx-nemo-ctc-giga-am-v2-russian-2025-04-19/
-**/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8/
-**/v5_ru.pt
+.venv-bms-ble/
 
-# Vosk TTS models (теперь в text_to_speech/, копируются при сборке)
-# **/vosk-models/*.onnx
-# **/vosk-models/*/dictionary
-# **/vosk-models/*/bert/*.onnx
 
-# Logs
-verter_admin/journal.log
-verter_admin/journal-error.log
 
-**/node_modules
-
-.git.bak
-
-.vscode/
+# Local runtime, credentials and rollback material
+/archive/
+/audit/
+/.venv-camera/
+/Log/
+/log/
+/vector_store_id.txt
+/.venv-format/

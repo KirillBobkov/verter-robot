@@ -1,0 +1,7 @@
+aiortc==1.14.0
+av==16.1.0
+aiohttp==3.12.15
+nats-py==2.11.0
+numpy==1.26.4
+scipy==1.11.4
+pybind11==2.13.6

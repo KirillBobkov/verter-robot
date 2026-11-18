@@ -1,0 +1,19 @@
+[Unit]
+Description=Verter refactored hardware, voice and local UI startup
+Requires=verter-supervisor.service
+After=verter-supervisor.service
+PartOf=verter-supervisor.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@ROOT@
+ExecStart=/bin/bash @ROOT@/tools/autostart.sh
+RemainAfterExit=yes
+TimeoutStartSec=180
+Restart=on-failure
+RestartSec=15
+Environment=PYTHONUNBUFFERED=1
+Environment=ROS_DOMAIN_ID=0
+
+[Install]
+WantedBy=default.target

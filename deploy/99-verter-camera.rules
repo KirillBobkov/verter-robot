@@ -1,0 +1,2 @@
+# Orbbec Gemini 2 USB access; no rule for robot serial controllers.
+SUBSYSTEM=="usb", ATTR{idVendor}=="2bc5", ATTR{idProduct}=="0670", GROUP="video", MODE="0660"

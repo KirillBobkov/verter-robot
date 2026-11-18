@@ -1,0 +1,16 @@
+[Unit]
+Description=Verter depth and ultrasonic obstacle observations
+After=network.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=/bin/bash @ROOT@/tools/start-perception.sh
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+TimeoutStopSec=20
+
+[Install]
+WantedBy=default.target

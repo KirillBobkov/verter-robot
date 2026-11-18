@@ -1,5 +1,0 @@
-# Delete a named waypoint from the store
-string name
----
-bool success
-string message

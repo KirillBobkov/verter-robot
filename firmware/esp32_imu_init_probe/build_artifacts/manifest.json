@@ -1,0 +1,7 @@
+{
+  "sha256": {
+    "bootloader.bin": "3d234a7471f67b013686dabd4dee7c1fa915c9928463616a94bc9297acf1abf8",
+    "firmware.bin": "ef87e269828186e86fd66aad65a797e038704933a2939d1a673d0f3bc1a34314",
+    "partitions.bin": "148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1"
+  }
+}

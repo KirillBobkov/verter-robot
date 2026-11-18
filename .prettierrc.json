@@ -1,0 +1,68 @@
+{
+  "printWidth": 120,
+  "tabWidth": 4,
+  "singleQuote": true,
+  "trailingComma": "none",
+  "objectWrap": "collapse",
+  "htmlWhitespaceSensitivity": "strict",
+  "endOfLine": "lf",
+  "xmlWhitespaceSensitivity": "ignore",
+  "xmlQuoteAttributes": "preserve",
+  "overrides": [
+    {
+      "files": [
+        "*.ts",
+        "*.tsx"
+      ],
+      "options": {
+        "parser": "typescript"
+      }
+    },
+    {
+      "files": [
+        "*.json",
+        "*.yaml",
+        "*.yml",
+        "*.rviz"
+      ],
+      "options": {
+        "tabWidth": 2
+      }
+    },
+    {
+      "files": [
+        "*.urdf"
+      ],
+      "options": {
+        "parser": "xml"
+      }
+    },
+    {
+      "files": [
+        "*.xml",
+        "*.urdf"
+      ],
+      "options": {
+        "tabWidth": 2
+      }
+    },
+    {
+      "files": [
+        "*.rviz"
+      ],
+      "options": {
+        "parser": "yaml"
+      }
+    },
+    {
+      "files": [
+        "*.sh",
+        "verter"
+      ],
+      "options": {
+        "parser": "sh",
+        "tabWidth": 4
+      }
+    }
+  ]
+}

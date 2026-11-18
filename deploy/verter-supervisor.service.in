@@ -1,0 +1,17 @@
+[Unit]
+Description=Verter mode supervisor (starts idle)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=/bin/bash @ROOT@/tools/verter serve
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=120
+Environment=PYTHONUNBUFFERED=1
+Environment=ROS_DOMAIN_ID=0
+
+[Install]
+WantedBy=default.target

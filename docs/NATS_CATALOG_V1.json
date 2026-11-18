@@ -1,0 +1,650 @@
+{
+  "revision": "1.8",
+  "subject_pattern": "<robot_id>.<domain>.<action>.<name>",
+  "encoding": "UTF-8 JSON",
+  "publish_interval_s": 2,
+  "metrics": {
+    "battery.soc": {
+      "subject": "verter_01.battery.update.soc",
+      "kv_key": "battery.soc",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "%",
+      "max_age_s": 8
+    },
+    "battery.voltage": {
+      "subject": "verter_01.battery.update.voltage",
+      "kv_key": "battery.voltage",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "V",
+      "max_age_s": 8
+    },
+    "battery.current": {
+      "subject": "verter_01.battery.update.current",
+      "kv_key": "battery.current",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "A",
+      "max_age_s": 8
+    },
+    "battery.power": {
+      "subject": "verter_01.battery.update.power",
+      "kv_key": "battery.power",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "W",
+      "max_age_s": 8
+    },
+    "battery.remaining_capacity": {
+      "subject": "verter_01.battery.update.remaining_capacity",
+      "kv_key": "battery.remaining_capacity",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "Ah",
+      "max_age_s": 8
+    },
+    "battery.full_charge_capacity": {
+      "subject": "verter_01.battery.update.full_charge_capacity",
+      "kv_key": "battery.full_charge_capacity",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "Ah",
+      "max_age_s": 8
+    },
+    "battery.cycles": {
+      "subject": "verter_01.battery.update.cycles",
+      "kv_key": "battery.cycles",
+      "value_type": "integer",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "battery.temperature_mos": {
+      "subject": "verter_01.battery.update.temperature_mos",
+      "kv_key": "battery.temperature_mos",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "degC",
+      "max_age_s": 8
+    },
+    "battery.temperature_1": {
+      "subject": "verter_01.battery.update.temperature_1",
+      "kv_key": "battery.temperature_1",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "degC",
+      "max_age_s": 8
+    },
+    "battery.temperature_2": {
+      "subject": "verter_01.battery.update.temperature_2",
+      "kv_key": "battery.temperature_2",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "degC",
+      "max_age_s": 8
+    },
+    "battery.cell_sum": {
+      "subject": "verter_01.battery.update.cell_sum",
+      "kv_key": "battery.cell_sum",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "V",
+      "max_age_s": 8
+    },
+    "battery.cell_delta": {
+      "subject": "verter_01.battery.update.cell_delta",
+      "kv_key": "battery.cell_delta",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "V",
+      "max_age_s": 8
+    },
+    "battery.balance_current": {
+      "subject": "verter_01.battery.update.balance_current",
+      "kv_key": "battery.balance_current",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "A",
+      "max_age_s": 8
+    },
+    "battery.balance_state": {
+      "subject": "verter_01.battery.update.balance_state",
+      "kv_key": "battery.balance_state",
+      "value_type": "integer",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "battery.charging_enabled": {
+      "subject": "verter_01.battery.update.charging_enabled",
+      "kv_key": "battery.charging_enabled",
+      "value_type": "boolean",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "battery.discharging_enabled": {
+      "subject": "verter_01.battery.update.discharging_enabled",
+      "kv_key": "battery.discharging_enabled",
+      "value_type": "boolean",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "battery.flags_raw": {
+      "subject": "verter_01.battery.update.flags_raw",
+      "kv_key": "battery.flags_raw",
+      "value_type": "string",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "battery.charging_state": {
+      "subject": "verter_01.battery.update.charging_state",
+      "kv_key": "battery.charging_state",
+      "value_type": "string",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8,
+      "enum": [
+        "charging",
+        "discharging",
+        "idle",
+        "unknown"
+      ]
+    },
+    "battery.cell_{01..32}_voltage": {
+      "subject": "verter_01.battery.update.cell_{01..32}_voltage",
+      "kv_key": "battery.cell_{01..32}_voltage",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "V",
+      "max_age_s": 8,
+      "dynamic": true
+    },
+    "battery.snapshot": {
+      "subject": "verter_01.battery.update.snapshot",
+      "kv_key": "battery.snapshot",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.bms": {
+      "subject": "verter_01.service.update.bms",
+      "kv_key": "service.bms",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.bridge": {
+      "subject": "verter_01.service.update.bridge",
+      "kv_key": "service.bridge",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.mode": {
+      "subject": "verter_01.service.update.mode",
+      "kv_key": "service.mode",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.snapshot": {
+      "subject": "verter_01.service.update.snapshot",
+      "kv_key": "service.snapshot",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.schema": {
+      "subject": "verter_01.service.update.schema",
+      "kv_key": "service.schema",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "cmd_vel.target": {
+      "subject": "verter_01.cmd_vel.update.target",
+      "kv_key": "cmd_vel.target",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "localization.state": {
+      "subject": "verter_01.localization.update.state",
+      "kv_key": "localization.state",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "waypoint.catalog": {
+      "subject": "verter_01.waypoint.update.catalog",
+      "kv_key": "waypoint.catalog",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "route.catalog": {
+      "subject": "verter_01.route.update.catalog",
+      "kv_key": "route.catalog",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.transport_connected": {
+      "subject": "verter_01.service.update.transport_connected",
+      "kv_key": "service.transport_connected",
+      "value_type": "boolean",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.kv_error": {
+      "subject": "verter_01.service.update.kv_error",
+      "kv_key": "service.kv_error",
+      "value_type": "string",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "service.note": {
+      "subject": "verter_01.service.update.note",
+      "kv_key": "service.note",
+      "value_type": "string",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 8
+    },
+    "topic.imu_gyro_z": {
+      "subject": "verter_01.topic.update.imu_gyro_z",
+      "kv_key": "topic.imu_gyro_z",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "rad/s",
+      "max_age_s": 5
+    },
+    "topic.imu_accel_norm": {
+      "subject": "verter_01.topic.update.imu_accel_norm",
+      "kv_key": "topic.imu_accel_norm",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m/s^2",
+      "max_age_s": 5
+    },
+    "topic.scan_points": {
+      "subject": "verter_01.topic.update.scan_points",
+      "kv_key": "topic.scan_points",
+      "value_type": "number",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "topic.scan_valid_points": {
+      "subject": "verter_01.topic.update.scan_valid_points",
+      "kv_key": "topic.scan_valid_points",
+      "value_type": "number",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "topic.scan_frame": {
+      "subject": "verter_01.topic.update.scan_frame",
+      "kv_key": "topic.scan_frame",
+      "value_type": "string",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "topic.odometry_x": {
+      "subject": "verter_01.topic.update.odometry_x",
+      "kv_key": "topic.odometry_x",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.odometry_y": {
+      "subject": "verter_01.topic.update.odometry_y",
+      "kv_key": "topic.odometry_y",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.odometry_vx": {
+      "subject": "verter_01.topic.update.odometry_vx",
+      "kv_key": "topic.odometry_vx",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m/s",
+      "max_age_s": 5
+    },
+    "topic.odometry_wz": {
+      "subject": "verter_01.topic.update.odometry_wz",
+      "kv_key": "topic.odometry_wz",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "rad/s",
+      "max_age_s": 5
+    },
+    "topic.localization_x": {
+      "subject": "verter_01.topic.update.localization_x",
+      "kv_key": "topic.localization_x",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.localization_y": {
+      "subject": "verter_01.topic.update.localization_y",
+      "kv_key": "topic.localization_y",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.localization_covariance": {
+      "subject": "verter_01.topic.update.localization_covariance",
+      "kv_key": "topic.localization_covariance",
+      "value_type": "array",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "topic.map_width": {
+      "subject": "verter_01.topic.update.map_width",
+      "kv_key": "topic.map_width",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "cell",
+      "max_age_s": 5
+    },
+    "topic.map_height": {
+      "subject": "verter_01.topic.update.map_height",
+      "kv_key": "topic.map_height",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "cell",
+      "max_age_s": 5
+    },
+    "topic.map_resolution": {
+      "subject": "verter_01.topic.update.map_resolution",
+      "kv_key": "topic.map_resolution",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m/cell",
+      "max_age_s": 5
+    },
+    "topic.map_to_odom_x": {
+      "subject": "verter_01.topic.update.map_to_odom_x",
+      "kv_key": "topic.map_to_odom_x",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.map_to_odom_y": {
+      "subject": "verter_01.topic.update.map_to_odom_y",
+      "kv_key": "topic.map_to_odom_y",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.cmd_vel_publishers": {
+      "subject": "verter_01.topic.update.cmd_vel_publishers",
+      "kv_key": "topic.cmd_vel_publishers",
+      "value_type": "array",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "topic.ultrasonic_right": {
+      "subject": "verter_01.topic.update.ultrasonic_right",
+      "kv_key": "topic.ultrasonic_right",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.ultrasonic_front_right_outer": {
+      "subject": "verter_01.topic.update.ultrasonic_front_right_outer",
+      "kv_key": "topic.ultrasonic_front_right_outer",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.ultrasonic_front_right_inner": {
+      "subject": "verter_01.topic.update.ultrasonic_front_right_inner",
+      "kv_key": "topic.ultrasonic_front_right_inner",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.ultrasonic_front_center": {
+      "subject": "verter_01.topic.update.ultrasonic_front_center",
+      "kv_key": "topic.ultrasonic_front_center",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.ultrasonic_front_left_inner": {
+      "subject": "verter_01.topic.update.ultrasonic_front_left_inner",
+      "kv_key": "topic.ultrasonic_front_left_inner",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.ultrasonic_front_left_outer": {
+      "subject": "verter_01.topic.update.ultrasonic_front_left_outer",
+      "kv_key": "topic.ultrasonic_front_left_outer",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.ultrasonic_left": {
+      "subject": "verter_01.topic.update.ultrasonic_left",
+      "kv_key": "topic.ultrasonic_left",
+      "value_type": "number",
+      "nullable": true,
+      "unit": "m",
+      "max_age_s": 5
+    },
+    "topic.imu_status": {
+      "subject": "verter_01.topic.update.imu_status",
+      "kv_key": "topic.imu_status",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "topic.graph": {
+      "subject": "verter_01.topic.update.graph",
+      "kv_key": "topic.graph",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "node.list": {
+      "subject": "verter_01.node.update.list",
+      "kv_key": "node.list",
+      "value_type": "array",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5
+    },
+    "node.{base64url_full_ros_name}": {
+      "subject": "verter_01.node.update.{base64url_full_ros_name}",
+      "kv_key": "node.{base64url_full_ros_name}",
+      "value_type": "object",
+      "nullable": true,
+      "unit": null,
+      "max_age_s": 5,
+      "dynamic": true
+    }
+  },
+  "commands": {
+    "verter_01.service.command.ping": "ping",
+    "verter_01.service.command.schema_get": "schema.get",
+    "verter_01.service.command.state_get": "state.get",
+    "verter_01.service.command.metrics_get": "metrics.get",
+    "verter_01.service.command.note_set": "settings.set",
+    "verter_01.service.command.mode_set": "mode.set",
+    "verter_01.localization.command.get": "localization.get",
+    "verter_01.localization.command.initialize": "localization.initialize",
+    "verter_01.localization.command.confirm": "localization.confirm",
+    "verter_01.waypoint.command.list": "waypoint.list",
+    "verter_01.waypoint.command.save": "waypoint.save",
+    "verter_01.waypoint.command.delete": "waypoint.delete",
+    "verter_01.route.command.list": "route.list",
+    "verter_01.route.command.save": "route.save",
+    "verter_01.route.command.delete": "route.delete"
+  },
+  "battery_history": {
+    "subject": "verter_01.battery.command.history",
+    "action": "battery.history",
+    "read_only": true,
+    "retention_s": 604800,
+    "sample_interval_s": 10,
+    "export_http": "GET /api/battery/export?format=csv|txt",
+    "raw_pages": {
+      "limit_max": 250,
+      "page_bytes_max": 524288,
+      "cursor": "after"
+    },
+    "contract": "BMS_HISTORY_V1.md"
+  },
+  "mode_control": {
+    "owner": "supervisor",
+    "modes": [
+      "idle",
+      "mapping",
+      "localization",
+      "navigation"
+    ],
+    "subject": "verter_01.service.command.mode_set",
+    "acceptance_is_not_completion": true,
+    "contract": "NATS_MODES_V1.md"
+  },
+  "map_save": {
+    "subject": "verter_01.map.command.save",
+    "action": "map.save",
+    "read_only": false,
+    "acceptance_is_not_completion": true,
+    "contract": "MAP_API_V1.md"
+  },
+  "map_delete": {
+    "subject": "verter_01.map.command.delete",
+    "action": "map.delete",
+    "read_only": false,
+    "contract": "MAP_API_V1.md"
+  },
+  "localization_and_places": {
+    "contract": "LOCALIZATION_API_V1.md",
+    "route_execution_implemented": false,
+    "initial_pose_is_explicit": true,
+    "verified_requires_operator_confirmation": true
+  },
+  "live_map": {
+    "subject": "verter_01.map.command.get",
+    "action": "map.get",
+    "read_only": true,
+    "parts": [
+      "metadata",
+      "chunk",
+      "pose",
+      "model",
+      "scan",
+      "diagnostics",
+      "save_status",
+      "saved",
+      "saved_metadata",
+      "saved_chunk"
+    ],
+    "updates": {
+      "metadata": "verter_01.map.update.metadata",
+      "pose": "verter_01.map.update.pose",
+      "scan": "verter_01.map.update.scan"
+    },
+    "kv_key": "map.live",
+    "encoding": "zlib-int8-row-major",
+    "max_cells": 4194304,
+    "chunk_bytes": 49152,
+    "contract": "MAP_API_V1.md"
+  },
+  "command_envelope": [
+    "v",
+    "id",
+    "issued_at",
+    "ttl_s",
+    "args"
+  ],
+  "costmap": {
+    "subject": "verter_01.costmap.command.get",
+    "action": "costmap.get",
+    "read_only": true,
+    "parts": [
+      "state",
+      "metadata",
+      "chunk"
+    ],
+    "kinds": [
+      "local",
+      "global"
+    ],
+    "updates": {
+      "local": "verter_01.costmap.update.local",
+      "global": "verter_01.costmap.update.global"
+    },
+    "kv_keys": [
+      "costmap.local",
+      "costmap.global"
+    ],
+    "encoding": "zlib-uint8-row-major",
+    "max_cells": 4194304,
+    "chunk_bytes": 49152,
+    "contract": "COSTMAP_API_V1.md",
+    "sensor_attribution": false
+  },
+  "quality": [
+    "ok",
+    "stale",
+    "unavailable"
+  ],
+  "cmd_vel": {
+    "implemented": true,
+    "enabled_by_default": false,
+    "subjects": {
+      "set": "verter_01.cmd_vel.command.set",
+      "keepalive": "verter_01.cmd_vel.command.keepalive",
+      "stop": "verter_01.cmd_vel.command.stop",
+      "status": "verter_01.cmd_vel.command.status"
+    },
+    "contract": "NATS_MANUAL_CONTROL_V1.md",
+    "lease_s": 1,
+    "max_linear": 0.5,
+    "max_angular": 0.5
+  },
+  "compatibility": {
+    "legacy_request": "robots.verter_01.v1.request",
+    "legacy_state": "robots.verter_01.v1.state"
+  }
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=Verter Firefox kiosk
+After=graphical-session.target verter-autostart.service
+Wants=verter-autostart.service
+Wants=graphical-session.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/%U
+ExecStart=/bin/bash @ROOT@/tools/start-kiosk.sh
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

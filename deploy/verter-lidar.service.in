@@ -1,0 +1,19 @@
+[Unit]
+Description=Verter read-only lidar NATS and web viewer
+After=verter-nats.service
+Wants=verter-nats.service
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+ExecStart=/bin/bash @ROOT@/tools/start-lidar.sh
+Environment=ROS_DOMAIN_ID=0
+Environment=PYTHONNOUSERSITE=1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

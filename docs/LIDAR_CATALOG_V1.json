@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "domain": "lidar",
+  "robot_id": "verter_01",
+  "document": "LIDAR_API_V1.md",
+  "transport": "nats_core",
+  "kv": false,
+  "subjects": {
+    "scan": "verter_01.lidar.update.scan",
+    "model": "verter_01.lidar.update.model",
+    "status": "verter_01.lidar.update.status"
+  },
+  "scan": { "max_hz": 5, "max_points": 2048, "max_age_s": 1.5, "target_frame": "base_footprint" },
+  "web": {
+    "port": 8090,
+    "websocket": "/api/lidar/ws",
+    "status": "/api/lidar/status",
+    "max_viewers": 4,
+    "read_only": true
+  }
+}

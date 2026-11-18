@@ -1,0 +1,11 @@
+# Migrated values; see docs/KNOWN_LIMITATIONS.md before hardware use.
+
+laser_filter:
+  ros__parameters:
+    filter1:
+      name: angular_filter
+      type: laser_filters/LaserScanAngularBoundsFilterInPlace
+      params:
+        lower_angle: -0.7
+        upper_angle: 0.7
+        replace_with_nan: true

@@ -1,0 +1,13 @@
+{
+  "serial": "AY6966300ZT",
+  "mount_xyz": [-0.033, 0, 0.65],
+  "color": { "width": 640, "height": 480, "fps": 10 },
+  "depth": { "width": 640, "height": 400, "fps": 10 },
+  "video_fps": 10,
+  "max_sessions": 2,
+  "ice_servers": [],
+  "web_enabled": true,
+  "web_host": "0.0.0.0",
+  "web_port": 8089,
+  "web_allowed_hosts": ["127.0.0.1", "localhost", "192.168.0.9"]
+}

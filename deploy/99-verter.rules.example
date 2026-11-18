@@ -1,0 +1,5 @@
+# Replace serial IDs from udevadm info; never match all identical USB adapters.
+SUBSYSTEM=="tty", ATTRS{serial}=="REPLACE_CHASSIS_SERIAL", SYMLINK+="chassis", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{serial}=="REPLACE_LIDAR_SERIAL", SYMLINK+="rplidar", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{serial}=="REPLACE_IMU_SERIAL", SYMLINK+="esp32_imu", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{serial}=="REPLACE_CTRL_SERIAL", SYMLINK+="esp32_ctrl", GROUP="dialout", MODE="0660"

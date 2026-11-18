@@ -1,9 +1,0 @@
-# Save a named waypoint at the given pose
-# x, y in metres (SI); theta in radians (SI)
-string name
-float64 x
-float64 y
-float64 theta
----
-bool success
-string message

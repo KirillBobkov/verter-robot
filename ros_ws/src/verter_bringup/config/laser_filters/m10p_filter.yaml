@@ -1,0 +1,11 @@
+# Rear sector in lidar_link (yaw=0): pi +/- 0.7 rad, approximately 80 degrees wide.
+# Keep the original LaserScan indexing; replace rear returns with NaN.
+laser_filter:
+  ros__parameters:
+    filter1:
+      name: rear_sector
+      type: laser_filters/LaserScanAngularBoundsFilterInPlace
+      params:
+        lower_angle: 2.441592653589793
+        upper_angle: 3.841592653589793
+        replace_with_nan: true

@@ -1,0 +1,30 @@
+{
+  "rotation_rows": [
+    [-0.0068404466176642045, -0.05073085047063314, -0.998688935104719],
+    [-0.7812620654797433, -0.6231053973789002, 0.03700336200412467],
+    [-0.6241656777910785, 0.7804908997341412, -0.035371769814282035]
+  ],
+  "translation_m": [-0.4202763419492211, 0.23629094892378827, 0.6399681269420793],
+  "aligned_bounds_m": [
+    [-0.41362857121689345, -0.2665767385081181, 0.0],
+    [0.175, 0.2665767385081181, 0.5604165202673551]
+  ],
+  "wheel_diameter_m": 0.196,
+  "track_m": 0.356,
+  "front_overhang_m": 0.175,
+  "body_clearance_m": 0.05,
+  "wheel_width_m": 0.05,
+  "rear_support_wheels": {
+    "count": 2,
+    "diameter_m": 0.05,
+    "width_m": 0.04,
+    "track_m": 0.218,
+    "axle_from_rear_edge_m": 0.122,
+    "centers_base_footprint_m": [
+      [-0.29162857121689345, 0.109, 0.025],
+      [-0.29162857121689345, -0.109, 0.025]
+    ],
+    "confirmed_date": "2026-09-17",
+    "placement_assumptions": "Symmetric about centerline; rear bumper equals CAD rear extent; dimensions refer to wheel centers, swivel geometry not specified"
+  }
+}

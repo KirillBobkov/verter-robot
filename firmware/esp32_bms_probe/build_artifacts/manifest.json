@@ -1,0 +1,15 @@
+{
+  "platform": "espressif32@7.0.1",
+  "board": "esp32dev",
+  "framework": "Arduino 2.0.17",
+  "uploaded_to_device": false,
+  "sha256": {
+    "bootloader.bin": "3d234a7471f67b013686dabd4dee7c1fa915c9928463616a94bc9297acf1abf8",
+    "firmware.bin": "3ce2509786bdf51f723060165ecaac52e88b36ad0db84450514bef786438df4a",
+    "partitions.bin": "148b959cbff1c38aa8e1d5c0ba9d612c54997b945e56a63f41223eef650653a1"
+  },
+  "pins": {
+    "tx": 17,
+    "rx": 16
+  }
+}

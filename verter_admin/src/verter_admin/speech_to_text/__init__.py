@@ -1,7 +1,0 @@
-# Speech to Text module
-
-
-
-
-
-

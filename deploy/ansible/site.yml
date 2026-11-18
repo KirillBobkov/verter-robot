@@ -1,0 +1,32 @@
+---
+- name: Deploy a prepared Verter release to an Ubuntu 22.04 robot
+  hosts: robots
+  vars:
+    verter_root: '{{ ansible_env.HOME }}/verter-robot-refactored'
+  tasks:
+    - name: Check OS
+      ansible.builtin.assert:
+        that: ansible_distribution == 'Ubuntu' and ansible_distribution_version == '22.04'
+    - name: Copy release without build, assets or secrets
+      ansible.posix.synchronize:
+        src: '{{ release_dir }}/'
+        dest: '{{ verter_root }}/'
+        rsync_opts:
+          - '--exclude=ros_ws/build'
+          - '--exclude=ros_ws/install'
+          - '--exclude=ros_ws/log'
+          - '--exclude=assets'
+          - '--exclude=data'
+          - '--exclude=run'
+          - '--exclude=.git'
+          - '--exclude=.python'
+          - '--exclude=config/secrets.env'
+    - name: Install OS dependencies when explicitly requested
+      ansible.builtin.command: 'bash {{ verter_root }}/deploy/install-system.sh'
+      when: install_system | default(false) | bool
+    - name: Install Python dependencies
+      ansible.builtin.command: 'bash {{ verter_root }}/deploy/install-python.sh core'
+    - name: Build packages
+      ansible.builtin.command: 'bash {{ verter_root }}/tools/build.sh'
+    - name: Install inactive service unit
+      ansible.builtin.command: 'bash {{ verter_root }}/deploy/install-service.sh'
